@@ -1,195 +1,173 @@
 # 🔐 IAM-Dynamic
 
-AI-Driven Just-In-Time AWS IAM Access Request Portal
+**AI-Driven Just-In-Time AWS IAM Access Request Portal**
 
 [![Streamlit](https://img.shields.io/badge/Built%20with-Streamlit-ff4b4b?logo=streamlit)](https://streamlit.io)
+[![Gemini 3.0](https://img.shields.io/badge/AI-Gemini%203.0-4285F4?logo=google)](https://deepmind.google/technologies/gemini/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![Dockerized](https://img.shields.io/badge/Containerized-Docker-blue?logo=docker)](https://www.docker.com/)
 
 ## 🚀 Overview
 
-IAM-Dynamic is a secure, user-friendly Streamlit app that empowers users to request time-limited AWS IAM credentials using natural language prompts, with:
-- Auto-generated IAM policies via OpenAI
-- Risk scoring (low, medium, high, critical)
-- Auto-approval for low-risk requests
-- Manual approval, with required business justification, for higher-risk access
-- Just-in-time AWS credentials via STS AssumeRole or delegation to a Lambda backend
+**IAM-Dynamic** is a secure, user-friendly portal that leverages **Google Gemini 3.0** (with OpenAI fallback) to generate least-privilege AWS IAM policies from natural language. It features an "Agentic" workflow that assesses risk, validates requests, and issues temporary credentials via AWS STS.
 
-Perfect for security-conscious teams seeking flexible, auditable AWS access control.
+**Key Capabilities:**
+-   **♊ Gemini First:** Powered by Gemini 3.0 Pro/Flash for high-reasoning policy generation.
+-   **🛡️ Guardrails:** System-level instructions prevent over-privileged access (e.g., blocking `*:*`).
+-   **🚦 Risk Scoring:** Automatic assessment (Low, Medium, High, Critical).
+-   **⚡ Auto-Approval:** Low-risk requests are approved instantly; others require manual sign-off.
+-   **🔐 Just-In-Time:** Credentials are temporary and expire automatically.
 
 ---
 
 ## ✨ Features
 
-- 🔍 Describe your AWS access needs in natural language
-- 🤖 Uses GPT-4 to automatically generate precise IAM policies
-- 🟢 Auto-approve low-risk requests and deliver session credentials instantly
-- 🟠 Manual approval flow with Change Case submission for high/critical
-- 📝 Risk scores, explanation notes, and IAM policy output in human-friendly UI
-- 🔐 Temporary credentials issued via AWS STS or Lambda backend
-- 🌘 Native dark/light theme toggle (built-in)
-- 📡 Slack webhook integration for audit notifications
+### Core Functionality
+-   **Natural Language Input:** "I need read-only access to the production S3 bucket."
+-   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
+-   **Modern UI:** Gradient-themed dashboard with session history and real-time agent status.
+-   **Quad AI Support:** Switch between Gemini (default), OpenAI, Anthropic Claude, or Zhipu GLM via configuration.
+-   **Slack Integration:** Audit logs and approval notifications sent directly to Slack.
+
+### New in v2.0
+-   **🎨 Enhanced UI:** Modern gradient theme with visualizations and animations
+-   **📊 Policy Visualization:** Interactive pie charts showing permission distribution by AWS service
+-   **🎯 Risk Gauge:** Visual gauge chart for risk assessment (Low/Medium/High/Critical)
+-   **⏰ Expiration Timer:** Countdown timer showing credential expiration with color-coded warnings
+-   **💾 SQLite Persistence:** Session history persisted across application restarts
+-   **📜 Enhanced History:** Searchable and filterable session history
+-   **⬇️ Export Features:** Export history to CSV for audit and compliance
+-   **🔒 Policy Validation:** Built-in validation for IAM policies against best practices
+-   **🔄 Retry Mechanism:** Automatic retry with exponential backoff for transient failures
+-   **✅ Input Validation:** Comprehensive validation for all user inputs
+-   **📝 Download Credentials:** One-click download of credential scripts
 
 ---
 
 ## 📦 Project Structure
 
-| File                            | Description                                |
-|---------------------------------|--------------------------------------------|
-| `dynamicIAM_web.py`             | Streamlit UI with direct AWS STS usage     |
-| `dynamicIAM_lambda.py`          | UI that calls a backend Lambda function    |
-| `lambda_credential_issuer.py`   | Backend Lambda to perform AssumeRole       |
-| `requirements.txt`              | Python dependencies                        |
-| `Dockerfile`                    | Containerized build for `dynamicIAM_web.py`|
-| `.env`                          | Local environment variables                |
+| File                          | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `dynamicIAM_web.py`           | **Main Application**. Streamlit UI & Logic.      |
+| `llm_service.py`              | **AI Service Layer**. Handles Gemini/OpenAI/Anthropic/Zhipu API. |
+| `config.py`                   | **Configuration**. Centralized config with pydantic. |
+| `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
+| `services/slack_service.py`   | **Slack Service**. Notification handling.        |
+| `services/database.py`        | **Database Service**. SQLite persistence layer.   |
+| `services/policy_validator.py`| **Policy Validator**. IAM policy validation.     |
+| `services/retry_handler.py`   | **Retry Handler**. Exponential backoff retry.    |
+| `utils/theme.py`              | **Theme Utilities**. Custom gradient styling.     |
+| `utils/validators.py`         | **Input Validators**. Request validation.        |
+| `utils/logging_config.py`     | **Logging Config**. Structured logging setup.     |
+| `components/ui_components.py` | **UI Components**. Reusable visualization components. |
+| `components/sidebar.py`       | **Sidebar Component**. Enhanced history display.  |
+| `components/notifications.py` | **Notifications**. Toast notification manager.    |
+| `types.py`                    | **Type Definitions**. Type hints and dataclasses. |
+| `GEMINI.md`                   | Roadmap and architecture for Gemini integration. |
+| `requirements.txt`            | Python dependencies (pinned versions).           |
 
 ---
 
-## ⚙️ Requirements
+## ⚙️ Configuration
 
-- Python 3.8+
-- OpenAI API key for GPT-4 (set in `.env`)
-- AWS credentials (for local STS calls or Lambda invoke)
-- Environment variables saved in `.env` or in Lambda configuration
+Create a `.env` file in the root directory (see `.env.example` for template):
 
-### Python dependencies (in `requirements.txt`)
-streamlit
-boto3
-openai
-python-dotenv
-requests
+```bash
+# --- AI Provider Configuration ---
+# Choose: gemini, openai, anthropic/claude, or zhipu/glm
+LLM_PROVIDER=gemini
 
+# Gemini 3 Pro Preview (November 2025) - Latest
+GOOGLE_API_KEY=AIzaSy...
+GEMINI_MODEL=gemini-3-pro-preview
+# Alternatives: gemini-3-flash-preview, gemini-2.5-flash, gemini-2.5-pro
 
----
+# OpenAI GPT-5.1 (latest) - GPT-5 is previous model
+# OPENAI_API_KEY=sk-...
+# OPENAI_MODEL=gpt-5.1
+# Alternatives: gpt-5, o3-pro (reasoning), gpt-4o
 
-## 🧪 Getting Started (Local Dev)
+# Anthropic Claude Opus 4.5 (November 24, 2025) - Latest flagship
+# ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_MODEL=claude-opus-4-5-20251101
+# Alternatives: claude-sonnet-4-5-20251022, claude-haiku-4-5-20250214
 
-### Clone repo
+# Zhipu GLM-4.7 (December 2025) - Latest flagship
+# ZHIPUAI_API_KEY=...
+# ZHIPUAI_MODEL=glm-4.7
+# Alternative: glm-4.7-flash
+
+# --- AWS Configuration ---
+AWS_ACCOUNT_ID=123456789012
+AWS_ROLE_NAME=AgentPOCSessionRole  # Role to be assumed by the app
+
+# --- Slack Integration (Optional) ---
+SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+
+# --- Approval Configuration ---
+APPROVER_NAME=Admin
+
+# --- Database Configuration ---
+DATABASE_PATH=iam_dynamic.db
 ```
-git clone https://github.com/tupacalypse187/IAM-Dynamic.git`
+
+---
+
+## 🧪 Getting Started
+
+### 1. Installation
+```bash
+git clone https://github.com/tupacalypse187/IAM-Dynamic.git
 cd IAM-Dynamic
-```
-
-### Create virtual environment
-```
 python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Install requirements
-`pip install -r requirements.txt`
-
-### Set local environment variables (create .env)
+### 2. Run the App
+```bash
+streamlit run dynamicIAM_web.py
 ```
-cat > .env <<EOF
-OPENAI_API_KEY=sk-your-actual-openai-api-key-here
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
-AWS_ACCOUNT_ID=aws-account-id
-EOF
-```
-
-### Run the app
-`streamlit run dynamicIAM_web.py`
-
-Then open [http://localhost:8501](http://localhost:8501) in your browser.
-
----
-
-## 🐳 Run with Docker
-
-### Build Docker image
-`docker build -t dynamiciam .`
-
-### Run container (port 8501)
-`docker run -p 8501:8501 --env-file .env dynamiciam`
-
-To access: [http://localhost:8501](http://localhost:8501)
+Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ---
 
 ## 🧠 How It Works
+
+```mermaid
+graph LR
+    User[User] -->|Natural Language| UI[Streamlit UI]
+    UI -->|Prompt| Agent[LLM Service]
+    
+    subgraph "AI Reasoning"
+    Agent -->|Gemini 3.0| Policy[Generate JSON Policy]
+    Agent -->|Evaluate| Risk[Risk Score]
+    end
+    
+    Risk -->|Low Risk| Auto[Auto-Approve]
+    Risk -->|High Risk| Manual[Manual Approval]
+    
+    Auto --> STS[AWS STS]
+    Manual -->|Justification| STS
+    
+    STS -->|Credentials| User
 ```
-┌──────────────┐     Request     ┌─────────────┐       ┌────────────────────┐
-│   Web App    │ ─────────────▶ │ GPT-4 / LLM │──────▶│ IAM Policy + Risk  │
-└──────────────┘                 └─────────────┘       └────────────────────┘
-     │                                                         │
-     │             (Auto or Manual Approval)                   │
-     └────────────────────────────────────────────────────────▶ 
-                         AWS STS / Lambda
-                       Temporary Credentials
-```
 
-- Streamlit receives user text input and session duration
-- LLM generates IAM policy + Risk + Explanation
-- Depending on mode:
-  - App assumes role locally (STS) **OR**
-  - Sends to Lambda for credential execution
+1.  **Request:** User types a request or clicks a template.
+2.  **Analysis:** Gemini analyzes the intent and drafts a specific IAM policy.
+3.  **Risk Check:** The system flags wildcards or sensitive services.
+4.  **Issuance:** If approved, `boto3` calls `sts:AssumeRole` to mint credentials.
 
 ---
 
-## 🔐 App Variants
+## 🛡️ Security Notes
 
-| File                          | Purpose                                  |
-|-------------------------------|------------------------------------------|
-| dynamicIAM_web.py             | Streamlit app (assume-role locally)      |
-| dynamicIAM_lambda.py          | Streamlit app using Lambda backend       |
-| lambda_credential_issuer.py   | Lambda handler that runs STS + LLM       |
-
----
-
-## 📡 Slack Approval Notifications
-
-To enable Slack auditing:
-
-- Go to [Slack Webhooks](https://api.slack.com/messaging/webhooks)
-- Generate a webhook for your channel
-- Add it to `.env` or Lambda env:
-
-`SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…`
-
-
----
-
-## 📜 Example Request
-
-`I would like to list all S3 buckets in my account, and upload files to one.`
-
-
-Outcome:
-- GPT-4 generates IAM policy with `s3:ListBucket`, `PutObject`, etc.
-- Risk is evaluated
-- If `low`, credentials issued instantly
-- If `high/critical`, requires justification and approval button
-
----
-
-## 🎯 Roadmap Ideas
-
-- Slack emoji approval workflow
-- Native approval delegation and roles
-- CI/CD ephemeral access flows
-- Integration with ITSM (Jira, SNOW)
-- Approval history/logging dashboard
-
----
-
-## 🛡️ Security
-
-This tool encourages:
-- Zero standing privilege
-- Principle of least privilege (PLP)
-- Explicit access duration with clear expiry
-- Audit notifications via Slack or logging
-
----
-
-## 🙏 Acknowledgments
-
-Built by [@tupacalypse187](https://github.com/tupacalypse187) with ❤️ on Streamlit, OpenAI, AWS STS, and Lambda.
+-   **Principal of Least Privilege:** The AI is instructed to always scope down resources.
+-   **Audit Trail:** All requests (and their risk scores) are logged to Slack.
+-   **Ephemeral Access:** Credentials issued are valid *only* for the requested duration.
 
 ---
 
 ## 📄 License
 
-MIT © 2024
-
+MIT © 2025
