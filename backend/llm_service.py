@@ -296,8 +296,7 @@ Request: "{request_text}"
                 policy=data.get("policy", {}),
                 risk=data.get("risk_score", "medium"),
                 explanation=data.get("explanation", ""),
-                approver_note=data.get("approver_note", ""),
-                suggested_refinement=data.get("suggested_refinement", "")
+                approver_note=data.get("approver_note", "")
             )
         except Exception as e:
             logger.error(f"OpenAI generation error: {e}")

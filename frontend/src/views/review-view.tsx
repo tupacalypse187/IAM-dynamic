@@ -11,9 +11,6 @@ import { Label } from '@/components/ui/label'
 
 interface ReviewViewProps {
   policyData: any
-  requestText: string
-  duration: number
-  onDurationChange: (duration: number) => void
   onBack: () => void
   onCredentialsIssued: (credentials: any) => void
   onRejected: () => void
@@ -28,9 +25,6 @@ const riskConfig = {
 
 export default function ReviewView({
   policyData,
-  requestText,
-  duration,
-  onDurationChange,
   onBack,
   onCredentialsIssued,
   onRejected,

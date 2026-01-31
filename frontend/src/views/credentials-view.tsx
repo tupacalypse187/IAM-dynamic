@@ -44,10 +44,15 @@ export default function CredentialsView({ credentials, duration, onNewRequest }:
     return () => clearInterval(interval)
   }, [credentials.expiration])
 
-  const copyToClipboard = (type: 'bash' | 'powershell' | 'aws-cli', text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(type)
-    setTimeout(() => setCopied(null), 2000)
+  const copyToClipboard = async (type: 'bash' | 'powershell' | 'aws-cli', text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(type)
+      setTimeout(() => setCopied(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+      // Optionally show user feedback about the failure
+    }
   }
 
   const bashScript = `export AWS_ACCESS_KEY_ID="${credentials.access_key_id}"

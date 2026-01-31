@@ -47,7 +47,7 @@ class PolicyRequest(BaseModel):
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
 
 
-class PolicyResponse(BaseModel):
+class PolicyResponseModel(BaseModel):
     """Response model for generated policy"""
     policy: dict
     risk: str
@@ -175,7 +175,7 @@ async def get_providers():
     return {"providers": providers, "account_id": config.aws.account_id}
 
 
-@app.post("/api/generate-policy", response_model=PolicyResponse)
+@app.post("/api/generate-policy", response_model=PolicyResponseModel)
 async def generate_policy(request: PolicyRequest):
     """
     Generate IAM policy from natural language request
@@ -197,7 +197,7 @@ async def generate_policy(request: PolicyRequest):
         # Determine if auto-approved
         auto_approved = response.risk.lower() == "low"
 
-        return PolicyResponse(
+        return PolicyResponseModel(
             policy=response.policy,
             risk=response.risk,
             explanation=response.explanation,

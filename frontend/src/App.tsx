@@ -40,7 +40,6 @@ function App() {
         {/* Sidebar */}
         <Sidebar
           config={config}
-          requestText={requestText}
           onRequestTextChange={setRequestText}
           selectedProvider={selectedProvider}
           onProviderChange={setSelectedProvider}
@@ -80,9 +79,6 @@ function App() {
             {view === 'review' && policyData && (
               <ReviewView
                 policyData={policyData}
-                requestText={requestText}
-                duration={duration}
-                onDurationChange={setDuration}
                 onBack={() => setView('request')}
                 onCredentialsIssued={(creds) => {
                   setCredentials(creds)

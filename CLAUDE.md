@@ -4,59 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses Google Gemini 3.0 (with OpenAI fallback) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
+**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Zhipu GLM) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
 
 ## Architecture
 
-### Dual-Engine Strategy Pattern
+### Modern React/FastAPI Architecture (v3.0+)
 
-The application uses a Strategy Pattern ([`llm_service.py`](llm_service.py)) to support multiple AI providers:
+The application uses a modern frontend/backend separation pattern:
+
+- **Frontend (`frontend/`)**: React SPA with TypeScript, Vite, and Tailwind CSS
+  - Multi-view state machine (request → review → credentials/rejected)
+  - System theme detection and toggle (light/dark/system)
+  - LLM provider/model selector with real-time switching
+  - Markdown-formatted AI guidance with syntax highlighting
+  - Multiple credential export formats (Bash, PowerShell, AWS CLI)
+
+- **Backend (`backend/`)**: FastAPI REST API
+  - Multi-provider LLM support (Gemini, OpenAI, Anthropic, Zhipu)
+  - Policy generation and validation endpoints
+  - Credential issuance via AWS STS AssumeRole
+  - Rejection guidance with AI-powered suggestions
+  - Comprehensive error handling and logging
+  - OpenAPI documentation at `/docs`
+
+### LLM Service Layer
+
+The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_service.py)) to support multiple AI providers:
 
 - **`LLMProvider`** (ABC): Abstract base class defining `generate_policy(request_text: str) -> PolicyResponse`
-- **`GeminiProvider`**: Default engine using `google.generativeai` with Gemini 3.0 Pro/Flash
-- **`OpenAIProvider`**: Legacy fallback using OpenAI's API
+- **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3 Pro Preview
+- **`OpenAIProvider`**: OpenAI GPT-5.1
+- **`AnthropicProvider`**: Anthropic Claude Opus 4.5
+- **`ZhipuProvider`**: Zhipu GLM-4.7
 
-The provider is selected via `LLM_PROVIDER` environment variable (`gemini` or `openai`).
-
-### Application Entry Points
-
-1. **`dynamicIAM_web.py`**: Main Streamlit application (current)
-   - Direct STS AssumeRole calls (no Lambda middleware)
-   - Modern dashboard UI with session history, quick templates, agentic status visualization
-   - Three-stage workflow: request → review → credentials
-
-2. **`dynamicIAM_lambda.py`**: Legacy Streamlit UI
-   - Calls backend Lambda function for credential issuance
-   - Single-stage form, simpler UI
-   - Kept for backward compatibility
-
-3. **`lambda_credential_issuer.py`**: AWS Lambda backend (legacy)
-   - Used only by `dynamicIAM_lambda.py`
-   - Performs STS AssumeRole with session policy
-   - Returns credentials with metadata
+The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `claude`, or `glm`).
 
 ### Data Flow
 
 ```
-User Request → LLMProvider.generate_policy() → PolicyResponse
-                                                        ↓
-                              {policy, risk, explanation, approver_note}
-                                                        ↓
-                            Risk-based auto-approval OR manual approval
-                                                        ↓
-                                    boto3 sts.assume_role() → Credentials
-                                                        ↓
-                                          Display + Slack audit log
+User Request (React UI)
+        ↓
+FastAPI POST /api/generate-policy
+        ↓
+LLMProvider.generate_policy() → PolicyResponse
+        ↓
+{policy, risk, explanation, approver_note}
+        ↓
+Risk-based auto-approval OR manual approval
+        ↓
+FastAPI POST /api/issue-credentials
+        ↓
+boto3 sts.assume_role() → Credentials
+        ↓
+Display + Slack audit log
 ```
 
-### Session State Management
+### Application Entry Points
 
-Streamlit session state tracks the workflow through stages (`request` → `review` → `completed`). Key keys:
-- `stage`: Current workflow stage
-- `policy_response`: `PolicyResponse` object from LLM
-- `creds`: Temporary AWS credentials
-- `history`: List of past requests (displayed in sidebar)
-- `auto_approved` / `needs_approval`: Boolean flags
+1. **Frontend**: `frontend/src/App.tsx`
+   - Main React application with view routing
+   - Views: request, review, credentials, rejected
+
+2. **Backend**: `backend/main.py`
+   - FastAPI application with API endpoints
+   - Health check, provider config, policy generation, credential issuance, rejection guidance
+
+### Backend Services
+
+- **`backend/services/sts_service.py`**: AWS STS AssumeRole with session policies
+- **`backend/services/slack_service.py`**: Webhook notifications for audit trail
 
 ## Running the Application
 
@@ -64,33 +80,66 @@ Streamlit session state tracks the workflow through stages (`request` → `revie
 # Setup
 python3 -m venv venv
 source venv/bin/activate  # venv\bin\activate on Windows
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
-# Run (default binds to localhost:8501)
-streamlit run dynamicIAM_web.py
+# Start Backend
+cd backend
+python main.py
+# Or: uvicorn main:app --reload --port 8000
 
-# Run with custom address
-streamlit run dynamicIAM_web.py --server.address 0.0.0.0
+# Start Frontend (new terminal)
+cd frontend
+npm install
+npm run dev
+# Or: npm run build && npm run preview
 ```
+
+**Development script:**
+```bash
+./start-dev.sh  # Starts both backend and frontend
+```
+
+**Access URLs:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
 ## Configuration
 
 Create a `.env` file in the project root:
 
 ```bash
-# AI Provider (required)
+# ============================================
+# AI Provider Configuration
+# ============================================
 LLM_PROVIDER=gemini
+
+# --- Gemini Configuration (Google) ---
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3.0-pro  # or gemini-3.0-flash
+GEMINI_MODEL=gemini-3-pro-preview
+# Alternative: gemini-3-flash-preview
 
-# Fallback / Legacy
+# --- OpenAI Configuration ---
 # OPENAI_API_KEY=sk-...
+# OPENAI_MODEL=gpt-5.1
 
-# AWS (required)
+# --- Anthropic Claude Configuration ---
+# ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_MODEL=claude-opus-4-5-20251101
+
+# --- Zhipu GLM Configuration ---
+# ZHIPUAI_API_KEY=...
+# ZHIPUAI_MODEL=glm-4.7
+
+# ============================================
+# AWS Configuration
+# ============================================
 AWS_ACCOUNT_ID=123456789012
-AWS_ROLE_NAME=AgentPOCSessionRole  # Role ARN: arn:aws:iam::{ACCOUNT_ID}:role/{ROLE_NAME}
+AWS_ROLE_NAME=AgentPOCSessionRole
 
-# Optional
+# ============================================
+# Optional Configuration
+# ============================================
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
 APPROVER_NAME=Admin
 ```
@@ -104,24 +153,44 @@ The LLM system instruction enforces:
 4. **Least privilege** interpretation of vague requests
 
 Risk-based duration limits:
-- Low: 8 hours max
+- Low: 12 hours max
 - Medium: 4 hours max
 - High: 2 hours max
 - Critical: 1 hour max
 
-## UI Components
+## Frontend Views
 
-### Quick Templates
-Located in `dynamicIAM_web.py:137-145`, these one-click prompts pre-fill common access patterns:
-- S3 Read-Only
-- EC2 Observer
-- Lambda Invoker
+### Request View (`frontend/src/views/request-view.tsx`)
+- Natural language input for access request
+- Duration slider (1-12 hours)
+- LLM provider selector
+- Template buttons for common patterns
 
-### Credential Display Formats
-Credentials are displayed in three formats via tabs:
-- Bash/Zsh (`export` variables)
-- PowerShell (`$Env:` variables)
-- AWS CLI Profile (`aws configure set`)
+### Review View (`frontend/src/views/review-view.tsx`)
+- Display generated policy (JSON)
+- Risk assessment badge
+- Approver note and explanation
+- Issue credentials or reject buttons
+
+### Credentials View (`frontend/src/views/credentials-view.tsx`)
+- Display temporary credentials
+- Multiple export formats (Bash, PowerShell, AWS CLI)
+- Expiration time
+- New request button
+
+### Rejected View (`frontend/src/views/rejected-view.tsx`)
+- Rejection reason
+- AI-generated guidance for resubmission
+- Markdown-formatted suggestions
+- Revise request or start fresh buttons
+
+## API Endpoints
+
+- `GET /health` - Health check
+- `GET /config/providers` - Get available LLM providers
+- `POST /api/generate-policy` - Generate IAM policy from natural language
+- `POST /api/issue-credentials` - Issue temporary AWS credentials
+- `POST /api/generate-rejection-guidance` - Get AI guidance for rejected requests
 
 ## Roadmap (See GEMINI.md)
 

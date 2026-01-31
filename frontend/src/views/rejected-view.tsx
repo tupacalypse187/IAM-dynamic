@@ -115,7 +115,7 @@ export default function RejectedView({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Button
           onClick={fetchGuidance}
-          disabled={loading || guidance !== null}
+          disabled={loading}
           variant="default"
           className="w-full"
         >

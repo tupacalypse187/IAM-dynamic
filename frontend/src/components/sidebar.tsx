@@ -10,7 +10,6 @@ import { Monitor, Moon, Sun, Settings } from 'lucide-react'
 
 interface SidebarProps {
   config?: ProvidersResponse
-  requestText: string
   onRequestTextChange: (text: string) => void
   selectedProvider?: string
   onProviderChange?: (provider: string) => void
@@ -32,7 +31,7 @@ const themeIcons = {
   dark: Moon,
 }
 
-export default function Sidebar({ config, requestText, onRequestTextChange, selectedProvider, onProviderChange }: SidebarProps) {
+export default function Sidebar({ config, onRequestTextChange, selectedProvider, onProviderChange }: SidebarProps) {
   const { theme, setTheme } = useTheme()
   const [provider, setProvider] = useState(selectedProvider || config?.providers[0]?.id || 'gemini')
 
