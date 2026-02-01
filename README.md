@@ -2,14 +2,15 @@
 
 **AI-Driven Just-In-Time AWS IAM Access Request Portal**
 
-[![Streamlit](https://img.shields.io/badge/Built%20with-Streamlit-ff4b4b?logo=streamlit)](https://streamlit.io)
+[![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Gemini 3.0](https://img.shields.io/badge/AI-Gemini%203.0-4285F4?logo=google)](https://deepmind.google/technologies/gemini/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
-[![Dockerized](https://img.shields.io/badge/Containerized-Docker-blue?logo=docker)](https://www.docker.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 ## 🚀 Overview
 
-**IAM-Dynamic** is a secure, user-friendly portal that leverages **Google Gemini 3.0** (with OpenAI fallback) to generate least-privilege AWS IAM policies from natural language. It features an "Agentic" workflow that assesses risk, validates requests, and issues temporary credentials via AWS STS.
+**IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Zhipu GLM) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
 
 **Key Capabilities:**
 -   **♊ Gemini First:** Powered by Gemini 3.0 Pro/Flash for high-reasoning policy generation.
@@ -25,46 +26,58 @@
 ### Core Functionality
 -   **Natural Language Input:** "I need read-only access to the production S3 bucket."
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
--   **Modern UI:** Gradient-themed dashboard with session history and real-time agent status.
--   **Quad AI Support:** Switch between Gemini (default), OpenAI, Anthropic Claude, or Zhipu GLM via configuration.
+-   **Modern React UI:** Multi-view state machine (request → review → credentials/rejected) with responsive design.
+-   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, or Zhipu GLM.
 -   **Slack Integration:** Audit logs and approval notifications sent directly to Slack.
 
-### New in v2.0
--   **🎨 Enhanced UI:** Modern gradient theme with visualizations and animations
--   **📊 Policy Visualization:** Interactive pie charts showing permission distribution by AWS service
--   **🎯 Risk Gauge:** Visual gauge chart for risk assessment (Low/Medium/High/Critical)
--   **⏰ Expiration Timer:** Countdown timer showing credential expiration with color-coded warnings
--   **💾 SQLite Persistence:** Session history persisted across application restarts
--   **📜 Enhanced History:** Searchable and filterable session history
--   **⬇️ Export Features:** Export history to CSV for audit and compliance
--   **🔒 Policy Validation:** Built-in validation for IAM policies against best practices
+### New in v3.0
+-   **🎨 React Frontend:** TypeScript with Vite for fast development, Radix UI components for accessibility
+-   **🌗 Theme System:** System theme detection (light/dark/system) with toggle
+-   **📝 Enhanced Rejection Flow:** AI-generated guidance with markdown formatting for resubmission
+-   **💾 Multiple Export Formats:** Export credentials in Bash, PowerShell, and AWS CLI formats
+-   **🚦 Real-time Risk Assessment:** Color-coded badges (Low/Medium/High/Critical) with duration limits
+-   **🔐 Session Policies:** AWS STS AssumeRole with scoped-down session policies
+-   **📊 FastAPI Backend:** REST API with OpenAPI documentation at `/docs`
+-   **🗄️ SQLite Persistence:** Request history and audit logs persisted across application restarts
+-   **🛡️ Comprehensive Error Handling:** Structured logging and CORS configuration
 -   **🔄 Retry Mechanism:** Automatic retry with exponential backoff for transient failures
--   **✅ Input Validation:** Comprehensive validation for all user inputs
--   **📝 Download Credentials:** One-click download of credential scripts
 
 ---
 
 ## 📦 Project Structure
 
+### Backend (`backend/`)
 | File                          | Description                                      |
 | ----------------------------- | ------------------------------------------------ |
-| `dynamicIAM_web.py`           | **Main Application**. Streamlit UI & Logic.      |
-| `llm_service.py`              | **AI Service Layer**. Handles Gemini/OpenAI/Anthropic/Zhipu API. |
+| `main.py`                     | **FastAPI Application**. REST API with endpoints. |
+| `llm_service.py`              | **AI Service Layer**. Multi-provider LLM abstraction (Gemini/OpenAI/Anthropic/Zhipu). |
 | `config.py`                   | **Configuration**. Centralized config with pydantic. |
 | `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
 | `services/database.py`        | **Database Service**. SQLite persistence layer.   |
-| `services/policy_validator.py`| **Policy Validator**. IAM policy validation.     |
-| `services/retry_handler.py`   | **Retry Handler**. Exponential backoff retry.    |
-| `utils/theme.py`              | **Theme Utilities**. Custom gradient styling.     |
+| `services/policy_validator.py`| **Policy Validator**. IAM policy risk assessment. |
 | `utils/validators.py`         | **Input Validators**. Request validation.        |
 | `utils/logging_config.py`     | **Logging Config**. Structured logging setup.     |
-| `components/ui_components.py` | **UI Components**. Reusable visualization components. |
-| `components/sidebar.py`       | **Sidebar Component**. Enhanced history display.  |
-| `components/notifications.py` | **Notifications**. Toast notification manager.    |
-| `types.py`                    | **Type Definitions**. Type hints and dataclasses. |
-| `GEMINI.md`                   | Roadmap and architecture for Gemini integration. |
 | `requirements.txt`            | Python dependencies (pinned versions).           |
+
+### Frontend (`frontend/`)
+| File/Directory                | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `src/App.tsx`                 | **Main React Application**. View routing and state management. |
+| `src/views/request-view.tsx`  | Request input form with templates and provider selector. |
+| `src/views/review-view.tsx`   | Policy review with risk assessment and approval. |
+| `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
+| `src/views/rejected-view.tsx` | Rejection display with AI-generated guidance. |
+| `package.json`                | Frontend dependencies (React, Vite, Tailwind, Radix UI). |
+
+### Root
+| File                          | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `start-dev.sh`                | Development script to start both frontend and backend. |
+| `.env`                        | Environment configuration (AI provider, AWS, Slack). |
+| `CLAUDE.md`                   | Documentation for Claude Code (AI assistant).    |
+| `GEMINI.md`                   | Roadmap and architecture for Gemini integration. |
+| `CHANGELOG.md`                | Version history and release notes.               |
 
 ---
 
@@ -121,14 +134,29 @@ git clone https://github.com/tupacalypse187/IAM-Dynamic.git
 cd IAM-Dynamic
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
+cd frontend && npm install
 ```
 
 ### 2. Run the App
+
+**Option A: Development Script**
 ```bash
-streamlit run dynamicIAM_web.py
+./start-dev.sh
 ```
-Open [http://localhost:8501](http://localhost:8501) in your browser.
+
+**Option B: Separate Terminals**
+```bash
+# Terminal 1: Backend
+cd backend
+python main.py
+
+# Terminal 2: Frontend
+cd frontend
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
 
 ---
 
@@ -136,11 +164,12 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ```mermaid
 graph LR
-    User[User] -->|Natural Language| UI[Streamlit UI]
-    UI -->|Prompt| Agent[LLM Service]
+    User[User] -->|Natural Language| UI[React Frontend]
+    UI -->|API Request| API[FastAPI Backend]
+    API -->|Prompt| Agent[LLM Service]
     
     subgraph "AI Reasoning"
-    Agent -->|Gemini 3.0| Policy[Generate JSON Policy]
+    Agent -->|Multi-Provider| Policy[Generate JSON Policy]
     Agent -->|Evaluate| Risk[Risk Score]
     end
     
@@ -150,11 +179,12 @@ graph LR
     Auto --> STS[AWS STS]
     Manual -->|Justification| STS
     
-    STS -->|Credentials| User
+    STS -->|Credentials| API
+    API -->|JSON Response| UI
 ```
 
-1.  **Request:** User types a request or clicks a template.
-2.  **Analysis:** Gemini analyzes the intent and drafts a specific IAM policy.
+1.  **Request:** User types a request or clicks a template in the React UI.
+2.  **Analysis:** AI provider (Gemini/OpenAI/Claude/GLM) analyzes intent and drafts IAM policy.
 3.  **Risk Check:** The system flags wildcards or sensitive services.
 4.  **Issuance:** If approved, `boto3` calls `sts:AssumeRole` to mint credentials.
 
