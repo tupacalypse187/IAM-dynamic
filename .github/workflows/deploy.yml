@@ -17,6 +17,7 @@ env:
   REGISTRY: ghcr.io
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/iam-dynamic-frontend
   BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/iam-dynamic-backend
+  CADDY_IMAGE: ghcr.io/${{ github.repository_owner }}/iam-dynamic-caddy
 
 jobs:
   security:
@@ -122,6 +123,8 @@ jobs:
           push: true
           tags: ${{ steps.frontend-meta.outputs.tags }}
           labels: ${{ steps.frontend-meta.outputs.labels }}
+          build-args: |
+            VITE_TURNSTILE_SITE_KEY=${{ secrets.TURNSTILE_SITE_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -149,6 +152,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Caddy image
+      - name: Caddy image metadata
+        id: caddy-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.CADDY_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push caddy
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.caddy
+          push: true
+          tags: ${{ steps.caddy-meta.outputs.tags }}
+          labels: ${{ steps.caddy-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       # Security scan — install trivy via apt repository
       - name: Install Trivy
         run: |
@@ -165,6 +192,10 @@ jobs:
 
       - name: Trivy scan backend
         run: trivy image --severity CRITICAL,HIGH --exit-code 0 ${{ env.BACKEND_IMAGE }}:latest
+        continue-on-error: true
+
+      - name: Trivy scan caddy
+        run: trivy image --severity CRITICAL,HIGH --exit-code 0 ${{ env.CADDY_IMAGE }}:latest
         continue-on-error: true
 
   deploy:
@@ -187,8 +218,8 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d
             echo "Waiting for health checks..."
             sleep 10
-            curl -sf http://localhost:8080/nginx-health || exit 1
-            curl -sf http://localhost:8080/health || exit 1
+            docker compose -f docker-compose.prod.yml exec -T frontend wget -qO- http://localhost:8080/nginx-health || exit 1
+            docker compose -f docker-compose.prod.yml exec -T frontend wget -qO- http://localhost:8080/health || exit 1
             echo "Deployment healthy"
 
   cleanup:
@@ -197,7 +228,7 @@ jobs:
     needs: deploy
     if: always() && needs.deploy.result == 'success'
     steps:
-      - name: Remove old images
+      - name: Remove old frontend images
         uses: actions/delete-package-versions@v5
         with:
           package-name: iam-dynamic-frontend
@@ -209,6 +240,14 @@ jobs:
         uses: actions/delete-package-versions@v5
         with:
           package-name: iam-dynamic-backend
+          package-type: container
+          min-versions-to-keep: 3
+        continue-on-error: true
+
+      - name: Remove old caddy images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: iam-dynamic-caddy
           package-type: container
           min-versions-to-keep: 3
         continue-on-error: true
