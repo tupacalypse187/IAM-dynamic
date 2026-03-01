@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-primary: 222.2 47.4% 11.2%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 221.2 83.2% 53.3%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom prose styles for markdown content */
+@layer components {
+  .prose-custom {
+    @apply max-w-none text-sm leading-7;
+  }
+
+  .prose-custom h1,
+  .prose-custom h2,
+  .prose-custom h3,
+  .prose-custom h4 {
+    @apply font-bold text-foreground scroll-m-20;
+  }
+
+  .prose-custom h1 {
+    @apply text-2xl mt-8 mb-4;
+  }
+
+  .prose-custom h2 {
+    @apply text-xl mt-6 mb-3 flex items-center gap-2;
+  }
+
+  .prose-custom h3 {
+    @apply text-lg mt-4 mb-2;
+  }
+
+  .prose-custom p {
+    @apply mb-4;
+  }
+
+  .prose-custom ul {
+    @apply my-4 space-y-2 list-disc pl-6;
+  }
+
+  .prose-custom ol {
+    @apply my-4 space-y-3 list-decimal pl-6;
+  }
+
+  .prose-custom ol > li {
+    @apply pl-2;
+  }
+
+  .prose-custom ul > li {
+    @apply pl-1;
+  }
+
+  .prose-custom li {
+    @apply leading-7 marker:text-primary;
+  }
+
+  .prose-custom strong {
+    @apply font-semibold text-foreground;
+  }
+
+  .prose-custom code {
+    @apply px-1.5 py-0.5 rounded-md bg-muted text-sm font-mono;
+  }
+
+  .prose-custom pre {
+    @apply my-4 p-4 rounded-lg bg-muted text-sm overflow-x-auto;
+  }
+
+  .prose-custom pre code {
+    @apply p-0 bg-transparent;
+  }
+
+  .prose-custom blockquote {
+    @apply my-4 pl-4 border-l-4 border-primary italic text-muted-foreground;
+  }
+
+  .prose-custom hr {
+    @apply my-6 border-border;
+  }
+
+  .prose-custom a {
+    @apply text-primary underline underline-offset-4 hover:underline-offset-0;
+  }
+
+  /* Dark mode overrides */
+  .dark .prose-custom strong {
+    @apply text-foreground;
+  }
+
+  .dark .prose-custom code {
+    @apply bg-muted/50 text-foreground;
+  }
+}
