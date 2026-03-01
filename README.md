@@ -21,6 +21,36 @@
 
 ---
 
+## 🧠 How It Works
+
+```mermaid
+graph LR
+    User[User] -->|Natural Language| UI[React Frontend]
+    UI -->|API Request| API[FastAPI Backend]
+    API -->|Prompt| Agent[LLM Service]
+    
+    subgraph "AI Reasoning"
+    Agent -->|Multi-Provider| Policy[Generate JSON Policy]
+    Agent -->|Evaluate| Risk[Risk Score]
+    end
+    
+    Risk -->|Low Risk| Auto[Auto-Approve]
+    Risk -->|High Risk| Manual[Manual Approval]
+    
+    Auto --> STS[AWS STS]
+    Manual -->|Justification| STS
+    
+    STS -->|Credentials| API
+    API -->|JSON Response| UI
+```
+
+1.  **Request:** User types a request or clicks a template in the React UI.
+2.  **Analysis:** AI provider (Gemini/OpenAI/Claude/GLM) analyzes intent and drafts IAM policy.
+3.  **Risk Check:** The system flags wildcards or sensitive services.
+4.  **Issuance:** If approved, `boto3` calls `sts:AssumeRole` to mint credentials.
+
+---
+
 ## ✨ Features
 
 ### Core Functionality
@@ -157,36 +187,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
-
----
-
-## 🧠 How It Works
-
-```mermaid
-graph LR
-    User[User] -->|Natural Language| UI[React Frontend]
-    UI -->|API Request| API[FastAPI Backend]
-    API -->|Prompt| Agent[LLM Service]
-    
-    subgraph "AI Reasoning"
-    Agent -->|Multi-Provider| Policy[Generate JSON Policy]
-    Agent -->|Evaluate| Risk[Risk Score]
-    end
-    
-    Risk -->|Low Risk| Auto[Auto-Approve]
-    Risk -->|High Risk| Manual[Manual Approval]
-    
-    Auto --> STS[AWS STS]
-    Manual -->|Justification| STS
-    
-    STS -->|Credentials| API
-    API -->|JSON Response| UI
-```
-
-1.  **Request:** User types a request or clicks a template in the React UI.
-2.  **Analysis:** AI provider (Gemini/OpenAI/Claude/GLM) analyzes intent and drafts IAM policy.
-3.  **Risk Check:** The system flags wildcards or sensitive services.
-4.  **Issuance:** If approved, `boto3` calls `sts:AssumeRole` to mint credentials.
 
 ---
 
