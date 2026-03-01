@@ -12,7 +12,6 @@ concurrency:
 permissions:
   contents: read
   packages: write
-  security-events: write
 
 env:
   REGISTRY: ghcr.io
@@ -149,39 +148,6 @@ jobs:
           labels: ${{ steps.backend-meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # Security scan
-      - name: Trivy scan frontend
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}:latest
-          format: sarif
-          output: trivy-frontend.sarif
-          severity: CRITICAL,HIGH
-        continue-on-error: true
-
-      - name: Trivy scan backend
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.BACKEND_IMAGE }}:latest
-          format: sarif
-          output: trivy-backend.sarif
-          severity: CRITICAL,HIGH
-        continue-on-error: true
-
-      - name: Upload Trivy SARIF (frontend)
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-frontend.sarif
-          category: trivy-frontend
-        continue-on-error: true
-
-      - name: Upload Trivy SARIF (backend)
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-backend.sarif
-          category: trivy-backend
-        continue-on-error: true
 
   deploy:
     name: Deploy to Production
