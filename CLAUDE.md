@@ -76,6 +76,8 @@ Display + Slack audit log
 
 ## Running the Application
 
+### Local Development (without Docker)
+
 ```bash
 # Setup
 python3 -m venv venv
@@ -103,6 +105,49 @@ npm run dev
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+
+### Docker Development
+
+```bash
+docker compose up --build        # Build and run both containers
+docker compose up --build -d     # Detached mode
+docker compose down              # Stop and remove containers
+```
+
+**Access URL:** http://localhost:8080 (nginx serves frontend + proxies API to backend)
+
+### Docker Production
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Uses pre-built images from `ghcr.io/tupacalypse187/iam-dynamic-*`.
+
+## Docker Architecture
+
+Two-container setup orchestrated by docker-compose:
+
+| Service | Base Image | Port | Role |
+|---------|-----------|------|------|
+| `frontend` | `nginx:1.27-alpine` | 8080 | Serves React SPA, reverse-proxies `/api`, `/health`, `/config`, `/docs` to backend |
+| `backend` | `python:3.11-slim` | 8000 | FastAPI + uvicorn with 2 workers |
+
+Key files:
+- `Dockerfile.frontend`: Multi-stage build (node:20-alpine → nginx:1.27-alpine), non-root user
+- `Dockerfile.backend`: python:3.11-slim, non-root user, tini init
+- `docker/default.conf`: nginx reverse proxy config (mirrors Vite dev proxy from `vite.config.ts`)
+- `docker/nginx.conf`: Main nginx config (gzip, rate limiting)
+
+## CI/CD
+
+### `.github/workflows/ci.yml` — PR Checks
+Triggers on `pull_request` to `main`. Jobs: `frontend-checks` (lint, typecheck, build), `backend-checks` (ruff, pytest), `docker-build` (build both images, no push).
+
+### `.github/workflows/deploy.yml` — Main Branch Deployment
+Triggers on `push` to `main`. Jobs: `security` → `test` → `build-images` (push to GHCR + Trivy scan) → `deploy` (SSH) → `cleanup`.
+
+Required GitHub Secrets: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL` (optional). `GITHUB_TOKEN` is automatic.
 
 ## Configuration
 
