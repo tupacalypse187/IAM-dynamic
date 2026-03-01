@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Lock } from 'lucide-react'
+import { Lock, LogOut, Loader2, User } from 'lucide-react'
 import { api } from './lib/api'
+import { useAuth } from './components/auth-provider'
 import { ThemeProvider } from './components/theme-provider'
 import Sidebar from './components/sidebar'
 import RequestView from './views/request-view'
 import ReviewView from './views/review-view'
 import CredentialsView from './views/credentials-view'
 import RejectedView from './views/rejected-view'
+import LoginView from './views/login-view'
+import { Button } from './components/ui/button'
 
 type ViewType = 'request' | 'review' | 'credentials' | 'rejected'
 
@@ -21,6 +24,7 @@ interface PolicyData {
 }
 
 function App() {
+  const { isAuthenticated, isLoading, username, logout, authRequired } = useAuth()
   const [view, setView] = useState<ViewType>('request')
   const [policyData, setPolicyData] = useState<PolicyData | null>(null)
   const [duration, setDuration] = useState(2)
@@ -28,11 +32,32 @@ function App() {
   const [requestText, setRequestText] = useState('')
   const [selectedProvider, setSelectedProvider] = useState<string>('gemini')
 
-  // Fetch providers and config
+  // Fetch providers and config (only when authenticated)
   const { data: config } = useQuery({
     queryKey: ['config'],
     queryFn: api.getProviders,
+    enabled: isAuthenticated,
   })
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <ThemeProvider defaultTheme="system" storageKey="iam-theme">
+        <div className="flex h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </ThemeProvider>
+    )
+  }
+
+  // Auth gate — show login when auth is required and user is not authenticated
+  if (authRequired && !isAuthenticated) {
+    return (
+      <ThemeProvider defaultTheme="system" storageKey="iam-theme">
+        <LoginView />
+      </ThemeProvider>
+    )
+  }
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="iam-theme">
@@ -49,14 +74,27 @@ function App() {
         <main className="flex-1 overflow-y-auto">
           {/* Header */}
           <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="container flex h-16 items-center px-6">
-              <div className="flex items-center gap-2">
-                <Lock className="h-6 w-6 text-primary" />
-                <h1 className="text-xl font-bold">IAM-Dynamic Portal</h1>
+            <div className="container flex h-16 items-center justify-between px-6">
+              <div className="flex items-center">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-6 w-6 text-primary" />
+                  <h1 className="text-xl font-bold">IAM-Dynamic Portal</h1>
+                </div>
+                <p className="ml-4 text-sm text-muted-foreground">
+                  AI-Driven Least Privilege Access
+                </p>
               </div>
-              <p className="ml-4 text-sm text-muted-foreground">
-                AI-Driven Least Privilege Access
-              </p>
+              {authRequired && (
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <User className="h-4 w-4" />
+                    {username}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={logout} title="Sign out">
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </header>
 

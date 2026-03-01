@@ -72,6 +72,13 @@ graph LR
 -   **🛡️ Comprehensive Error Handling:** Structured logging and CORS configuration
 -   **🔄 Retry Mechanism:** Automatic retry with exponential backoff for transient failures
 
+### New in v3.1
+-   **🔒 Authentication Portal:** Login page with JWT-based session management (bcrypt password hashing)
+-   **🤖 Cloudflare Turnstile:** Optional CAPTCHA on login form to prevent brute-force attacks
+-   **🔐 HTTPS via Caddy:** Automatic TLS certificates via Let's Encrypt with Cloudflare DNS challenge
+-   **🛡️ Rate Limiting:** nginx rate limits on login endpoint (5 requests/minute)
+-   **⚡ Zero-config Local Dev:** Auth is optional — omit `AUTH_PASSWORD_HASH` and the app works without login
+
 ---
 
 ## 📦 Project Structure
@@ -84,6 +91,9 @@ graph LR
 | `config.py`                   | **Configuration**. Centralized config with pydantic. |
 | `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
+| `services/auth_service.py`    | **Auth Service**. JWT tokens and bcrypt password verification. |
+| `services/turnstile_service.py`| **Turnstile Service**. Cloudflare CAPTCHA verification. |
+| `scripts/hash_password.py`    | **CLI Utility**. Generate bcrypt hashes for `.env`. |
 | `services/database.py`        | **Database Service**. SQLite persistence layer.   |
 | `services/policy_validator.py`| **Policy Validator**. IAM policy risk assessment. |
 | `utils/validators.py`         | **Input Validators**. Request validation.        |
@@ -93,7 +103,9 @@ graph LR
 ### Frontend (`frontend/`)
 | File/Directory                | Description                                      |
 | ----------------------------- | ------------------------------------------------ |
-| `src/App.tsx`                 | **Main React Application**. View routing and state management. |
+| `src/App.tsx`                 | **Main React Application**. Auth gate, view routing and state management. |
+| `src/components/auth-provider.tsx` | Auth context provider (JWT session management). |
+| `src/views/login-view.tsx`    | Login form with optional Turnstile CAPTCHA. |
 | `src/views/request-view.tsx`  | Request input form with templates and provider selector. |
 | `src/views/review-view.tsx`   | Policy review with risk assessment and approval. |
 | `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
@@ -105,9 +117,11 @@ graph LR
 | ----------------------------- | ------------------------------------------------ |
 | `Dockerfile.frontend`         | Multi-stage build: Node 20 → nginx 1.27 (Alpine). |
 | `Dockerfile.backend`          | Python 3.11-slim with uvicorn (2 workers).       |
+| `Dockerfile.caddy`            | Custom Caddy with Cloudflare DNS module (xcaddy). |
 | `docker-compose.yml`          | Local development (hot-reload backend, nginx frontend). |
-| `docker-compose.prod.yml`     | Production (GHCR images, resource limits, restart policies). |
-| `docker/nginx.conf`           | Main nginx config (gzip, rate limiting).         |
+| `docker-compose.prod.yml`     | Production (Caddy + GHCR images, internal ports, resource limits). |
+| `docker/Caddyfile`            | Caddy config: TLS via Cloudflare DNS, security headers. |
+| `docker/nginx.conf`           | Main nginx config (gzip, rate limiting for API and login). |
 | `docker/default.conf`         | Server block: SPA + reverse proxy to backend.    |
 | `.github/workflows/ci.yml`    | PR checks: lint, typecheck, build, Docker build test. |
 | `.github/workflows/deploy.yml`| Main branch: security scan, build/push to GHCR, deploy. |
@@ -156,6 +170,16 @@ GEMINI_MODEL=gemini-3-pro-preview
 # --- AWS Configuration ---
 AWS_ACCOUNT_ID=123456789012
 AWS_ROLE_NAME=AgentPOCSessionRole  # Role to be assumed by the app
+
+# --- Authentication (optional — omit for no-auth local dev) ---
+# AUTH_USERNAME=admin
+# AUTH_PASSWORD_HASH=$2b$12$...   # python backend/scripts/hash_password.py
+# JWT_SECRET=random-secret-32-chars
+# TURNSTILE_SECRET_KEY=0x...      # Cloudflare Turnstile server key
+
+# --- Caddy / HTTPS (production only) ---
+# CLOUDFLARE_API_TOKEN=...
+# CADDY_DOMAIN=iam.yantorno.dev
 
 # --- Slack Integration (Optional) ---
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
@@ -236,6 +260,7 @@ GitHub Actions workflows are included for automated checks and deployment:
 | `PROD_HOST` | Production server hostname |
 | `PROD_USER` | SSH username |
 | `PROD_SSH_KEY` | SSH private key |
+| `TURNSTILE_SITE_KEY` | Cloudflare Turnstile public key (optional) |
 | `SLACK_WEBHOOK_URL` | Deployment notifications (optional) |
 
 `GITHUB_TOKEN` is automatic — no separate Docker registry credentials needed for GHCR.
@@ -245,6 +270,9 @@ GitHub Actions workflows are included for automated checks and deployment:
 ## 🛡️ Security Notes
 
 -   **Principal of Least Privilege:** The AI is instructed to always scope down resources.
+-   **Authentication Portal:** JWT-based login with bcrypt password hashing and optional Cloudflare Turnstile CAPTCHA.
+-   **HTTPS by Default:** Caddy with automatic Let's Encrypt certificates via Cloudflare DNS challenge in production.
+-   **Rate Limiting:** Login endpoint limited to 5 requests/minute per IP via nginx.
 -   **Audit Trail:** All requests (and their risk scores) are logged to Slack.
 -   **Ephemeral Access:** Credentials issued are valid *only* for the requested duration.
 

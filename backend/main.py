@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 # Import services
 from services.sts_service import STSService, STSAssumeRoleError
 from services.slack_service import SlackService
+from services.auth_service import AuthService
+from services.turnstile_service import TurnstileService
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
 
@@ -35,6 +37,21 @@ config = load_config()
 # Initialize services
 sts_service = STSService(config.aws.role_arn)
 slack_service = SlackService(config.slack.webhook_url)
+
+# Auth services (optional — disabled when AUTH_PASSWORD_HASH is not set)
+auth_service: Optional[AuthService] = None
+turnstile_service = TurnstileService(config.auth.turnstile_secret_key)
+
+if config.auth.enabled:
+    auth_service = AuthService(
+        username=config.auth.admin_username,
+        password_hash=config.auth.admin_password_hash,
+        jwt_secret=config.auth.jwt_secret,
+        jwt_expiry_hours=config.auth.jwt_expiry_hours,
+    )
+    logger.info("Authentication enabled")
+else:
+    logger.info("Authentication disabled (no AUTH_PASSWORD_HASH configured)")
 
 
 # --- Pydantic Models ---
@@ -82,6 +99,58 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
+class LoginRequest(BaseModel):
+    """Request model for authentication"""
+    username: str
+    password: str
+    turnstile_token: Optional[str] = None
+
+
+class LoginResponse(BaseModel):
+    """Response model for successful login"""
+    token: str
+    expires_at: str
+    username: str
+
+
+class AuthStatusResponse(BaseModel):
+    """Response for auth status check"""
+    authenticated: bool
+    username: Optional[str] = None
+    auth_required: bool
+
+
+# --- Auth Helpers ---
+
+def _extract_token(request: Request) -> Optional[str]:
+    """Extract JWT from Authorization header or session cookie."""
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return request.cookies.get("iam_session")
+
+
+async def get_current_user(request: Request) -> str:
+    """
+    Dependency that extracts and validates the current user.
+
+    When auth is disabled (no AUTH_PASSWORD_HASH), returns "admin" to
+    preserve the existing local dev workflow.
+    """
+    if auth_service is None:
+        return "admin"
+
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    username = auth_service.verify_token(token)
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return username
+
+
 # --- Lifespan Context Manager ---
 
 @asynccontextmanager
@@ -101,10 +170,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS — production domain derived from CADDY_DOMAIN env var
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+]
+caddy_domain = os.getenv("CADDY_DOMAIN")
+if caddy_domain:
+    cors_origins.append(f"https://{caddy_domain}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -144,8 +224,51 @@ async def health_check():
     )
 
 
+# --- Auth Endpoints ---
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: Request, body: LoginRequest):
+    """Authenticate and return a JWT token."""
+    if auth_service is None:
+        raise HTTPException(status_code=404, detail="Authentication is not enabled")
+
+    # Verify Turnstile CAPTCHA
+    remote_ip = request.headers.get("x-real-ip", request.client.host if request.client else None)
+    if not await turnstile_service.verify(body.turnstile_token, remote_ip):
+        raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
+
+    result = auth_service.authenticate(body.username, body.password)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return LoginResponse(
+        token=result.token,
+        expires_at=result.expires_at.isoformat(),
+        username=body.username,
+    )
+
+
+@app.get("/api/auth/verify", response_model=AuthStatusResponse)
+async def verify_auth(request: Request):
+    """Check if the current session is valid."""
+    auth_required = auth_service is not None
+
+    if not auth_required:
+        return AuthStatusResponse(authenticated=True, username="admin", auth_required=False)
+
+    token = _extract_token(request)
+    if token:
+        username = auth_service.verify_token(token)
+        if username:
+            return AuthStatusResponse(authenticated=True, username=username, auth_required=True)
+
+    return AuthStatusResponse(authenticated=False, auth_required=True)
+
+
+# --- Protected Endpoints ---
+
 @app.get("/config/providers")
-async def get_providers():
+async def get_providers(_user: str = Depends(get_current_user)):
     """Get available LLM providers"""
     providers = []
     if config.llm.google_api_key:
@@ -176,7 +299,7 @@ async def get_providers():
 
 
 @app.post("/api/generate-policy", response_model=PolicyResponseModel)
-async def generate_policy(request: PolicyRequest):
+async def generate_policy(request: PolicyRequest, _user: str = Depends(get_current_user)):
     """
     Generate IAM policy from natural language request
 
@@ -215,7 +338,7 @@ async def generate_policy(request: PolicyRequest):
 
 
 @app.post("/api/issue-credentials", response_model=CredentialsResponse)
-async def issue_credentials(request: IssueCredentialsRequest):
+async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depends(get_current_user)):
     """
     Issue temporary AWS credentials via STS AssumeRole
 
@@ -270,7 +393,7 @@ class RejectionGuidanceResponse(BaseModel):
 
 
 @app.post("/api/generate-rejection-guidance", response_model=RejectionGuidanceResponse)
-async def generate_rejection_guidance(request: RejectionGuidanceRequest):
+async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: str = Depends(get_current_user)):
     """
     Generate AI guidance for rejected requests to help user resubmit with better scoping
 
