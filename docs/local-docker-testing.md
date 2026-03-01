@@ -48,7 +48,15 @@ Add any additional provider keys (OpenAI, Anthropic, Zhipu) or AWS credentials a
 
 ### Optional: Enable Authentication Locally
 
-By default, authentication is **disabled** in local dev (no login page). To test the login flow locally, add these to your `.env`:
+By default, authentication is **disabled** in local dev (no login page). To test the login flow locally, use the setup script:
+
+```bash
+bash setup-auth.sh --dev
+```
+
+This prompts for a username/password, generates the bcrypt hash and JWT secret, and writes them to `.env`. Turnstile and Caddy steps are skipped in `--dev` mode.
+
+Alternatively, you can set the values manually:
 
 ```env
 AUTH_USERNAME=admin
@@ -56,7 +64,7 @@ AUTH_PASSWORD_HASH=$2b$12$...   # Generate with: python backend/scripts/hash_pas
 JWT_SECRET=dev-secret-at-least-32-characters-long
 ```
 
-To generate the password hash:
+To generate the password hash manually:
 
 ```bash
 pip install passlib[bcrypt]

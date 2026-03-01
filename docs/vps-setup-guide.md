@@ -81,6 +81,28 @@ scp docker-compose.prod.yml deploy@<your-contabo-ip>:/opt/iam-dynamic/
 
 ## 7. Create the `.env` File on the VPS
 
+There are two approaches: the interactive setup script (recommended) or manual `.env` creation.
+
+### Option A: Setup Script (Recommended)
+
+Clone the repo on the VPS (or scp the script) and run:
+
+```bash
+ssh deploy@<your-contabo-ip>
+cd /opt/iam-dynamic
+bash setup-auth.sh --prod
+```
+
+The `--prod` flag walks you through:
+1. Admin username + password (generates bcrypt hash and JWT secret automatically)
+2. Cloudflare Turnstile CAPTCHA keys (optional)
+3. Caddy HTTPS domain + Cloudflare API token
+4. GitHub Secrets reminder
+
+You'll still need to manually add your AI provider keys and AWS config to `.env` afterward.
+
+### Option B: Manual `.env` Creation
+
 SSH into the VPS and create the environment file with your secrets:
 
 ```bash
@@ -145,12 +167,9 @@ EOF
 chmod 600 /opt/iam-dynamic/.env
 ```
 
-### Generate the password hash
-
-On your local machine (or the VPS):
+To generate the password hash manually:
 
 ```bash
-cd IAM-Dynamic
 pip install passlib[bcrypt]
 python backend/scripts/hash_password.py
 # Enter your password, then copy the AUTH_PASSWORD_HASH=... output into .env
