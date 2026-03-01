@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && adduser --disabled-password --uid 1001 appuser
+
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ .
+
+# Copy health check script
+COPY docker/healthcheck-backend.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+ENTRYPOINT ["tini", "--"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

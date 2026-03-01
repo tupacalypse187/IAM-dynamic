@@ -100,6 +100,19 @@ graph LR
 | `src/views/rejected-view.tsx` | Rejection display with AI-generated guidance. |
 | `package.json`                | Frontend dependencies (React, Vite, Tailwind, Radix UI). |
 
+### Docker & CI/CD
+| File                          | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `Dockerfile.frontend`         | Multi-stage build: Node 20 → nginx 1.27 (Alpine). |
+| `Dockerfile.backend`          | Python 3.11-slim with uvicorn (2 workers).       |
+| `docker-compose.yml`          | Local development (hot-reload backend, nginx frontend). |
+| `docker-compose.prod.yml`     | Production (GHCR images, resource limits, restart policies). |
+| `docker/nginx.conf`           | Main nginx config (gzip, rate limiting).         |
+| `docker/default.conf`         | Server block: SPA + reverse proxy to backend.    |
+| `.github/workflows/ci.yml`    | PR checks: lint, typecheck, build, Docker build test. |
+| `.github/workflows/deploy.yml`| Main branch: security scan, build/push to GHCR, deploy. |
+| `.dockerignore`               | Docker context exclusions.                       |
+
 ### Root
 | File                          | Description                                      |
 | ----------------------------- | ------------------------------------------------ |
@@ -187,6 +200,45 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
+
+### 3. Run with Docker
+
+```bash
+# Build and start both containers
+docker compose up --build
+
+# Or run in detached mode
+docker compose up --build -d
+```
+
+Open [http://localhost:8080](http://localhost:8080) for the app (nginx serves the frontend and proxies API requests to the backend).
+
+**Production (GHCR images):**
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+---
+
+## 🔄 CI/CD
+
+GitHub Actions workflows are included for automated checks and deployment:
+
+| Workflow | Trigger | What it does |
+| -------- | ------- | ------------ |
+| **CI** (`.github/workflows/ci.yml`) | Pull requests to `main` | Lint, typecheck, and build both frontend and backend. Docker build test (no push). |
+| **Deploy** (`.github/workflows/deploy.yml`) | Push to `main` | Security scan, test, build & push images to GHCR, Trivy vulnerability scan, deploy via SSH, cleanup old images. |
+
+**Required GitHub Secrets for deployment:**
+
+| Secret | Purpose |
+| ------ | ------- |
+| `PROD_HOST` | Production server hostname |
+| `PROD_USER` | SSH username |
+| `PROD_SSH_KEY` | SSH private key |
+| `SLACK_WEBHOOK_URL` | Deployment notifications (optional) |
+
+`GITHUB_TOKEN` is automatic — no separate Docker registry credentials needed for GHCR.
 
 ---
 

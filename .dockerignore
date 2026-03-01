@@ -1,0 +1,51 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies (rebuilt in container)
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+*.pyo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+frontend/dist
+*.egg-info
+dist
+build
+
+# Docker
+.dockerignore
+Dockerfile*
+docker-compose*.yml
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+LICENSE
+
+# Virtual environments
+venv
+.venv
+env
+
+# Claude
+.claude

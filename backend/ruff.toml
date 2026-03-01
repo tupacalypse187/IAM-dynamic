@@ -1,0 +1,6 @@
+[lint]
+select = ["E", "F"]
+ignore = [
+    "E402",  # module-level imports after load_dotenv() calls
+    "E501",  # line too long (existing codebase style)
+]

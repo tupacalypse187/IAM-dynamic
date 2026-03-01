@@ -1,0 +1,55 @@
+services:
+  backend:
+    image: ghcr.io/tupacalypse187/iam-dynamic-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # AI Provider Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3-pro-preview}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.1}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-5-20251101}
+      - ZHIPUAI_API_KEY=${ZHIPUAI_API_KEY:-}
+      - ZHIPUAI_MODEL=${ZHIPUAI_MODEL:-glm-4.7}
+      # AWS Configuration
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-}
+      - AWS_ROLE_NAME=${AWS_ROLE_NAME:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      # Optional
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - APPROVER_NAME=${APPROVER_NAME:-Admin}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    restart: unless-stopped
+    networks:
+      - iam-network
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    image: ghcr.io/tupacalypse187/iam-dynamic-frontend:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - iam-network
+
+networks:
+  iam-network:
+    driver: bridge
