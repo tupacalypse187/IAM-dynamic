@@ -17,7 +17,7 @@ import os
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 # Try to import google.genai (new package), fallback to google.generativeai (deprecated)
 try:
