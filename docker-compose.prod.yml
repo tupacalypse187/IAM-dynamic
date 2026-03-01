@@ -7,7 +7,7 @@ services:
       - "443:443/udp"
     environment:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-iam.yantorno.dev}
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required for Caddy TLS}
       - ACME_EMAIL=${ACME_EMAIL:-admin@yantorno.dev}
     volumes:
       - caddy_data:/data
@@ -42,6 +42,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRY_HOURS=${JWT_EXPIRY_HOURS:-8}
       - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY:-}
+      # CORS (derives production origin from Caddy domain)
+      - CADDY_DOMAIN=${CADDY_DOMAIN:-iam.yantorno.dev}
       # Optional
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - APPROVER_NAME=${APPROVER_NAME:-Admin}

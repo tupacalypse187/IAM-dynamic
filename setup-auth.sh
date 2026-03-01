@@ -98,9 +98,10 @@ while true; do
 done
 
 echo -e "${YELLOW}Generating bcrypt hash...${NC}"
-AUTH_PASSWORD_HASH=$($PYTHON -c "
+AUTH_PASSWORD_HASH=$(IAM_PASSWORD="$AUTH_PASSWORD" $PYTHON -c "
+import os
 from passlib.hash import bcrypt
-print(bcrypt.hash('${AUTH_PASSWORD//\'/\'\\\'\'}'))
+print(bcrypt.hash(os.environ['IAM_PASSWORD']))
 ")
 
 # Generate JWT secret (random 48-char base64 string)

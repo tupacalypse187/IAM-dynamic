@@ -26,7 +26,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     ...options,
   })
 
-  if (response.status === 401) {
+  if (response.status === 401 && !url.endsWith('/api/auth/login')) {
     setToken(null)
     window.dispatchEvent(new CustomEvent('auth:logout'))
     throw new Error('Session expired. Please log in again.')

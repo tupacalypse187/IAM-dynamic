@@ -17,7 +17,7 @@ import os
 import logging
 from typing import Optional
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 load_dotenv()
 
@@ -78,6 +78,13 @@ class AuthConfig(BaseModel):
     def enabled(self) -> bool:
         """Auth is enabled only when a password hash is configured"""
         return bool(self.admin_password_hash)
+
+    @model_validator(mode="after")
+    def validate_jwt_secret_when_enabled(self) -> "AuthConfig":
+        """Require JWT_SECRET when auth is enabled to prevent signing with empty string"""
+        if self.admin_password_hash and not self.jwt_secret:
+            raise ValueError("JWT_SECRET must be set when AUTH_PASSWORD_HASH is configured")
+        return self
 
 
 class SlackConfig(BaseModel):

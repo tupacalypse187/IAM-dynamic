@@ -6,7 +6,7 @@ Generates least-privilege IAM policies using LLM and issues temporary credential
 """
 import os
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -120,7 +120,15 @@ class AuthStatusResponse(BaseModel):
     auth_required: bool
 
 
-# --- Auth Dependency ---
+# --- Auth Helpers ---
+
+def _extract_token(request: Request) -> Optional[str]:
+    """Extract JWT from Authorization header or session cookie."""
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return request.cookies.get("iam_session")
+
 
 async def get_current_user(request: Request) -> str:
     """
@@ -132,14 +140,7 @@ async def get_current_user(request: Request) -> str:
     if auth_service is None:
         return "admin"
 
-    # Check Authorization header first, then fall back to cookie
-    token = None
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-    else:
-        token = request.cookies.get("iam_session")
-
+    token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -169,17 +170,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS
+# Configure CORS — production domain derived from CADDY_DOMAIN env var
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+]
+caddy_domain = os.getenv("CADDY_DOMAIN")
+if caddy_domain:
+    cors_origins.append(f"https://{caddy_domain}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",
-        "https://iam.yantorno.dev",
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -232,15 +237,13 @@ async def login(request: Request, body: LoginRequest):
     if not await turnstile_service.verify(body.turnstile_token, remote_ip):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
-    token = auth_service.authenticate(body.username, body.password)
-    if not token:
+    result = auth_service.authenticate(body.username, body.password)
+    if not result:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=config.auth.jwt_expiry_hours)
-
     return LoginResponse(
-        token=token,
-        expires_at=expires_at.isoformat(),
+        token=result.token,
+        expires_at=result.expires_at.isoformat(),
         username=body.username,
     )
 
@@ -253,14 +256,7 @@ async def verify_auth(request: Request):
     if not auth_required:
         return AuthStatusResponse(authenticated=True, username="admin", auth_required=False)
 
-    # Try to extract token
-    token = None
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-    else:
-        token = request.cookies.get("iam_session")
-
+    token = _extract_token(request)
     if token:
         username = auth_service.verify_token(token)
         if username:
