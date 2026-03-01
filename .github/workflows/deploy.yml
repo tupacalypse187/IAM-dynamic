@@ -149,6 +149,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Security scan — pulls images from GHCR and prints results to job log
+      - name: Trivy scan frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:latest
+          format: table
+          severity: CRITICAL,HIGH
+        continue-on-error: true
+
+      - name: Trivy scan backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:latest
+          format: table
+          severity: CRITICAL,HIGH
+        continue-on-error: true
+
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
