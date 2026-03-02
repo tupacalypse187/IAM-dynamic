@@ -1,22 +1,60 @@
-# Contabo Ubuntu VPS Setup Guide
+# 🌐 Contabo VPS Deployment Guide
 
-This guide walks through setting up your Contabo Ubuntu VPS to receive automated deployments from GitHub Actions.
-
-## Prerequisites
-
-- A Contabo VPS with Ubuntu (22.04 or 24.04 recommended)
-- Root SSH access to the VPS
-- Your IAM-Dynamic repo at https://github.com/tupacalypse187/IAM-dynamic
+Deploy **IAM-Dynamic** on your Contabo Ubuntu VPS with automated GitHub Actions deployments.
 
 ---
 
-## 1. Initial Server Access
+## 📋 Overview
+
+This guide covers setting up a Contabo Ubuntu VPS to receive automated deployments from GitHub Actions. Perfect for production hosting with CI/CD automation.
+
+**What You'll Deploy:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Contabo VPS                               │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │                    Caddy (TLS)                           ││
+│  │                 :443 → :8080                             ││
+│  └─────────────────────────────────────────────────────────┘│
+│                           │                                  │
+│                           ▼                                  │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │                Frontend (nginx)                          ││
+│  │                   :8080                                  ││
+│  └─────────────────────────────────────────────────────────┘│
+│                           │                                  │
+│                           ▼                                  │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │                Backend (FastAPI)                         ││
+│  │                   :8000                                  ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🎯 Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| **VPS** | Contabo VPS with Ubuntu 22.04 or 24.04 |
+| **Access** | Root SSH access to the VPS |
+| **Repo** | Your fork of https://github.com/tupacalypse187/IAM-dynamic |
+| **Domain** | Domain with DNS pointed at your VPS (for HTTPS) |
+| **Cloudflare** | Cloudflare API token (for Let's Encrypt via DNS challenge) |
+
+---
+
+## 🚀 Step 1: Initial Server Access
 
 ```bash
 ssh root@<your-contabo-ip>
 ```
 
-## 2. Create a Deploy User
+---
+
+## 👤 Step 2: Create a Deploy User
 
 Don't run containers as root. Create a dedicated `deploy` user:
 
@@ -25,7 +63,9 @@ adduser deploy
 usermod -aG sudo deploy
 ```
 
-## 3. Install Docker & Docker Compose
+---
+
+## 🐳 Step 3: Install Docker & Docker Compose
 
 ```bash
 # Install Docker using the official convenience script
@@ -41,7 +81,9 @@ docker compose version
 
 > **Note:** Log out and back in as `deploy` for the docker group membership to take effect.
 
-## 4. Set Up SSH Key Authentication for GitHub Actions
+---
+
+## 🔑 Step 4: Set Up SSH Key Authentication
 
 On **your local machine**, generate a dedicated deploy key:
 
@@ -50,19 +92,23 @@ ssh-keygen -t ed25519 -C "iam-dynamic-deploy" -f ~/.ssh/iam_dynamic_deploy
 # Press Enter for no passphrase (required for automated deploys)
 ```
 
-Copy the **public key** to the VPS:
+### Copy Public Key to VPS
 
 ```bash
 ssh-copy-id -i ~/.ssh/iam_dynamic_deploy.pub deploy@<your-contabo-ip>
 ```
 
-Verify passwordless login works:
+### Verify Passwordless Login
 
 ```bash
 ssh -i ~/.ssh/iam_dynamic_deploy deploy@<your-contabo-ip>
 ```
 
-## 5. Create the Application Directory
+You should be logged in without a password prompt.
+
+---
+
+## 📁 Step 5: Create the Application Directory
 
 On the VPS as the `deploy` user:
 
@@ -71,7 +117,9 @@ sudo mkdir -p /opt/iam-dynamic
 sudo chown deploy:deploy /opt/iam-dynamic
 ```
 
-## 6. Copy Production Files to the VPS
+---
+
+## 📦 Step 6: Copy Production Files to the VPS
 
 From your local machine, copy `docker-compose.prod.yml`:
 
@@ -79,11 +127,13 @@ From your local machine, copy `docker-compose.prod.yml`:
 scp docker-compose.prod.yml deploy@<your-contabo-ip>:/opt/iam-dynamic/
 ```
 
-## 7. Create the `.env` File on the VPS
+---
+
+## ⚙️ Step 7: Create the `.env` File
 
 There are two approaches: the interactive setup script (recommended) or manual `.env` creation.
 
-### Option A: Setup Script (Recommended)
+### Option A: Setup Script (Recommended) 🎯
 
 Clone the repo on the VPS (or scp the script) and run:
 
@@ -94,16 +144,19 @@ bash setup-auth.sh --prod
 ```
 
 The `--prod` flag walks you through:
-1. Admin username + password (generates bcrypt hash and JWT secret automatically)
-2. Cloudflare Turnstile CAPTCHA keys (optional)
-3. Caddy HTTPS domain + Cloudflare API token
-4. GitHub Secrets reminder
+
+| Step | Description |
+|------|-------------|
+| 1️⃣ | Admin username + password (generates bcrypt hash and JWT secret) |
+| 2️⃣ | Cloudflare Turnstile CAPTCHA keys (optional) |
+| 3️⃣ | Caddy HTTPS domain + Cloudflare API token |
+| 4️⃣ | GitHub Secrets reminder |
 
 You'll still need to manually add your AI provider keys and AWS config to `.env` afterward.
 
 ### Option B: Manual `.env` Creation
 
-SSH into the VPS and create the environment file with your secrets:
+SSH into the VPS and create the environment file:
 
 ```bash
 ssh deploy@<your-contabo-ip>
@@ -167,7 +220,7 @@ EOF
 chmod 600 /opt/iam-dynamic/.env
 ```
 
-To generate the password hash manually:
+**Generate password hash:**
 
 ```bash
 pip install passlib[bcrypt]
@@ -175,7 +228,9 @@ python backend/scripts/hash_password.py
 # Enter your password, then copy the AUTH_PASSWORD_HASH=... output into .env
 ```
 
-## 8. Authenticate Docker with GHCR
+---
+
+## 🔐 Step 8: Authenticate Docker with GHCR
 
 The VPS needs to pull container images from GitHub Container Registry (GHCR).
 
@@ -183,7 +238,7 @@ The VPS needs to pull container images from GitHub Container Registry (GHCR).
 
 1. Go to https://github.com/settings/tokens
 2. Click **"Generate new token (classic)"**
-3. Give it a name like `contabo-ghcr-pull`
+3. Name it `contabo-ghcr-pull`
 4. Select scope: **`read:packages`** (that's all you need)
 5. Generate and copy the token
 
@@ -195,7 +250,9 @@ echo "<your-github-pat>" | docker login ghcr.io -u tupacalypse187 --password-std
 
 You should see `Login Succeeded`.
 
-## 9. Test Deployment Manually
+---
+
+## 🧪 Step 9: Test Deployment Manually
 
 ```bash
 cd /opt/iam-dynamic
@@ -203,10 +260,10 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Verify the services are healthy:
+### Verify Services are Healthy
 
 ```bash
-# Check containers are running
+# Check container status
 docker compose -f docker-compose.prod.yml ps
 
 # Test health endpoints (via docker exec since ports are internal)
@@ -217,9 +274,20 @@ docker compose -f docker-compose.prod.yml exec -T frontend wget -qO- http://loca
 curl -sf https://iam.yantorno.dev/health && echo " OK" || echo " FAIL"
 ```
 
+**Expected output:**
+
+```
+NAME                IMAGE                      STATUS
+caddy               ghcr.io/.../caddy         running
+frontend            ghcr.io/.../frontend      healthy
+backend             ghcr.io/.../backend       healthy
+```
+
 The app is accessible at `https://iam.yantorno.dev` (via Caddy). Frontend/backend ports are not exposed to the host in production.
 
-## 10. Configure GitHub Secrets
+---
+
+## 🔧 Step 10: Configure GitHub Secrets
 
 Go to https://github.com/tupacalypse187/IAM-dynamic/settings/secrets/actions and add these repository secrets:
 
@@ -233,7 +301,9 @@ Go to https://github.com/tupacalypse187/IAM-dynamic/settings/secrets/actions and
 
 > **Important:** For `PROD_SSH_KEY`, paste the entire private key including the header and footer lines.
 
-## 11. Firewall Setup
+---
+
+## 🔥 Step 11: Firewall Setup
 
 ```bash
 # Allow SSH, HTTP, and HTTPS
@@ -248,59 +318,94 @@ sudo ufw enable
 sudo ufw status
 ```
 
-## 12. Trigger a Deployment
+**Expected output:**
+
+```
+Status: active
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW       Anywhere
+80/tcp                     ALLOW       Anywhere
+443/tcp                    ALLOW       Anywhere
+```
+
+---
+
+## 🚀 Step 12: Trigger a Deployment
 
 Once secrets are configured, either:
 
-1. Push a commit to `main` branch, or
-2. Go to **Actions** tab > **Deploy** workflow > **Run workflow**
+1. **Push a commit** to `main` branch, or
+2. **Go to Actions tab** > **Deploy workflow** > **Run workflow**
 
-The pipeline will:
-1. Run security checks and tests
-2. Build and push Docker images to GHCR
-3. SSH into your VPS
-4. Pull the latest images
-5. Restart containers with `docker compose up -d`
-6. Run health checks to verify the deployment
+The deployment pipeline will:
 
-## HTTPS with Caddy (Built-in)
+| Step | Description |
+|------|-------------|
+| 1️⃣ | Run security checks and tests |
+| 2️⃣ | Build and push Docker images to GHCR |
+| 3️⃣ | SSH into your VPS |
+| 4️⃣ | Pull the latest images |
+| 5️⃣ | Restart containers with `docker compose up -d` |
+| 6️⃣ | Run health checks to verify deployment |
+
+---
+
+## 🔒 HTTPS with Caddy (Built-in)
 
 Caddy is included in the production Docker Compose stack (`docker-compose.prod.yml`). It uses the Cloudflare DNS challenge to obtain Let's Encrypt certificates automatically — no port 80 challenge needed.
 
-**Prerequisites:**
-1. Domain DNS pointed at your VPS (e.g., `iam.yantorno.dev` → your VPS IP)
-2. Cloudflare API token with `Zone:DNS:Edit` permission
+### Prerequisites
 
-**Configuration:** Set these in your `.env` file (see step 7):
-- `CLOUDFLARE_API_TOKEN` — Cloudflare API token
-- `CADDY_DOMAIN` — your domain (default: `iam.yantorno.dev`)
-- `ACME_EMAIL` — email for Let's Encrypt (default: `admin@yantorno.dev`)
+| Requirement | Description |
+|-------------|-------------|
+| **Domain** | DNS pointed at your VPS (e.g., `iam.yantorno.dev` → your VPS IP) |
+| **Cloudflare Token** | API token with `Zone:DNS:Edit` permission |
 
-Caddy runs as a Docker container and reverse-proxies to the nginx frontend. The frontend and backend ports are no longer exposed to the host in production — all traffic goes through Caddy on ports 80/443.
+### Configuration
+
+Set these in your `.env` file:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | `your-cloudflare-api-token` |
+| `CADDY_DOMAIN` | Your domain | `iam.yantorno.dev` |
+| `ACME_EMAIL` | Email for Let's Encrypt | `admin@yantorno.dev` |
+
+Caddy runs as a Docker container and reverse-proxies to the nginx frontend. The frontend and backend ports are not exposed to the host in production — all traffic goes through Caddy on ports 80/443.
 
 Certificate data is persisted in the `caddy_data` Docker volume.
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
-### Containers won't start
+### Containers Won't Start
+
 ```bash
 cd /opt/iam-dynamic
 docker compose -f docker-compose.prod.yml logs
 ```
 
-### SSH deploy fails in GitHub Actions
-- Verify the private key in `PROD_SSH_KEY` matches the public key on the VPS (`~deploy/.ssh/authorized_keys`)
-- Test SSH manually: `ssh -i ~/.ssh/iam_dynamic_deploy deploy@<ip>`
-- Check VPS firewall allows port 22
+### SSH Deploy Fails in GitHub Actions
 
-### Images fail to pull
-- Verify GHCR login: `docker login ghcr.io`
-- Check the PAT has `read:packages` scope
-- Verify images exist: https://github.com/tupacalypse187?tab=packages
+| Issue | Solution |
+|-------|----------|
+| Key mismatch | Verify the private key in `PROD_SSH_KEY` matches the public key on the VPS (`~deploy/.ssh/authorized_keys`) |
+| Connection refused | Test SSH manually: `ssh -i ~/.ssh/iam_dynamic_deploy deploy@<ip>` |
+| Firewall blocking | Check VPS firewall allows port 22 |
 
-### Health checks fail after deployment
+### Images Fail to Pull
+
+| Issue | Solution |
+|-------|----------|
+| Not logged in | Verify GHCR login: `docker login ghcr.io` |
+| Wrong PAT scope | Check the PAT has `read:packages` scope |
+| Images don't exist | Verify images exist: https://github.com/tupacalypse187?tab=packages |
+
+### Health Checks Fail After Deployment
+
 ```bash
 # Check container status
 docker compose -f docker-compose.prod.yml ps
@@ -312,3 +417,16 @@ docker compose -f docker-compose.prod.yml logs backend
 # Check if ports are bound
 ss -tlnp | grep -E '8080|8000'
 ```
+
+---
+
+## 📚 Additional Resources
+
+- [Local Docker Testing Guide](local-docker-testing.md) 🐳
+- [Antsle Deployment Guide](antsle-deployment-guide.md) 🐜
+- [MicroK8s ArgoCD Guide](microk8s-argocd-deployment-guide.md) ☸️
+- [CLAUDE.md](../CLAUDE.md) - Project documentation
+
+---
+
+**Your production IAM portal is ready! 🎉**
