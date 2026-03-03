@@ -112,9 +112,9 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             logger.warning("GOOGLE_API_KEY not found. GeminiProvider may fail.")
 
-        # Gemini 3 Pro Preview (released November 2025)
-        # Model code: gemini-3-pro-preview
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
+        # Gemini 3.1 Pro Preview (released February 2026)
+        # Model code: gemini-3.1-pro-preview
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
 
         # Initialize client based on API version
         if GOOGLE_GENAI_NEW:
@@ -247,7 +247,7 @@ class OpenAIProvider(LLMProvider):
         self.api_key = os.getenv("OPENAI_API_KEY")
         # GPT-5.2 (latest) - GPT-5.1 and GPT-5 are previous models
         # Model code: gpt-5.2 (OpenAI recommends using latest)
-        self.model_name = os.getenv("OPENAI_MODEL", "gpt-5.2")
+        self.model_name = os.getenv("OPENAI_MODEL", "gpt-5.3")
         if self.api_key:
             self.client = openai.OpenAI(api_key=self.api_key)
         else:
@@ -338,7 +338,7 @@ class AnthropicProvider(LLMProvider):
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
         # Claude Opus 4.5 (released November 24, 2025)
         # Model code: claude-opus-4-5-20251101
-        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5-20251101")
+        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6-20250205")
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
 

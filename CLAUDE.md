@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Zhipu GLM) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
+**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ The application uses a modern frontend/backend separation pattern:
   - Multiple credential export formats (Bash, PowerShell, AWS CLI)
 
 - **Backend (`backend/`)**: FastAPI REST API
-  - Multi-provider LLM support (Gemini, OpenAI, Anthropic, Zhipu)
+  - Multi-provider LLM support (Gemini, OpenAI, Anthropic, Z.AI)
   - Policy generation and validation endpoints
   - Credential issuance via AWS STS AssumeRole
   - Rejection guidance with AI-powered suggestions
@@ -34,12 +34,12 @@ The application uses a modern frontend/backend separation pattern:
 The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_service.py)) to support multiple AI providers:
 
 - **`LLMProvider`** (ABC): Abstract base class defining `generate_policy(request_text: str) -> PolicyResponse`
-- **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3 Pro Preview
-- **`OpenAIProvider`**: OpenAI GPT-5.1
-- **`AnthropicProvider`**: Anthropic Claude Opus 4.5
-- **`ZhipuProvider`**: Zhipu GLM-4.7
+- **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3.1 Pro Preview
+- **`OpenAIProvider`**: OpenAI GPT-5.3
+- **`AnthropicProvider`**: Anthropic Claude Opus 4.6
+- **`ZhipuProvider`**: Z.AI GLM-5 (global platform via api.z.ai)
 
-The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `claude`, or `glm`).
+The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `claude`, or `zhipu`).
 
 ### Data Flow
 
@@ -185,20 +185,20 @@ LLM_PROVIDER=gemini
 
 # --- Gemini Configuration (Google) ---
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3-pro-preview
+GEMINI_MODEL=gemini-3.1-pro-preview
 # Alternative: gemini-3-flash-preview
 
 # --- OpenAI Configuration ---
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.1
+# OPENAI_MODEL=gpt-5.3
 
 # --- Anthropic Claude Configuration ---
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-5-20251101
+# ANTHROPIC_MODEL=claude-opus-4-6-20250205
 
-# --- Zhipu GLM Configuration ---
-# ZHIPUAI_API_KEY=...
-# ZHIPUAI_MODEL=glm-4.7
+# --- Z.AI GLM Configuration ---
+# ZAI_API_KEY=...
+# ZAI_MODEL=glm-5
 
 # ============================================
 # AWS Configuration

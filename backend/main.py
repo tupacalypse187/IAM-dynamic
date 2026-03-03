@@ -292,7 +292,7 @@ async def get_providers(_user: str = Depends(get_current_user)):
     if config.llm.zai_api_key:
         providers.append({
             "id": "zhipu",
-            "name": "Zhipu GLM",
+            "name": "Z.AI GLM",
             "model": config.llm.zai_model
         })
     return {

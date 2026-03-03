@@ -4,16 +4,16 @@
 
 [![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Gemini 3.0](https://img.shields.io/badge/AI-Gemini%203.0-4285F4?logo=google)](https://deepmind.google/technologies/gemini/)
+[![Gemini 3.1](https://img.shields.io/badge/AI-Gemini%203.1-4285F4?logo=google)](https://deepmind.google/technologies/gemini/)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
 ## 🚀 Overview
 
-**IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Zhipu GLM) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
+**IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
 
 **Key Capabilities:**
--   **♊ Gemini First:** Powered by Gemini 3.0 Pro/Flash for high-reasoning policy generation.
+-   **♊ Gemini First:** Powered by Gemini 3.1 Pro for high-reasoning policy generation.
 -   **🛡️ Guardrails:** System-level instructions prevent over-privileged access (e.g., blocking `*:*`).
 -   **🚦 Risk Scoring:** Automatic assessment (Low, Medium, High, Critical).
 -   **⚡ Auto-Approval:** Low-risk requests are approved instantly; others require manual sign-off.
@@ -57,7 +57,7 @@ graph LR
 -   **Natural Language Input:** "I need read-only access to the production S3 bucket."
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
 -   **Modern React UI:** Multi-view state machine (request → review → credentials/rejected) with responsive design.
--   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, or Zhipu GLM.
+-   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, or Z.AI GLM.
 -   **Slack Integration:** Audit logs and approval notifications sent directly to Slack.
 
 ### New in v3.0
@@ -87,7 +87,7 @@ graph LR
 | File                          | Description                                      |
 | ----------------------------- | ------------------------------------------------ |
 | `main.py`                     | **FastAPI Application**. REST API with endpoints. |
-| `llm_service.py`              | **AI Service Layer**. Multi-provider LLM abstraction (Gemini/OpenAI/Anthropic/Zhipu). |
+| `llm_service.py`              | **AI Service Layer**. Multi-provider LLM abstraction (Gemini/OpenAI/Anthropic/Z.AI). |
 | `config.py`                   | **Configuration**. Centralized config with pydantic. |
 | `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
@@ -144,28 +144,28 @@ Create a `.env` file in the root directory (see `.env.example` for template):
 
 ```bash
 # --- AI Provider Configuration ---
-# Choose: gemini, openai, anthropic/claude, or zhipu/glm
+# Choose: gemini, openai, anthropic/claude, or zhipu/z.ai
 LLM_PROVIDER=gemini
 
-# Gemini 3 Pro Preview (November 2025) - Latest
+# Gemini 3.1 Pro Preview (February 2026) - Latest
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3-pro-preview
+GEMINI_MODEL=gemini-3.1-pro-preview
 # Alternatives: gemini-3-flash-preview, gemini-2.5-flash, gemini-2.5-pro
 
-# OpenAI GPT-5.1 (latest) - GPT-5 is previous model
+# OpenAI GPT-5.3 (February 2026) - Latest
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.1
-# Alternatives: gpt-5, o3-pro (reasoning), gpt-4o
+# OPENAI_MODEL=gpt-5.3
+# Alternatives: gpt-5.2, gpt-5, o3-pro (reasoning)
 
-# Anthropic Claude Opus 4.5 (November 24, 2025) - Latest flagship
+# Anthropic Claude Opus 4.6 (February 2026) - Latest flagship
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-5-20251101
-# Alternatives: claude-sonnet-4-5-20251022, claude-haiku-4-5-20250214
+# ANTHROPIC_MODEL=claude-opus-4-6-20250205
+# Alternatives: claude-sonnet-4-6-20250219, claude-haiku-4-5-20251015
 
-# Zhipu GLM-4.7 (December 2025) - Latest flagship
-# ZHIPUAI_API_KEY=...
-# ZHIPUAI_MODEL=glm-4.7
-# Alternative: glm-4.7-flash
+# Z.AI GLM-5 (February 2026) - Global platform
+# ZAI_API_KEY=...
+# ZAI_MODEL=glm-5
+# Alternatives: glm-4.7, glm-4.7-flash
 
 # --- AWS Configuration ---
 AWS_ACCOUNT_ID=123456789012
