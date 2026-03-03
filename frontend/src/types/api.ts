@@ -9,6 +9,7 @@ export interface LLMProvider {
 export interface ProvidersResponse {
   providers: LLMProvider[]
   account_id: string
+  current_provider: string
 }
 
 export interface PolicyRequest {

@@ -289,13 +289,17 @@ async def get_providers(_user: str = Depends(get_current_user)):
             "name": "Anthropic Claude",
             "model": config.llm.anthropic_model
         })
-    if config.llm.zhipuai_api_key:
+    if config.llm.zai_api_key:
         providers.append({
-            "id": "glm",
+            "id": "zhipu",
             "name": "Zhipu GLM",
-            "model": config.llm.glm_model
+            "model": config.llm.zai_model
         })
-    return {"providers": providers, "account_id": config.aws.account_id}
+    return {
+        "providers": providers,
+        "account_id": config.aws.account_id,
+        "current_provider": config.llm.provider
+    }
 
 
 @app.post("/api/generate-policy", response_model=PolicyResponseModel)

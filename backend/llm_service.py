@@ -2,16 +2,16 @@
 LLM Service Layer - Supports multiple AI providers for IAM policy generation
 
 Providers supported:
-- Google Gemini 3 Pro Preview (latest)
-- OpenAI GPT-5 / o3-pro
-- Anthropic Claude Opus 4.5
-- Zhipu GLM-4.7
+- Google Gemini 3.1 Pro Preview (latest)
+- OpenAI GPT-5.3 / o3-pro
+- Anthropic Claude Opus 4.6
+- Zhipu GLM-5 (via api.z.ai global platform)
 
 Sources:
 - Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
 - OpenAI: https://openai.com/index/introducing-o3-and-o4-mini/
 - Anthropic: https://www.anthropic.com/news/claude-opus-4-5
-- Zhipu: https://docs.z.ai/guides/llm/glm-4.7
+- Zhipu: https://docs.z.ai/guides/llm/glm-5
 """
 import os
 import json
@@ -39,14 +39,6 @@ except ImportError:
 import openai
 import anthropic
 from dotenv import load_dotenv
-
-# Try to import zhipuai, but don't fail if not installed
-try:
-    from zhipuai import ZhipuAI
-    ZHIPUAI_AVAILABLE = True
-except ImportError:
-    ZHIPUAI_AVAILABLE = False
-    ZhipuAI = None
 
 load_dotenv()
 
@@ -422,26 +414,26 @@ Format your response as clear, actionable guidance with bullet points and sectio
 
 class ZhipuProvider(LLMProvider):
     """
-    Zhipu AI GLM provider - GLM-4.7
+    Zhipu AI GLM provider - Global platform (api.z.ai)
 
-    Latest models: glm-4.7, glm-4.7-flash
-    Source: https://docs.z.ai/guides/llm/glm-4.7
+    Uses OpenAI-compatible API.
+    Latest models: glm-5, glm-4.7, glm-4.7-flash
+    Source: https://docs.z.ai/guides/llm/glm-5
     """
 
     def __init__(self):
-        self.api_key = os.getenv("ZHIPUAI_API_KEY")
+        from openai import OpenAI
+
+        self.api_key = os.getenv("ZAI_API_KEY")
         if not self.api_key:
-            logger.warning("ZHIPUAI_API_KEY not found. ZhipuProvider may fail.")
+            logger.warning("ZAI_API_KEY not found. ZhipuProvider may fail.")
 
-        if not ZHIPUAI_AVAILABLE:
-            raise ImportError(
-                "zhipuai package is not installed. "
-                "Install it with: pip install zhipuai"
-            )
-
-        # GLM-4.7 (December 2025) - latest flagship
-        self.model_name = os.getenv("ZHIPUAI_MODEL", "glm-4.7")
-        self.client = ZhipuAI(api_key=self.api_key)
+        self.model_name = os.getenv("ZAI_MODEL", "glm-5")
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.z.ai/api/coding/paas/v4/"
+        )
+        logger.info(f"Using Zhipu global platform (api.z.ai) with model {self.model_name}")
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
         prompt = f"""You are a security agent that writes AWS IAM policies from user requests.

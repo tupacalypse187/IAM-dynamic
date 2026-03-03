@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 import jwt
-from passlib.hash import bcrypt
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,10 @@ class AuthService:
     def verify_password(self, password: str) -> bool:
         """Verify a plaintext password against the stored bcrypt hash."""
         try:
-            return bcrypt.verify(password, self.password_hash)
+            return bcrypt.checkpw(
+                password.encode('utf-8'),
+                self.password_hash.encode('utf-8')
+            )
         except Exception:
             logger.warning("Password verification failed (invalid hash?)")
             return False

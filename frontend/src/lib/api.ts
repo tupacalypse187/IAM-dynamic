@@ -64,7 +64,7 @@ export const api = {
 
   // Providers
   getProviders: () =>
-    request<{ providers: Array<{ id: string; name: string; model: string }>; account_id: string }>(
+    request<{ providers: Array<{ id: string; name: string; model: string }>; account_id: string; current_provider: string }>(
       '/config/providers'
     ),
 
