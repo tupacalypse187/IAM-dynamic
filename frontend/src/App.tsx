@@ -31,6 +31,7 @@ function App() {
   const [credentials, setCredentials] = useState<any>(null)
   const [requestText, setRequestText] = useState('')
   const [selectedProvider, setSelectedProvider] = useState<string>('gemini')
+  const [selectedModel, setSelectedModel] = useState<string>('')
 
   // Fetch providers and config (only when authenticated)
   const { data: config } = useQuery({
@@ -39,10 +40,14 @@ function App() {
     enabled: isAuthenticated,
   })
 
-  // Set default provider from backend config when loaded
+  // Set default provider and model from backend config when loaded
   useEffect(() => {
     if (config?.current_provider) {
       setSelectedProvider(config.current_provider)
+      const provider = config.providers.find(p => p.id === config.current_provider)
+      if (provider?.model) {
+        setSelectedModel(provider.model)
+      }
     }
   }, [config])
 
@@ -75,6 +80,8 @@ function App() {
           onRequestTextChange={setRequestText}
           selectedProvider={selectedProvider}
           onProviderChange={setSelectedProvider}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
         />
 
         {/* Main Content */}
@@ -114,6 +121,7 @@ function App() {
                 duration={duration}
                 onDurationChange={setDuration}
                 selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
                 onPolicyGenerated={(data) => {
                   setPolicyData(data)
                   setView('review')
@@ -139,6 +147,7 @@ function App() {
                 requestText={requestText}
                 duration={duration}
                 selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
                 onReviseRequest={(text) => {
                   setRequestText(text)
                   setView('request')

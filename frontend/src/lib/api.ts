@@ -64,11 +64,11 @@ export const api = {
 
   // Providers
   getProviders: () =>
-    request<{ providers: Array<{ id: string; name: string; model: string }>; account_id: string; current_provider: string }>(
+    request<{ providers: Array<{ id: string; name: string; model: string; models: Array<{ id: string; name: string }> }>; account_id: string; current_provider: string }>(
       '/config/providers'
     ),
 
-  generatePolicy: (data: { request_text: string; provider: string; duration: number }) =>
+  generatePolicy: (data: { request_text: string; provider: string; model?: string; duration: number }) =>
     request('/api/generate-policy', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -76,6 +76,12 @@ export const api = {
 
   issueCredentials: (data: { policy: Record<string, unknown>; duration: number; approved: boolean; change_case?: string }) =>
     request('/api/issue-credentials', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  generateRejectionGuidance: (data: { original_request: string; policy: Record<string, unknown>; risk: string; provider: string; model?: string }) =>
+    request<{ guidance: string }>('/api/generate-rejection-guidance', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

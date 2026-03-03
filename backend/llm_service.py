@@ -181,7 +181,7 @@ Use this structure with proper spacing:
 
 ## 1. 🔴 What Was Problematic
 
-[Explain which specific permissions or resource ARNs caused the elevated risk assessment. Be specific about wildcards, overly broad actions, or sensitive services.]
+[Explain which specific permissions or resource scopes caused the elevated risk assessment. Be specific about wildcards, overly broad actions, or sensitive services.]
 
 ---
 
@@ -189,7 +189,7 @@ Use this structure with proper spacing:
 
 **Your improved request:**
 
-> "[Rewritten, specific request that would be lower risk]"
+> "[Rewritten request in natural language - write it how a user would actually say it]"
 
 **Why this works better:** [Brief explanation]
 
@@ -206,16 +206,16 @@ Use this structure with proper spacing:
 ## 4. 📝 Example of a Properly Scoped Request
 
 ### ❌ Instead of:
-> "[Broad, risky request]"
+> "I need access to S3"
 
 ### ✅ Submit this:
-> "[Specific, well-scoped request with exact resources and limited actions]"
+> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
 
-**Result:** Expected risk level and approval likelihood
+**Result:** This will likely be auto-approved as low risk
 
 ---
 
-**Remember:** The more specific you are about resources (exact ARNs) and actions (read-only vs write), the faster your request will be approved! 🚀"""
+**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
 
         try:
             if GOOGLE_GENAI_NEW:
@@ -301,18 +301,58 @@ Request: "{request_text}"
 
         guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
 
-Original Request: "{original_request}"
+**Original Request:** "{original_request}"
 
-Generated Policy (high-risk): {json.dumps(policy, indent=2)}
+**Generated Policy (high-risk):**
+```json
+{json.dumps(policy, indent=2)}
+```
 
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Your response should include:
+---
 
-1. **What was problematic**: Explain which permissions or resource scopes caused the elevated risk assessment.
-2. **Suggested alternative request**: A rewritten, more specific request that would be lower risk.
-3. **Tips for better scoping**: Best practices for this type of access request.
-4. **Example of a properly scoped request**: A concrete example.
+# 📋 Rejection Guidance
 
-Format your response as clear, actionable guidance with bullet points and sections."""
+Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
+
+Use this structure with proper spacing:
+
+## 1. 🔴 What Was Problematic
+
+[Explain which specific permissions or resource scopes caused the elevated risk assessment. Be specific about wildcards, overly broad actions, or sensitive services.]
+
+---
+
+## 2. ✨ Suggested Alternative Request
+
+**Your improved request:**
+
+> "[Rewritten request in natural language - write it how a user would actually say it]"
+
+**Why this works better:** [Brief explanation]
+
+---
+
+## 3. 💡 Tips for Better Scoping
+
+- **Tip 1:** [Specific tip for this request type]
+- **Tip 2:** [Another best practice]
+- **Tip 3:** [Additional guidance]
+
+---
+
+## 4. 📝 Example of a Properly Scoped Request
+
+### ❌ Instead of:
+> "I need access to S3"
+
+### ✅ Submit this:
+> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
+
+**Result:** This will likely be auto-approved as low risk
+
+---
+
+**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
 
         try:
             response = self.client.chat.completions.create(
@@ -385,18 +425,58 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
         guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
 
-Original Request: "{original_request}"
+**Original Request:** "{original_request}"
 
-Generated Policy (high-risk): {json.dumps(policy, indent=2)}
+**Generated Policy (high-risk):**
+```json
+{json.dumps(policy, indent=2)}
+```
 
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Your response should include:
+---
 
-1. **What was problematic**: Explain which permissions or resource scopes caused the elevated risk assessment.
-2. **Suggested alternative request**: A rewritten, more specific request that would be lower risk.
-3. **Tips for better scoping**: Best practices for this type of access request.
-4. **Example of a properly scoped request**: A concrete example.
+# 📋 Rejection Guidance
 
-Format your response as clear, actionable guidance with bullet points and sections."""
+Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
+
+Use this structure with proper spacing:
+
+## 1. 🔴 What Was Problematic
+
+[Explain what made this request too broad or risky. Was it asking for access to all resources instead of a specific one? Was it asking for write/delete permissions when read-only would work? Be clear and specific.]
+
+---
+
+## 2. ✨ Suggested Alternative Request
+
+**Your improved request:**
+
+> "[Rewritten request in natural language - write it how a user would actually say it]"
+
+**Why this works better:** [Brief explanation]
+
+---
+
+## 3. 💡 Tips for Better Scoping
+
+- **Tip 1:** [Specific tip for this request type]
+- **Tip 2:** [Another best practice]
+- **Tip 3:** [Additional guidance]
+
+---
+
+## 4. 📝 Example of a Properly Scoped Request
+
+### ❌ Instead of:
+> "I need access to S3"
+
+### ✅ Submit this:
+> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
+
+**Result:** This will likely be auto-approved as low risk
+
+---
+
+**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
 
         try:
             client = anthropic.Anthropic(api_key=self.api_key)
@@ -483,18 +563,58 @@ Respond ONLY with the JSON object, no additional text."""
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
         guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
 
-Original Request: "{original_request}"
+**Original Request:** "{original_request}"
 
-Generated Policy (high-risk): {json.dumps(policy, indent=2)}
+**Generated Policy (high-risk):**
+```json
+{json.dumps(policy, indent=2)}
+```
 
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Your response should include:
+---
 
-1. **What was problematic**: Explain which permissions or resource scopes caused the elevated risk assessment.
-2. **Suggested alternative request**: A rewritten, more specific request that would be lower risk.
-3. **Tips for better scoping**: Best practices for this type of access request.
-4. **Example of a properly scoped request**: A concrete example.
+# 📋 Rejection Guidance
 
-Format your response as clear, actionable guidance with bullet points and sections."""
+Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
+
+Use this structure with proper spacing:
+
+## 1. 🔴 What Was Problematic
+
+[Explain what made this request too broad or risky. Was it asking for access to all resources instead of a specific one? Was it asking for write/delete permissions when read-only would work? Be clear and specific.]
+
+---
+
+## 2. ✨ Suggested Alternative Request
+
+**Your improved request:**
+
+> "[Rewritten request in natural language - write it how a user would actually say it]"
+
+**Why this works better:** [Brief explanation]
+
+---
+
+## 3. 💡 Tips for Better Scoping
+
+- **Tip 1:** [Specific tip for this request type]
+- **Tip 2:** [Another best practice]
+- **Tip 3:** [Additional guidance]
+
+---
+
+## 4. 📝 Example of a Properly Scoped Request
+
+### ❌ Instead of:
+> "I need access to S3"
+
+### ✅ Submit this:
+> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
+
+**Result:** This will likely be auto-approved as low risk
+
+---
+
+**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
 
         try:
             response = self.client.chat.completions.create(
@@ -511,7 +631,7 @@ Format your response as clear, actionable guidance with bullet points and sectio
             return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
 
 
-def get_llm_provider(provider_type: str = None) -> LLMProvider:
+def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvider:
     """
     Get the configured LLM provider instance
 
@@ -523,6 +643,7 @@ def get_llm_provider(provider_type: str = None) -> LLMProvider:
 
     Args:
         provider_type: Optional provider type to override environment variable
+        model: Optional model name to override provider default
 
     Returns:
         LLMProvider instance
@@ -533,13 +654,20 @@ def get_llm_provider(provider_type: str = None) -> LLMProvider:
         provider_type = provider_type.lower()
 
     if provider_type == "openai":
-        return OpenAIProvider()
+        provider = OpenAIProvider()
     elif provider_type in ("anthropic", "claude"):
-        return AnthropicProvider()
+        provider = AnthropicProvider()
     elif provider_type in ("zhipu", "glm"):
-        return ZhipuProvider()
+        provider = ZhipuProvider()
     elif provider_type == "gemini":
-        return GeminiProvider()
+        provider = GeminiProvider()
     else:
         logger.warning(f"Unknown provider '{provider_type}', defaulting to Gemini")
-        return GeminiProvider()
+        provider = GeminiProvider()
+
+    # Override model if specified
+    if model:
+        provider.model_name = model
+        logger.info(f"Using model override: {model}")
+
+    return provider

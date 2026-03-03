@@ -13,6 +13,8 @@ interface SidebarProps {
   onRequestTextChange: (text: string) => void
   selectedProvider?: string
   onProviderChange?: (provider: string) => void
+  selectedModel?: string
+  onModelChange?: (model: string) => void
 }
 
 const templates = [
@@ -31,16 +33,32 @@ const themeIcons = {
   dark: Moon,
 }
 
-export default function Sidebar({ config, onRequestTextChange, selectedProvider, onProviderChange }: SidebarProps) {
+export default function Sidebar({ config, onRequestTextChange, selectedProvider, onProviderChange, selectedModel, onModelChange }: SidebarProps) {
   const { theme, setTheme } = useTheme()
   const [provider, setProvider] = useState(selectedProvider || config?.providers[0]?.id || 'gemini')
+  const [model, setModel] = useState(selectedModel || '')
 
-  // Update parent when provider changes
+  // Sync provider with parent
   useEffect(() => {
     if (onProviderChange) {
       onProviderChange(provider)
     }
   }, [provider, onProviderChange])
+
+  // Sync model with parent
+  useEffect(() => {
+    if (onModelChange) {
+      onModelChange(model)
+    }
+  }, [model, onModelChange])
+
+  // Reset model to default when provider changes
+  useEffect(() => {
+    const providerData = config?.providers.find(p => p.id === provider)
+    if (providerData?.model) {
+      setModel(providerData.model)
+    }
+  }, [provider, config?.providers])
 
   const selectedProviderData = config?.providers.find(p => p.id === provider)
 
@@ -95,13 +113,22 @@ export default function Sidebar({ config, onRequestTextChange, selectedProvider,
             </div>
           )}
 
-          {/* Current Model Display */}
-          {selectedProviderData && (
-            <div className="space-y-1">
+          {/* Model Selector */}
+          {selectedProviderData && selectedProviderData.models && selectedProviderData.models.length > 0 && (
+            <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Model</Label>
-              <div className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                {selectedProviderData.model}
-              </div>
+              <Select value={model} onValueChange={setModel}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedProviderData.models.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>
