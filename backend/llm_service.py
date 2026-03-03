@@ -426,7 +426,10 @@ class ZhipuProvider(LLMProvider):
 
         self.api_key = os.getenv("ZAI_API_KEY")
         if not self.api_key:
-            logger.warning("ZAI_API_KEY not found. ZhipuProvider may fail.")
+            raise ValueError(
+                "ZAI_API_KEY not found. Set it in your .env file. "
+                "Get your API key at: https://api.z.ai"
+            )
 
         self.model_name = os.getenv("ZAI_MODEL", "glm-5")
         self.client = OpenAI(
