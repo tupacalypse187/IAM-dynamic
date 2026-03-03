@@ -14,6 +14,7 @@ interface RequestViewProps {
   duration: number
   onDurationChange: (duration: number) => void
   selectedProvider: string
+  selectedModel?: string
   onPolicyGenerated: (data: any) => void
 }
 
@@ -23,6 +24,7 @@ export default function RequestView({
   duration,
   onDurationChange,
   selectedProvider,
+  selectedModel,
   onPolicyGenerated,
 }: RequestViewProps) {
   const [error, setError] = useState<string | null>(null)
@@ -46,6 +48,7 @@ export default function RequestView({
     generateMutation.mutate({
       request_text: requestText,
       provider: selectedProvider,
+      model: selectedModel,
       duration,
     })
   }

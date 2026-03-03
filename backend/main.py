@@ -60,6 +60,7 @@ class PolicyRequest(BaseModel):
     """Request model for policy generation"""
     request_text: str = Field(..., description="Natural language description of access needed", min_length=10)
     provider: Optional[str] = Field(default="gemini", description="LLM provider to use")
+    model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
     duration: int = Field(default=2, description="Requested session duration in hours", ge=1, le=12)
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
 
@@ -198,6 +199,34 @@ def get_max_duration(risk: str) -> int:
     return {"low": 12, "medium": 4, "high": 2, "critical": 1}.get(risk.lower(), 2)
 
 
+# Available models per provider
+PROVIDER_MODELS = {
+    "gemini": [
+        {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro"},
+        {"id": "gemini-3-flash-preview", "name": "Gemini 3 Flash"},
+        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
+    ],
+    "openai": [
+        {"id": "gpt-5.3", "name": "GPT-5.3"},
+        {"id": "gpt-5.2", "name": "GPT-5.2"},
+        {"id": "gpt-5", "name": "GPT-5"},
+        {"id": "o3-pro", "name": "o3-pro (Reasoning)"},
+        {"id": "o4-mini", "name": "o4-mini"},
+    ],
+    "claude": [
+        {"id": "claude-opus-4-6-20250205", "name": "Claude Opus 4.6"},
+        {"id": "claude-sonnet-4-6-20250219", "name": "Claude Sonnet 4.6"},
+        {"id": "claude-haiku-4-5-20251015", "name": "Claude Haiku 4.5"},
+    ],
+    "zhipu": [
+        {"id": "glm-5", "name": "GLM-5"},
+        {"id": "glm-4.7", "name": "GLM-4.7"},
+        {"id": "glm-4.7-flash", "name": "GLM-4.7 Flash"},
+    ],
+}
+
+
 def send_slack_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
     """Send notification to Slack via service"""
     try:
@@ -275,25 +304,29 @@ async def get_providers(_user: str = Depends(get_current_user)):
         providers.append({
             "id": "gemini",
             "name": "Google Gemini",
-            "model": config.llm.gemini_model
+            "model": config.llm.gemini_model,
+            "models": PROVIDER_MODELS["gemini"]
         })
     if config.llm.openai_api_key:
         providers.append({
             "id": "openai",
             "name": "OpenAI",
-            "model": config.llm.openai_model
+            "model": config.llm.openai_model,
+            "models": PROVIDER_MODELS["openai"]
         })
     if config.llm.anthropic_api_key:
         providers.append({
             "id": "claude",
             "name": "Anthropic Claude",
-            "model": config.llm.anthropic_model
+            "model": config.llm.anthropic_model,
+            "models": PROVIDER_MODELS["claude"]
         })
     if config.llm.zai_api_key:
         providers.append({
             "id": "zhipu",
             "name": "Z.AI GLM",
-            "model": config.llm.zai_model
+            "model": config.llm.zai_model,
+            "models": PROVIDER_MODELS["zhipu"]
         })
     return {
         "providers": providers,
@@ -311,8 +344,8 @@ async def generate_policy(request: PolicyRequest, _user: str = Depends(get_curre
     Returns policy with risk assessment and approval requirements.
     """
     try:
-        # Get LLM provider
-        provider = get_llm_provider(request.provider)
+        # Get LLM provider with optional model override
+        provider = get_llm_provider(request.provider, request.model)
 
         # Generate policy
         response: PolicyResponse = provider.generate_policy(request.request_text)
@@ -389,6 +422,7 @@ class RejectionGuidanceRequest(BaseModel):
     policy: dict = Field(..., description="The generated policy that was rejected")
     risk: str = Field(..., description="Risk level of the policy")
     provider: str = Field(default="gemini", description="LLM provider to use")
+    model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
 
 
 class RejectionGuidanceResponse(BaseModel):
@@ -404,8 +438,8 @@ async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: 
     Provides specific suggestions based on the original request, generated policy, and risk level.
     """
     try:
-        # Get LLM provider
-        provider = get_llm_provider(request.provider)
+        # Get LLM provider with optional model override
+        provider = get_llm_provider(request.provider, request.model)
 
         # Generate guidance
         guidance = provider.generate_rejection_guidance(

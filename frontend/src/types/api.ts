@@ -1,9 +1,15 @@
 // API Types for IAM-Dynamic Backend
 
+export interface ModelInfo {
+  id: string
+  name: string
+}
+
 export interface LLMProvider {
   id: string
   name: string
   model: string
+  models: ModelInfo[]
 }
 
 export interface ProvidersResponse {
@@ -15,6 +21,7 @@ export interface ProvidersResponse {
 export interface PolicyRequest {
   request_text: string
   provider?: string
+  model?: string
   duration?: number
   change_case?: string
 }

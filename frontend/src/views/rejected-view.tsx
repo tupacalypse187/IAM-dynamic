@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { Loader2, AlertCircle, Lightbulb, RefreshCw, FileEdit, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+import 'highlight.js/styles/github-dark.css'
+import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +15,7 @@ interface RejectedViewProps {
   requestText: string
   duration: number
   selectedProvider: string
+  selectedModel?: string
   onReviseRequest: (text: string) => void
   onStartFresh: () => void
 }
@@ -28,6 +32,7 @@ export default function RejectedView({
   requestText,
   duration,
   selectedProvider,
+  selectedModel,
   onReviseRequest,
   onStartFresh,
 }: RejectedViewProps) {
@@ -37,31 +42,41 @@ export default function RejectedView({
 
   const risk = riskConfig[policyData.risk as keyof typeof riskConfig] || riskConfig.medium
 
+  /**
+   * Preprocess guidance text to fix common LLM output issues:
+   * 1. Unescape backticks (LLM may output \` instead of `)
+   * 2. Remove wrapping code blocks if LLM wrapped entire response
+   */
+  const preprocessGuidance = (text: string): string => {
+    let processed = text
+
+    // Fix escaped backticks: \` -> `
+    processed = processed.replace(/\\`/g, '`')
+
+    // If the entire response is wrapped in a code block, unwrap it
+    // Match ``` at start (optional language) and ``` at end
+    const codeBlockMatch = processed.match(/^```(?:\w*)\n?([\s\S]*?)\n?```$/)
+    if (codeBlockMatch) {
+      processed = codeBlockMatch[1].trim()
+    }
+
+    return processed
+  }
+
   const fetchGuidance = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-      const response = await fetch(`${API_BASE}/api/generate-rejection-guidance`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          original_request: requestText,
-          policy: policyData.policy,
-          risk: policyData.risk,
-          provider: selectedProvider,
-        }),
+      const data = await api.generateRejectionGuidance({
+        original_request: requestText,
+        policy: policyData.policy,
+        risk: policyData.risk,
+        provider: selectedProvider,
+        model: selectedModel,
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to generate guidance')
-      }
-
-      const data = await response.json()
-      setGuidance(data.guidance || 'No guidance available. Please try revising your request with more specific resource names and limited actions.')
+      const rawGuidance = data.guidance || 'No guidance available. Please try revising your request with more specific resource names and limited actions.'
+      setGuidance(preprocessGuidance(rawGuidance))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate guidance')
     } finally {
@@ -178,9 +193,10 @@ export default function RejectedView({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-sm max-w-none dark:prose-invert prose-custom">
+            <div className="prose max-w-none dark:prose-invert prose-custom">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
               >
                 {guidance}
               </ReactMarkdown>
