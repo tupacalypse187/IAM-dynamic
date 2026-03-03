@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Lock, LogOut, Loader2, User } from 'lucide-react'
 import { api } from './lib/api'
@@ -38,6 +38,13 @@ function App() {
     queryFn: api.getProviders,
     enabled: isAuthenticated,
   })
+
+  // Set default provider from backend config when loaded
+  useEffect(() => {
+    if (config?.current_provider) {
+      setSelectedProvider(config.current_provider)
+    }
+  }, [config])
 
   // Loading state
   if (isLoading) {

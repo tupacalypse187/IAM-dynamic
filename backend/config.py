@@ -2,16 +2,16 @@
 Centralized configuration with pydantic validation
 
 Supports LLM providers:
-- Google Gemini 3 Pro Preview (gemini-3-pro-preview-11-2025)
-- OpenAI GPT-5 (gpt-5) and o3-pro
-- Anthropic Claude Opus 4.5 (claude-opus-4-5)
-- Zhipu GLM-4.7 (glm-4.7)
+- Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
+- OpenAI GPT-5.3 (gpt-5.3) and o3-pro
+- Anthropic Claude Opus 4.6 (claude-opus-4-6-20250205)
+- Zhipu GLM-5 (glm-5)
 
 Sources:
 - Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
 - OpenAI: https://openai.com/index/introducing-o3-and-o4-mini/
 - Anthropic: https://www.anthropic.com/news/claude-opus-4-5
-- Zhipu: https://docs.z.ai/guides/llm/glm-4.7
+- Zhipu: https://docs.z.ai/guides/llm/glm-5
 """
 import os
 import logging
@@ -39,21 +39,21 @@ class LLMConfig(BaseModel):
     """LLM provider configuration"""
     provider: str = Field(default="gemini", env="LLM_PROVIDER")
 
-    # Gemini (Google) - Gemini 3 Pro Preview (November 2025)
+    # Gemini (Google) - Gemini 3.1 Pro Preview (February 2026)
     google_api_key: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")
-    gemini_model: str = Field(default="gemini-3-pro-preview", env="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.1-pro-preview", env="GEMINI_MODEL")
 
-    # OpenAI - GPT-5.1 (latest) - GPT-5 is previous model
+    # OpenAI - GPT-5.3 (February 2026) - latest
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.1", env="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.3", env="OPENAI_MODEL")
 
-    # Anthropic - Claude Opus 4.5 (November 24, 2025)
+    # Anthropic - Claude Opus 4.6 (February 2026)
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-opus-4-5-20251101", env="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-opus-4-6-20250205", env="ANTHROPIC_MODEL")
 
-    # Zhipu - GLM-4.7 (December 2025)
-    zhipuai_api_key: Optional[str] = Field(default=None, env="ZHIPUAI_API_KEY")
-    glm_model: str = Field(default="glm-4.7", env="ZHIPUAI_MODEL")
+    # Zhipu - GLM-5 (February 2026) - Global platform (api.z.ai)
+    zai_api_key: Optional[str] = Field(default=None, env="ZAI_API_KEY")
+    zai_model: str = Field(default="glm-5", env="ZAI_MODEL")
 
     @field_validator("provider")
     @classmethod
@@ -121,13 +121,13 @@ def load_config() -> AppConfig:
         llm_config = LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "gemini"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3-pro-preview-11-2025"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.3"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-5"),
-            zhipuai_api_key=os.getenv("ZHIPUAI_API_KEY"),
-            glm_model=os.getenv("ZHIPUAI_MODEL", "glm-4.7")
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6-20250205"),
+            zai_api_key=os.getenv("ZAI_API_KEY"),
+            zai_model=os.getenv("ZAI_MODEL", "glm-5")
         )
 
         slack_config = SlackConfig(
