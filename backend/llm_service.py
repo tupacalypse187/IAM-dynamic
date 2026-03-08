@@ -47,6 +47,147 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+# AWS Service name mappings for dynamic guidance
+AWS_SERVICE_NAMES = {
+    "s3": "Amazon S3",
+    "ec2": "Amazon EC2",
+    "lambda": "AWS Lambda",
+    "rds": "Amazon RDS",
+    "dynamodb": "Amazon DynamoDB",
+    "sns": "Amazon SNS",
+    "sqs": "Amazon SQS",
+    "iam": "AWS IAM",
+    "kms": "AWS KMS",
+    "secretsmanager": "AWS Secrets Manager",
+    "cloudwatch": "Amazon CloudWatch",
+    "logs": "Amazon CloudWatch Logs",
+    "ecs": "Amazon ECS",
+    "eks": "Amazon EKS",
+    "eks-auth": "Amazon EKS",
+    "ecr": "Amazon ECR",
+    "apigateway": "Amazon API Gateway",
+    "execute-api": "Amazon API Gateway",
+    "cloudfront": "Amazon CloudFront",
+    "route53": "Amazon Route 53",
+    "elasticloadbalancing": "Elastic Load Balancing",
+    "autoscaling": "AWS Auto Scaling",
+    "cognito-idp": "Amazon Cognito",
+    "cognito-identity": "Amazon Cognito",
+    "kinesis": "Amazon Kinesis",
+    "firehose": "Amazon Kinesis Data Firehose",
+    "athena": "Amazon Athena",
+    "glue": "AWS Glue",
+    "sagemaker": "Amazon SageMaker",
+    "bedrock": "Amazon Bedrock",
+    "eventbridge": "Amazon EventBridge",
+    "events": "Amazon EventBridge",
+    "stepfunctions": "AWS Step Functions",
+    "states": "AWS Step Functions",
+    "ssm": "AWS Systems Manager",
+    "ec2messages": "AWS Systems Manager",
+    "ssmmessages": "AWS Systems Manager",
+}
+
+
+def _extract_services_from_policy(policy: Dict[str, Any]) -> list[str]:
+    """
+    Extract AWS service names from policy actions.
+
+    Args:
+        policy: IAM policy dictionary
+
+    Returns:
+        List of human-readable service names
+    """
+    services = set()
+
+    for statement in policy.get("Statement", []):
+        actions = statement.get("Action", [])
+        if isinstance(actions, str):
+            actions = [actions]
+
+        for action in actions:
+            if ":" in action:
+                service_prefix = action.split(":")[0].lower()
+                # Look up the friendly name, or format the prefix nicely
+                friendly_name = AWS_SERVICE_NAMES.get(
+                    service_prefix,
+                    service_prefix.replace("-", " ").replace("_", " ").title()
+                )
+                services.add(friendly_name)
+
+    return sorted(list(services))
+
+
+def _build_rejection_guidance_prompt(
+    original_request: str,
+    policy: Dict[str, Any],
+    risk: str
+) -> str:
+    """
+    Build a dynamic guidance prompt tailored to the specific request.
+
+    Analyzes the policy to provide service-specific guidance instead of
+    using a hardcoded S3 example.
+
+    Args:
+        original_request: The user's natural language request
+        policy: The generated IAM policy that was rejected
+        risk: The risk level (low, medium, high, critical)
+
+    Returns:
+        A tailored prompt string for the LLM
+    """
+    # Extract AWS services from the policy
+    services = _extract_services_from_policy(policy)
+    services_str = " / ".join(services) if services else "AWS"
+
+    return f"""Analyze this rejected AWS IAM access request and provide personalized guidance.
+
+**Original Request:** "{original_request}"
+**Risk Level:** {risk}
+
+**Generated Policy:**
+```json
+{json.dumps(policy, indent=2)}
+```
+
+---
+
+Based on this specific request for **{services_str}** access, provide helpful guidance that:
+
+## 1. 🔴 Identify the Specific Issues
+
+Point out the exact problems in this request that caused the **{risk}** risk rating:
+- Which wildcards, overly broad actions, or sensitive permissions are problematic?
+- Reference specific policy statements from the generated policy above
+- Be concrete - cite the actual Action and Resource values
+
+## 2. ✨ Suggest a Rewritten Request
+
+Write a better version of their request that would likely get approved:
+- Write it as the user would naturally say it (conversational, not technical)
+- Make it specific to the resources and actions they actually need
+- Keep it focused on **{services_str}** - their actual use case
+
+## 3. 💡 Provide Actionable Tips
+
+Give tips that are relevant to **{services_str}**, not generic advice:
+- What specific resource identifiers should they include?
+- What read vs write distinctions matter for this service?
+- Any service-specific scoping best practices?
+
+## 4. 📝 Show a Relevant Example
+
+Create a "bad vs good" example specifically for **{services_str}**:
+- NOT a generic S3 example - must be about their service
+- Show what an overly broad request looks like for this service
+- Show what a properly scoped request looks like for the same service
+
+Format your response in clear, well-spaced markdown with emojis for readability.
+Be conversational and helpful, not robotic."""
+
+
 class PolicyResponse:
     """
     Response from LLM policy generation
@@ -162,60 +303,7 @@ class GeminiProvider(LLMProvider):
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
-        guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
-
-**Original Request:** "{original_request}"
-
-**Generated Policy (high-risk):**
-```json
-{json.dumps(policy, indent=2)}
-```
-
----
-
-# 📋 Rejection Guidance
-
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
-
-Use this structure with proper spacing:
-
-## 1. 🔴 What Was Problematic
-
-[Explain which specific permissions or resource scopes caused the elevated risk assessment. Be specific about wildcards, overly broad actions, or sensitive services.]
-
----
-
-## 2. ✨ Suggested Alternative Request
-
-**Your improved request:**
-
-> "[Rewritten request in natural language - write it how a user would actually say it]"
-
-**Why this works better:** [Brief explanation]
-
----
-
-## 3. 💡 Tips for Better Scoping
-
-- **Tip 1:** [Specific tip for this request type]
-- **Tip 2:** [Another best practice]
-- **Tip 3:** [Additional guidance]
-
----
-
-## 4. 📝 Example of a Properly Scoped Request
-
-### ❌ Instead of:
-> "I need access to S3"
-
-### ✅ Submit this:
-> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
-
-**Result:** This will likely be auto-approved as low risk
-
----
-
-**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
+        guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
             if GOOGLE_GENAI_NEW:
@@ -299,60 +387,7 @@ Request: "{request_text}"
         if not self.client:
             return "OpenAI client not initialized. Please review your request and be more specific about resources and actions needed."
 
-        guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
-
-**Original Request:** "{original_request}"
-
-**Generated Policy (high-risk):**
-```json
-{json.dumps(policy, indent=2)}
-```
-
----
-
-# 📋 Rejection Guidance
-
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
-
-Use this structure with proper spacing:
-
-## 1. 🔴 What Was Problematic
-
-[Explain which specific permissions or resource scopes caused the elevated risk assessment. Be specific about wildcards, overly broad actions, or sensitive services.]
-
----
-
-## 2. ✨ Suggested Alternative Request
-
-**Your improved request:**
-
-> "[Rewritten request in natural language - write it how a user would actually say it]"
-
-**Why this works better:** [Brief explanation]
-
----
-
-## 3. 💡 Tips for Better Scoping
-
-- **Tip 1:** [Specific tip for this request type]
-- **Tip 2:** [Another best practice]
-- **Tip 3:** [Additional guidance]
-
----
-
-## 4. 📝 Example of a Properly Scoped Request
-
-### ❌ Instead of:
-> "I need access to S3"
-
-### ✅ Submit this:
-> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
-
-**Result:** This will likely be auto-approved as low risk
-
----
-
-**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
+        guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
             response = self.client.chat.completions.create(
@@ -423,60 +458,7 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
-        guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
-
-**Original Request:** "{original_request}"
-
-**Generated Policy (high-risk):**
-```json
-{json.dumps(policy, indent=2)}
-```
-
----
-
-# 📋 Rejection Guidance
-
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
-
-Use this structure with proper spacing:
-
-## 1. 🔴 What Was Problematic
-
-[Explain what made this request too broad or risky. Was it asking for access to all resources instead of a specific one? Was it asking for write/delete permissions when read-only would work? Be clear and specific.]
-
----
-
-## 2. ✨ Suggested Alternative Request
-
-**Your improved request:**
-
-> "[Rewritten request in natural language - write it how a user would actually say it]"
-
-**Why this works better:** [Brief explanation]
-
----
-
-## 3. 💡 Tips for Better Scoping
-
-- **Tip 1:** [Specific tip for this request type]
-- **Tip 2:** [Another best practice]
-- **Tip 3:** [Additional guidance]
-
----
-
-## 4. 📝 Example of a Properly Scoped Request
-
-### ❌ Instead of:
-> "I need access to S3"
-
-### ✅ Submit this:
-> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
-
-**Result:** This will likely be auto-approved as low risk
-
----
-
-**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
+        guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
             client = anthropic.Anthropic(api_key=self.api_key)
@@ -561,60 +543,7 @@ Respond ONLY with the JSON object, no additional text."""
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
-        guidance_prompt = f"""The following AWS IAM access request was rejected due to elevated risk level ({risk}).
-
-**Original Request:** "{original_request}"
-
-**Generated Policy (high-risk):**
-```json
-{json.dumps(policy, indent=2)}
-```
-
----
-
-# 📋 Rejection Guidance
-
-Please provide helpful guidance for the user to resubmit with a more appropriately scoped request. Format your response in **beautiful, well-spaced markdown** with emojis.
-
-Use this structure with proper spacing:
-
-## 1. 🔴 What Was Problematic
-
-[Explain what made this request too broad or risky. Was it asking for access to all resources instead of a specific one? Was it asking for write/delete permissions when read-only would work? Be clear and specific.]
-
----
-
-## 2. ✨ Suggested Alternative Request
-
-**Your improved request:**
-
-> "[Rewritten request in natural language - write it how a user would actually say it]"
-
-**Why this works better:** [Brief explanation]
-
----
-
-## 3. 💡 Tips for Better Scoping
-
-- **Tip 1:** [Specific tip for this request type]
-- **Tip 2:** [Another best practice]
-- **Tip 3:** [Additional guidance]
-
----
-
-## 4. 📝 Example of a Properly Scoped Request
-
-### ❌ Instead of:
-> "I need access to S3"
-
-### ✅ Submit this:
-> "I need read-only access to download reports from the analytics-reports bucket for the next 2 hours"
-
-**Result:** This will likely be auto-approved as low risk
-
----
-
-**Remember:** Be specific about what you need to do (read vs write), which resource (bucket name, instance ID), and for how long. The more specific, the faster your approval! 🚀"""
+        guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
             response = self.client.chat.completions.create(
