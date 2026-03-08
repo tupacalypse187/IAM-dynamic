@@ -405,7 +405,7 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
     except STSAssumeRoleError as e:
         logger.error(f"STS AssumeRole failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"AWS credential issuance failed: {str(e)}"
         )
     except Exception as e:

@@ -42,27 +42,7 @@ export default function RejectedView({
 
   const risk = riskConfig[policyData.risk as keyof typeof riskConfig] || riskConfig.medium
 
-  /**
-   * Preprocess guidance text to fix common LLM output issues:
-   * 1. Unescape backticks (LLM may output \` instead of `)
-   * 2. Remove wrapping code blocks if LLM wrapped entire response
-   */
-  const preprocessGuidance = (text: string): string => {
-    let processed = text
-
-    // Fix escaped backticks: \` -> `
-    processed = processed.replace(/\\`/g, '`')
-
-    // If the entire response is wrapped in a code block, unwrap it
-    // Match ``` at start (optional language) and ``` at end
-    const codeBlockMatch = processed.match(/^```(?:\w*)\n?([\s\S]*?)\n?```$/)
-    if (codeBlockMatch) {
-      processed = codeBlockMatch[1].trim()
-    }
-
-    return processed
-  }
-
+  // Fetch AI guidance for improving the request
   const fetchGuidance = async () => {
     setLoading(true)
     setError(null)
@@ -76,7 +56,8 @@ export default function RejectedView({
         model: selectedModel,
       })
       const rawGuidance = data.guidance || 'No guidance available. Please try revising your request with more specific resource names and limited actions.'
-      setGuidance(preprocessGuidance(rawGuidance))
+      // Use raw guidance directly - backend now outputs clean markdown
+      setGuidance(rawGuidance)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate guidance')
     } finally {
