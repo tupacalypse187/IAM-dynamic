@@ -185,7 +185,12 @@ Create a "bad vs good" example specifically for **{services_str}**:
 - Show what a properly scoped request looks like for the same service
 
 Format your response in clear, well-spaced markdown with emojis for readability.
-Be conversational and helpful, not robotic."""
+Be conversational and helpful, not robotic.
+
+IMPORTANT: Output raw markdown directly. Do NOT escape quotes, backticks, or other special characters. For example:
+- Use: "example text" (with actual quotes, not \" or \")
+- Use: `code` (with actual backticks, not \`)
+- Do NOT wrap the entire response in code blocks"""
 
 
 class PolicyResponse:
