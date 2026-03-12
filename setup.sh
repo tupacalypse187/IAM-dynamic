@@ -186,11 +186,11 @@ run_aws_setup() {
         return 1
     fi
 
-    if [[ "$CI_MODE" == "true" ]]; then
-        bash "$aws_script" --skip-user </dev/null
-    elif [[ "$QUICK_MODE" == "true" ]]; then
-        # In quick mode, use defaults (press Enter through prompts)
-        yes "" | bash "$aws_script" 2>/dev/null || bash "$aws_script"
+    # Run the AWS setup script
+    # Note: AWS setup requires interactive input for account-specific values
+    # Quick mode and CI mode use --skip-user flag to avoid creating duplicate users
+    if [[ "$CI_MODE" == "true" ]] || [[ "$QUICK_MODE" == "true" ]]; then
+        bash "$aws_script" --skip-user
     else
         bash "$aws_script"
     fi
@@ -213,15 +213,25 @@ run_auth_setup() {
     fi
 
     local mode="dev"
-    if confirm "Configure for production deployment (Caddy HTTPS, Turnstile)?" "n"; then
+    if [[ "$CI_MODE" == "true" ]]; then
+        mode="dev"
+    elif [[ "$QUICK_MODE" == "true" ]]; then
+        mode="dev"
+    elif confirm "Configure for production deployment (Caddy HTTPS, Turnstile)?" "n"; then
         mode="prod"
     fi
 
+    # Run the auth setup script
+    # CI mode provides input via /dev/null to use defaults
     if [[ "$CI_MODE" == "true" ]]; then
         bash "$auth_script" "--${mode}" </dev/null
-    elif [[ "$QUICK_MODE" == "true" ]]; then
-        # Provide defaults for quick mode
-        echo -e "1\n" | bash "$auth_script" "--${mode}" 2>/dev/null || bash "$auth_script" "--${mode}"
+    else
+        # Quick mode and interactive mode run the script normally
+        bash "$auth_script" "--${mode}"
+    fi
+
+    print_success "Auth setup complete"
+}
     else
         bash "$auth_script" "--${mode}"
     fi
