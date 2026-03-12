@@ -354,8 +354,9 @@ case "$LLM_PROVIDER" in
             read -rp "Model [${CURRENT_MODEL}]: " SELECTED_MODEL
             SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}"
         else
-            read -rp "Model [claude-opus-4-6-20250205]: " SELECTED_MODEL
-            SELECTED_MODEL="${SELECTED_MODEL:-claude-opus-4-6-20250205}"
+            DEFAULT_MODEL=$(echo "$ANTHROPIC_DEFAULTS" | head -1)
+            read -rp "Model [${DEFAULT_MODEL}]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-$DEFAULT_MODEL}"
         fi
         set_env "ANTHROPIC_MODEL" "$SELECTED_MODEL"
         ;;
