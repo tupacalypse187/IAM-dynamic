@@ -10,7 +10,7 @@ ARG VITE_TURNSTILE_SITE_KEY=""
 ENV VITE_TURNSTILE_SITE_KEY=${VITE_TURNSTILE_SITE_KEY}
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 COPY frontend/ .
 RUN npm run build

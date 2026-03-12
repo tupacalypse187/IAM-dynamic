@@ -36,9 +36,18 @@ except ImportError:
         genai = None
         GOOGLE_GENAI_NEW = False
 
+# Try to import google.api_core exceptions (optional)
+try:
+    from google.api_core import exceptions as google_exceptions
+except ImportError:
+    google_exceptions = None
+
 import openai
 import anthropic
 from dotenv import load_dotenv
+
+# Import error handler
+from services.error_handler import handle_llm_error, UserFacingError
 
 load_dotenv()
 
@@ -302,9 +311,10 @@ class GeminiProvider(LLMProvider):
                 explanation=data.get("explanation", "No explanation provided."),
                 approver_note=data.get("approver_note", "")
             )
+        except UserFacingError:
+            raise
         except Exception as e:
-            logger.error(f"Gemini generation error: {e}")
-            raise e
+            raise handle_llm_error(e, "gemini")
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
@@ -349,7 +359,15 @@ class OpenAIProvider(LLMProvider):
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
         if not self.client:
-            raise ValueError("OpenAI client not initialized. Check OPENAI_API_KEY.")
+            raise UserFacingError(
+                "🔑 **API Key Missing**\n\n"
+                "The OpenAI API key is not configured. Please:\n"
+                "1. Get a valid API key from [OpenAI Platform](https://platform.openai.com/api-keys)\n"
+                "2. Set `OPENAI_API_KEY=your-key` in your `.env` file\n"
+                "3. Restart the backend\n\n"
+                "[**Get API Key →**](https://platform.openai.com/api-keys)",
+                log_message="OpenAI client not initialized"
+            )
 
         prompt = f"""
 You are a security agent that writes AWS IAM policies from user requests.
@@ -383,9 +401,10 @@ Request: "{request_text}"
                 explanation=data.get("explanation", ""),
                 approver_note=data.get("approver_note", "")
             )
+        except UserFacingError:
+            raise
         except Exception as e:
-            logger.error(f"OpenAI generation error: {e}")
-            raise e
+            raise handle_llm_error(e, "openai")
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
@@ -422,6 +441,17 @@ class AnthropicProvider(LLMProvider):
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
+        if not self.api_key:
+            raise UserFacingError(
+                "🔑 **API Key Missing**\n\n"
+                "The Anthropic API key is not configured. Please:\n"
+                "1. Get a valid API key from [Anthropic Console](https://console.anthropic.com/)\n"
+                "2. Set `ANTHROPIC_API_KEY=your-key` in your `.env` file\n"
+                "3. Restart the backend\n\n"
+                "[**Get API Key →**](https://console.anthropic.com/)",
+                log_message="Anthropic API key not configured"
+            )
+
         user_prompt = f"""User Request: "{request_text}"
 
 Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON object containing:
@@ -456,9 +486,10 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
                 explanation=data.get("explanation", "No explanation provided."),
                 approver_note=data.get("approver_note", "")
             )
+        except UserFacingError:
+            raise
         except Exception as e:
-            logger.error(f"Anthropic generation error: {e}")
-            raise e
+            raise handle_llm_error(e, "claude")
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
@@ -541,9 +572,10 @@ Respond ONLY with the JSON object, no additional text."""
                 explanation=data.get("explanation", ""),
                 approver_note=data.get("approver_note", "")
             )
+        except UserFacingError:
+            raise
         except Exception as e:
-            logger.error(f"Zhipu generation error: {e}")
-            raise e
+            raise handle_llm_error(e, "zhipu")
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
