@@ -199,25 +199,25 @@ def get_max_duration(risk: str) -> int:
     return {"low": 12, "medium": 4, "high": 2, "critical": 1}.get(risk.lower(), 2)
 
 
-# Available models per provider
+# Available models per provider (updated March 2026)
 PROVIDER_MODELS = {
     "gemini": [
         {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro"},
         {"id": "gemini-3-flash-preview", "name": "Gemini 3 Flash"},
-        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
+        {"id": "gemini-3.1-flash-lite-preview", "name": "Gemini 3.1 Flash Lite"},
     ],
     "openai": [
-        {"id": "gpt-5.3", "name": "GPT-5.3"},
-        {"id": "gpt-5.2", "name": "GPT-5.2"},
-        {"id": "gpt-5", "name": "GPT-5"},
-        {"id": "o3-pro", "name": "o3-pro (Reasoning)"},
-        {"id": "o4-mini", "name": "o4-mini"},
+        {"id": "gpt-5.4", "name": "GPT-5.4"},
+        {"id": "gpt-5-mini-2025-08-07", "name": "GPT-5 Mini"},
+        {"id": "gpt-4o", "name": "GPT-4o"},
+        {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
+        {"id": "o1-preview", "name": "o1-preview"},
     ],
     "claude": [
-        {"id": "claude-opus-4-6-20250205", "name": "Claude Opus 4.6"},
-        {"id": "claude-sonnet-4-6-20250219", "name": "Claude Sonnet 4.6"},
-        {"id": "claude-haiku-4-5-20251015", "name": "Claude Haiku 4.5"},
+        {"id": "claude-opus-4-6", "name": "Claude Opus 4.6"},
+        {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+        {"id": "claude-opus-4-5", "name": "Claude Opus 4.5"},
+        {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5"},
     ],
     "zhipu": [
         {"id": "glm-5", "name": "GLM-5"},
