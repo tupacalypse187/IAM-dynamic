@@ -2,15 +2,15 @@
 LLM Service Layer - Supports multiple AI providers for IAM policy generation
 
 Providers supported:
-- Google Gemini 3.1 Pro Preview (latest)
-- OpenAI GPT-5.3 / o3-pro
+- Google Gemini 3.1 Pro Preview
+- OpenAI GPT-5.4
 - Anthropic Claude Opus 4.6
 - Zhipu GLM-5 (via api.z.ai global platform)
 
 Sources:
-- Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
-- OpenAI: https://openai.com/index/introducing-o3-and-o4-mini/
-- Anthropic: https://www.anthropic.com/news/claude-opus-4-5
+- Gemini: https://ai.google.dev/api/models
+- OpenAI: https://platform.openai.com/docs/models
+- Anthropic: https://docs.anthropic.com/en/docs/models-overview
 - Zhipu: https://docs.z.ai/guides/llm/glm-5
 """
 import os
@@ -408,17 +408,16 @@ Request: "{request_text}"
 
 class AnthropicProvider(LLMProvider):
     """
-    Anthropic Claude provider - Opus 4.5
+    Anthropic Claude provider - Opus 4.6
 
-    Latest model: claude-opus-4-5 (released November 24, 2025)
+    Latest model: claude-opus-4-6
     Source: https://www.anthropic.com/news/claude-opus-4-5
     """
 
     def __init__(self):
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        # Claude Opus 4.5 (released November 24, 2025)
-        # Model code: claude-opus-4-5-20251101
-        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6-20250205")
+        # Claude Opus 4.6 (February 2026)
+        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
 
@@ -570,10 +569,10 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
     Get the configured LLM provider instance
 
     Providers:
-    - gemini: Google Gemini 3 Pro Preview
-    - openai: OpenAI GPT-5 / o3-pro
-    - anthropic/claude: Anthropic Claude Opus 4.5
-    - zhipu/glm: Zhipu AI GLM-4.7
+    - gemini: Google Gemini 3.1 Pro Preview
+    - openai: OpenAI GPT-5.4
+    - anthropic/claude: Anthropic Claude Opus 4.6
+    - zhipu/glm: Zhipu AI GLM-5
 
     Args:
         provider_type: Optional provider type to override environment variable
