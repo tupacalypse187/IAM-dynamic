@@ -245,15 +245,15 @@ except:
 " 2>/dev/null
 }
 
-# ─── Default models for each provider (updated 2026-03) ───────────────
-# Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
-GEMINI_DEFAULTS="gemini-3.1-pro-preview\ngemini-3-pro-preview\ngemini-3-flash-preview\ngemini-2.5-pro\ngemini-2.5-flash"
-# OpenAI: https://openai.com/index/introducing-o3-and-o4-mini/
-OPENAI_DEFAULTS="gpt-5.3\ngpt-5.2\ngpt-5.1\ngpt-5\no3-pro\no4-mini"
-# Anthropic: https://www.anthropic.com/news/claude-opus-4-5
-ANTHROPIC_DEFAULTS="claude-opus-4-6-20250205\nclaude-opus-4-5-20251101\nclaude-sonnet-4-6-20250219\nclaude-sonnet-4-5-20250814\nclaude-haiku-4-5-20251015"
-# Zhipu: https://docs.z.ai/guides/llm/glm-5
-ZHIPU_DEFAULTS="glm-5\nglm-4.7\nglm-4.7-flash\nglm-4.6"
+# ─── Default models for each provider ───────────────────────────────
+# Gemini: https://ai.google.dev/api/models
+GEMINI_DEFAULTS="gemini-3.1-pro-preview\ngemini-3-flash-preview\ngemini-3.1-flash-lite-preview"
+# OpenAI: https://platform.openai.com/docs/models
+OPENAI_DEFAULTS="gpt-5.4\ngpt-5-mini-2025-08-07\ngpt-4o\ngpt-4o-mini\no1-preview\no1-mini"
+# Anthropic: https://docs.anthropic.com/en/docs/models-overview
+ANTHROPIC_DEFAULTS="claude-opus-4-6\nclaude-opus-4-5\nclaude-sonnet-4-5\nclaude-haiku-4-20250214"
+# Z.AI GLM (Global): https://docs.z.ai/guides/llm/glm-5
+ZHIPU_DEFAULTS="glm-5\nglm-4.7\nglm-4.7-flash\nglm-4-plus"
 
 # ─── Provider-specific configuration ───────────────────────────────────
 SELECTED_MODEL=""

@@ -39,19 +39,19 @@ class LLMConfig(BaseModel):
     """LLM provider configuration"""
     provider: str = Field(default="gemini", env="LLM_PROVIDER")
 
-    # Gemini (Google) - Gemini 3.1 Pro Preview (February 2026)
+    # Gemini (Google)
     google_api_key: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")
     gemini_model: str = Field(default="gemini-3.1-pro-preview", env="GEMINI_MODEL")
 
-    # OpenAI - GPT-5.3 (February 2026) - latest
+    # OpenAI
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.3", env="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.4", env="OPENAI_MODEL")
 
-    # Anthropic - Claude Opus 4.6 (February 2026)
+    # Anthropic
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-opus-4-6-20250205", env="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-opus-4-6", env="ANTHROPIC_MODEL")
 
-    # Zhipu - GLM-5 (February 2026) - Global platform (api.z.ai)
+    # Z.AI GLM (Global platform via api.z.ai)
     zai_api_key: Optional[str] = Field(default=None, env="ZAI_API_KEY")
     zai_model: str = Field(default="glm-5", env="ZAI_MODEL")
 
@@ -123,9 +123,9 @@ def load_config() -> AppConfig:
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.3"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6-20250205"),
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6"),
             zai_api_key=os.getenv("ZAI_API_KEY"),
             zai_model=os.getenv("ZAI_MODEL", "glm-5")
         )
