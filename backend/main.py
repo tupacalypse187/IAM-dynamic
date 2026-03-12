@@ -413,7 +413,9 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
     except STSAssumeRoleError as e:
         logger.error(f"STS AssumeRole failed: {e}")
         # Create a user-friendly error for AWS STS issues
-        error_detail = """🔑 **AWS Credential Issue**
+        account_id = config.aws.account_id or "YOUR_ACCOUNT_ID"
+        role_name = config.aws.role_arn.split("/")[-1] if config.aws.role_arn else "YOUR_ROLE_NAME"
+        error_detail = f"""🔑 **AWS Credential Issue**
 
 Unable to issue temporary credentials. This could be due to:
 

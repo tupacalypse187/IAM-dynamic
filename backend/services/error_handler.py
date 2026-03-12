@@ -116,7 +116,7 @@ def handle_llm_error(error: Exception, provider: str) -> UserFacingError:
                 "[**Get API Key →**](https://console.anthropic.com/)",
                 log_message=f"Claude authentication error: {error}"
             )
-        if "rate" in error_str and "limit" in error_str or "429" in error_str:
+        if ("rate" in error_str and "limit" in error_str) or "429" in error_str:
             return UserFacingError(
                 "⚠️ **Rate Limit Exceeded**\n\n"
                 "The Anthropic API rate limit has been reached. Please:\n"

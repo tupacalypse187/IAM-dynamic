@@ -522,20 +522,29 @@ class ZhipuProvider(LLMProvider):
         from openai import OpenAI
 
         self.api_key = os.getenv("ZAI_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "ZAI_API_KEY not found. Set it in your .env file. "
-                "Get your API key at: https://api.z.ai"
-            )
-
         self.model_name = os.getenv("ZAI_MODEL", "glm-5")
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://api.z.ai/api/coding/paas/v4/"
-        )
-        logger.info(f"Using Zhipu global platform (api.z.ai) with model {self.model_name}")
+        if not self.api_key:
+            logger.warning("ZAI_API_KEY not found. ZhipuProvider may fail.")
+            self.client = None
+        else:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url="https://api.z.ai/api/coding/paas/v4/"
+            )
+            logger.info(f"Using Zhipu global platform (api.z.ai) with model {self.model_name}")
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
+        if not self.client:
+            raise UserFacingError(
+                "🔑 **API Key Missing**\n\n"
+                "The Z.AI API key is not configured. Please:\n"
+                "1. Get a valid API key from [Z.AI Platform](https://api.z.ai)\n"
+                "2. Set `ZAI_API_KEY=your-key` in your `.env` file\n"
+                "3. Restart the backend\n\n"
+                "[**Get API Key →**](https://api.z.ai)",
+                log_message="Zhipu API key not configured"
+            )
+
         prompt = f"""You are a security agent that writes AWS IAM policies from user requests.
 - ALWAYS create a policy that grants what is requested, scoped to least privilege.
 - Respond with a JSON object.
