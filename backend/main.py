@@ -28,6 +28,7 @@ from services.sts_service import STSService, STSAssumeRoleError
 from services.slack_service import SlackService
 from services.auth_service import AuthService
 from services.turnstile_service import TurnstileService
+from services.error_handler import UserFacingError
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
 
@@ -366,11 +367,18 @@ async def generate_policy(request: PolicyRequest, _user: str = Depends(get_curre
             max_duration=actual_duration
         )
 
+    except UserFacingError as e:
+        # Log the full error but return user-friendly message
+        logger.error(f"Policy generation failed (user-facing): {e.log_message}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.user_message
+        )
     except Exception as e:
         logger.error(f"Policy generation failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate policy: {str(e)}"
+            detail="An unexpected error occurred. Please try again."
         )
 
 
@@ -404,15 +412,30 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
 
     except STSAssumeRoleError as e:
         logger.error(f"STS AssumeRole failed: {e}")
+        # Create a user-friendly error for AWS STS issues
+        account_id = config.aws.account_id or "YOUR_ACCOUNT_ID"
+        role_name = config.aws.role_arn.split("/")[-1] if config.aws.role_arn else "YOUR_ROLE_NAME"
+        error_detail = f"""🔑 **AWS Credential Issue**
+
+Unable to issue temporary credentials. This could be due to:
+
+• **Invalid AWS credentials** - Check `AWS_ACCOUNT_ID` and `AWS_ROLE_NAME` in your `.env`
+• **Role doesn't exist** - Ensure the IAM role exists in your AWS account
+• **Permission denied** - The role trust policy may not allow your account to assume it
+
+**To fix:**
+1. Verify the IAM role exists: `arn:aws:iam::{account_id}:role/{role_name}`
+2. Check the trust relationship allows your AWS account
+3. Ensure your AWS credentials have `sts:AssumeRole` permission"""
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"AWS credential issuance failed: {str(e)}"
+            detail=error_detail
         )
     except Exception as e:
         logger.error(f"Credential issuance failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to issue credentials: {str(e)}"
+            detail="Failed to issue credentials. Please try again."
         )
 
 
@@ -450,11 +473,18 @@ async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: 
 
         return RejectionGuidanceResponse(guidance=guidance)
 
+    except UserFacingError as e:
+        # Log the full error but return user-friendly message
+        logger.error(f"Rejection guidance generation failed (user-facing): {e.log_message}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.user_message
+        )
     except Exception as e:
         logger.error(f"Rejection guidance generation failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate guidance: {str(e)}"
+            detail="Unable to generate guidance. Please review your request and try again."
         )
 
 
