@@ -411,13 +411,13 @@ class AnthropicProvider(LLMProvider):
     Anthropic Claude provider - Opus 4.6
 
     Latest model: claude-opus-4-6
-    Source: https://www.anthropic.com/news/claude-opus-4-5
+    Source: https://docs.anthropic.com/en/docs/models-overview
     """
 
     def __init__(self):
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        # Claude Opus 4.6 (February 2026)
         self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
+        # Claude Opus 4.6 (February 2026)
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
 

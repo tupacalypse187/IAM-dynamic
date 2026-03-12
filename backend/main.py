@@ -208,7 +208,7 @@ PROVIDER_MODELS = {
     ],
     "openai": [
         {"id": "gpt-5.4", "name": "GPT-5.4"},
-        {"id": "gpt-5-mini-2025-08-07", "name": "GPT-5.1 Mini"},
+        {"id": "gpt-5-mini-2025-08-07", "name": "GPT-5 Mini"},
         {"id": "gpt-4o", "name": "GPT-4o"},
         {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
         {"id": "o1-preview", "name": "o1-preview"},
