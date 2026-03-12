@@ -189,21 +189,24 @@ get_role_principals() {
             # User can create credentials or use a profile
             local username
             username=$(basename "$caller_arn")
-            principals=$(jq -n --arg user "$username" '[$user]')
+            local user_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:user/${username}"
+            principals=$(jq -n --arg arn "$user_arn" '[$arn]')
             print_info "Will add IAM user: ${username}"
             ;;
         role)
             # Using a role - extract the role name
             local role_name
             role_name=$(basename "$caller_arn")
-            principals=$(jq -n --arg role "$role_name" '[$role]')
+            local role_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${role_name}"
+            principals=$(jq -n --arg arn "$role_arn" '[$arn]')
             print_info "Will add IAM role: ${role_name}"
             ;;
         assumed-role)
             # We're already assuming a role - use the role name
             local role_name
             role_name=$(echo "$caller_arn" | sed 's/:assumed-role\//:role\//' | cut -d'/' -f2)
-            principals=$(jq -n --arg role "$role_name" '[$role]')
+            local role_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${role_name}"
+            principals=$(jq -n --arg arn "$role_arn" '[$arn]')
             print_info "Will add IAM role: ${role_name}"
             ;;
         *)
@@ -245,7 +248,8 @@ create_iam_role() {
     # Additional principals - for app user that will be created
     local additional_principals="[]"
     if [[ "$SKIP_USER" != "true" ]]; then
-        additional_principals=$(jq -n --arg user "$DEFAULT_USER_NAME" '[$user]')
+        local app_user_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:user/${DEFAULT_USER_NAME}"
+        additional_principals=$(jq -n --arg arn "$app_user_arn" '[$arn]')
     fi
 
     # Combine principals
@@ -392,14 +396,34 @@ create_iam_user() {
     local current_policy
     current_policy=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.AssumeRolePolicyDocument' --output json 2>/dev/null)
 
+    local user_arn="arn:aws:iam::${AWS_ACCOUNT_ID}:user/${USER_NAME}"
+
+    # Check if there's already an AWS principal statement we can merge with
     local updated_policy
     updated_policy=$(echo "$current_policy" | jq \
-        --arg user "$USER_NAME" \
-        '.Statement += [{
-            Effect: "Allow",
-            Principal: {AWS: $user},
-            Action: "sts:AssumeRole"
-        }] | .Statement |= unique_by(.Principal // empty)')
+        --arg user_arn "$user_arn" \
+        '
+        # Find the AWS principal statement (if any)
+        .Statement as $stmt |
+        ($stmt[] | select(.Principal.AWS != null)) as $aws_stmt |
+        # If exists, merge the new ARN into the existing AWS principal array
+        if $aws_stmt then
+            .Statement |= map(
+                if .Principal.AWS then
+                    .Principal.AWS |= (if type == "array" then . + [$user_arn] else [$user_arn] end | unique)
+                else
+                    .
+                end
+            )
+        else
+            # No AWS principal statement exists, add a new one
+            .Statement += [{
+                Effect: "Allow",
+                Principal: {AWS: [$user_arn]},
+                Action: "sts:AssumeRole"
+            }]
+        end
+        ')
 
     aws iam update-assume-role-policy \
         --role-name "$ROLE_NAME" \
