@@ -179,9 +179,9 @@ GEMINI_MODEL=gemini-3-pro-preview
 # ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_MODEL=claude-opus-4-5-20251101
 
-# --- Zhipu GLM (optional) ---
-# ZHIPUAI_API_KEY=...
-# ZHIPUAI_MODEL=glm-4.7
+# --- Z.AI GLM (optional) ---
+# ZAI_API_KEY=...
+# ZAI_MODEL=glm-5.1
 
 # ============================================
 # AWS Configuration

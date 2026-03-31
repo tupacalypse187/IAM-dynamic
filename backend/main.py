@@ -221,6 +221,7 @@ PROVIDER_MODELS = {
         {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5"},
     ],
     "zhipu": [
+        {"id": "glm-5.1", "name": "GLM-5.1"},
         {"id": "glm-5", "name": "GLM-5"},
         {"id": "glm-4.7", "name": "GLM-4.7"},
         {"id": "glm-4.7-flash", "name": "GLM-4.7 Flash"},
