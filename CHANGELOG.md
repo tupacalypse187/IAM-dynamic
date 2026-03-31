@@ -23,7 +23,7 @@ This release represents a complete architectural overhaul, migrating from a mono
   - Google Gemini 3 Pro Preview (default)
   - OpenAI GPT-5.1
   - Anthropic Claude Opus 4.5
-  - Zhipu GLM-4.7
+  - Zhipu GLM-5.1
   - Runtime provider switching via UI
 
 - **Modern React Frontend**:

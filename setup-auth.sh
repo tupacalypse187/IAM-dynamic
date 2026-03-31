@@ -253,7 +253,7 @@ OPENAI_DEFAULTS="gpt-5.4\ngpt-5-mini-2025-08-07\ngpt-4o\ngpt-4o-mini\no1-preview
 # Anthropic: https://docs.anthropic.com/en/docs/models-overview
 ANTHROPIC_DEFAULTS="claude-opus-4-6\nclaude-opus-4-5\nclaude-sonnet-4-5\nclaude-haiku-4-20250214"
 # Z.AI GLM (Global): https://docs.z.ai/guides/llm/glm-5
-ZHIPU_DEFAULTS="glm-5\nglm-4.7\nglm-4.7-flash\nglm-4-plus"
+ZHIPU_DEFAULTS="glm-5.1\nglm-5\nglm-4.7\nglm-4.7-flash"
 
 # ─── Provider-specific configuration ───────────────────────────────────
 SELECTED_MODEL=""
@@ -382,8 +382,8 @@ case "$LLM_PROVIDER" in
             read -rp "Model [${CURRENT_MODEL}]: " SELECTED_MODEL
             SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}"
         else
-            read -rp "Model [glm-5]: " SELECTED_MODEL
-            SELECTED_MODEL="${SELECTED_MODEL:-glm-5}"
+            read -rp "Model [glm-5.1]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-glm-5.1}"
         fi
         set_env "ZAI_MODEL" "$SELECTED_MODEL"
         ;;

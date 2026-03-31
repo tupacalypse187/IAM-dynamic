@@ -37,7 +37,7 @@ The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_serv
 - **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3.1 Pro Preview
 - **`OpenAIProvider`**: OpenAI GPT-5.3
 - **`AnthropicProvider`**: Anthropic Claude Opus 4.6
-- **`ZhipuProvider`**: Z.AI GLM-5 (global platform via api.z.ai)
+- **`ZhipuProvider`**: Z.AI GLM-5.1 (global platform via api.z.ai)
 
 The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `claude`, or `zhipu`).
 
@@ -198,7 +198,7 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 
 # --- Z.AI GLM Configuration ---
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5
+# ZAI_MODEL=glm-5.1
 
 # ============================================
 # AWS Configuration

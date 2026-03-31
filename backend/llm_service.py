@@ -5,7 +5,7 @@ Providers supported:
 - Google Gemini 3.1 Pro Preview
 - OpenAI GPT-5.4
 - Anthropic Claude Opus 4.6
-- Zhipu GLM-5 (via api.z.ai global platform)
+- Zhipu GLM-5.1 (via api.z.ai global platform)
 
 Sources:
 - Gemini: https://ai.google.dev/api/models
@@ -514,7 +514,7 @@ class ZhipuProvider(LLMProvider):
     Zhipu AI GLM provider - Global platform (api.z.ai)
 
     Uses OpenAI-compatible API.
-    Latest models: glm-5, glm-4.7, glm-4.7-flash
+    Latest models: glm-5.1, glm-5, glm-4.7
     Source: https://docs.z.ai/guides/llm/glm-5
     """
 
@@ -522,7 +522,7 @@ class ZhipuProvider(LLMProvider):
         from openai import OpenAI
 
         self.api_key = os.getenv("ZAI_API_KEY")
-        self.model_name = os.getenv("ZAI_MODEL", "glm-5")
+        self.model_name = os.getenv("ZAI_MODEL", "glm-5.1")
         if not self.api_key:
             logger.warning("ZAI_API_KEY not found. ZhipuProvider may fail.")
             self.client = None
@@ -613,7 +613,7 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
     - gemini: Google Gemini 3.1 Pro Preview
     - openai: OpenAI GPT-5.4
     - anthropic/claude: Anthropic Claude Opus 4.6
-    - zhipu/glm: Zhipu AI GLM-5
+    - zhipu/glm: Zhipu AI GLM-5.1
 
     Args:
         provider_type: Optional provider type to override environment variable

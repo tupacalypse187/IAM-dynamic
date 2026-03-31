@@ -162,10 +162,10 @@ GEMINI_MODEL=gemini-3.1-pro-preview
 # ANTHROPIC_MODEL=claude-opus-4-6
 # Alternatives: claude-opus-4-5, claude-sonnet-4-5
 
-# Z.AI GLM-5 (Global platform via api.z.ai)
+# Z.AI GLM-5.1 (Global platform via api.z.ai)
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5
-# Alternatives: glm-4.7, glm-4.7-flash
+# ZAI_MODEL=glm-5.1
+# Alternatives: glm-5, glm-4.7, glm-4.7-flash
 
 # --- AWS Configuration ---
 AWS_ACCOUNT_ID=123456789012

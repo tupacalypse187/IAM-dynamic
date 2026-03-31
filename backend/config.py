@@ -5,7 +5,7 @@ Supports LLM providers:
 - Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
 - OpenAI GPT-5.3 (gpt-5.3) and o3-pro
 - Anthropic Claude Opus 4.6 (claude-opus-4-6-20250205)
-- Zhipu GLM-5 (glm-5)
+- Zhipu GLM-5.1 (glm-5.1)
 
 Sources:
 - Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
@@ -53,7 +53,7 @@ class LLMConfig(BaseModel):
 
     # Z.AI GLM (Global platform via api.z.ai)
     zai_api_key: Optional[str] = Field(default=None, env="ZAI_API_KEY")
-    zai_model: str = Field(default="glm-5", env="ZAI_MODEL")
+    zai_model: str = Field(default="glm-5.1", env="ZAI_MODEL")
 
     @field_validator("provider")
     @classmethod
@@ -127,7 +127,7 @@ def load_config() -> AppConfig:
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6"),
             zai_api_key=os.getenv("ZAI_API_KEY"),
-            zai_model=os.getenv("ZAI_MODEL", "glm-5")
+            zai_model=os.getenv("ZAI_MODEL", "glm-5.1")
         )
 
         slack_config = SlackConfig(
