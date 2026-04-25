@@ -234,3 +234,6 @@ yarn-error.log*
 # Claude Code
 .claude/projects/
 .claude/settings.local.json
+
+# Zread CLI (skip in-progress drafts)
+.zread/wiki/drafts/
