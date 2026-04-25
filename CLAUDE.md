@@ -290,6 +290,17 @@ Risk-based duration limits:
 - `POST /api/issue-credentials` - Issue temporary AWS credentials
 - `POST /api/generate-rejection-guidance` - Get AI guidance for rejected requests
 
+## Zread Wiki (`.zread/`)
+
+The `.zread/` directory contains a machine-generated wiki produced by [zread](https://zread.ai/cli). It breaks the codebase into topical markdown files (architecture, services, views, Docker, CI/CD, etc.) that can be used for quick orientation or fed to AI tools.
+
+**Maintenance workflow:**
+1. After meaningful code changes, run `zread generate` to refresh the wiki
+2. Prune old version snapshots so only the latest remains: `rm -rf .zread/wiki/versions/<old-timestamp>/`
+3. Commit the updated `.zread/` directory
+
+**Gitignore:** `.zread/wiki/drafts/` is excluded (in-progress generation artifacts). Everything else (`current` pointer + latest `versions/` snapshot) is tracked.
+
 ## Roadmap (See GEMINI.md)
 
 Phase 2: Model Context Protocol (MCP) integration for resource validation tools

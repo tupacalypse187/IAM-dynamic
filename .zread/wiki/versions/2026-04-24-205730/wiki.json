@@ -1,0 +1,218 @@
+{
+  "id": "2026-04-24-205730",
+  "generated_at": "2026-04-25T00:57:30.18486Z",
+  "language": "en",
+  "pages": [
+    {
+      "slug": "1-overview",
+      "title": "Overview",
+      "file": "1-overview.md",
+      "section": "Get Started",
+      "level": "Beginner"
+    },
+    {
+      "slug": "2-quick-start",
+      "title": "Quick Start",
+      "file": "2-quick-start.md",
+      "section": "Get Started",
+      "level": "Beginner"
+    },
+    {
+      "slug": "3-environment-configuration",
+      "title": "Environment Configuration",
+      "file": "3-environment-configuration.md",
+      "section": "Get Started",
+      "level": "Beginner"
+    },
+    {
+      "slug": "4-running-with-docker",
+      "title": "Running with Docker",
+      "file": "4-running-with-docker.md",
+      "section": "Get Started",
+      "level": "Beginner"
+    },
+    {
+      "slug": "5-architecture-overview-and-request-lifecycle",
+      "title": "Architecture Overview and Request Lifecycle",
+      "file": "5-architecture-overview-and-request-lifecycle.md",
+      "section": "Deep Dive",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "6-fastapi-application-entry-point-and-api-endpoints",
+      "title": "FastAPI Application Entry Point and API Endpoints",
+      "file": "6-fastapi-application-entry-point-and-api-endpoints.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "7-multi-provider-llm-service-layer",
+      "title": "Multi-Provider LLM Service Layer",
+      "file": "7-multi-provider-llm-service-layer.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "8-iam-policy-generation-prompt-engineering-and-guardrails",
+      "title": "IAM Policy Generation Prompt Engineering and Guardrails",
+      "file": "8-iam-policy-generation-prompt-engineering-and-guardrails.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Advanced"
+    },
+    {
+      "slug": "9-aws-sts-credential-issuance-and-risk-based-duration-limits",
+      "title": "AWS STS Credential Issuance and Risk-Based Duration Limits",
+      "file": "9-aws-sts-credential-issuance-and-risk-based-duration-limits.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "10-configuration-system-with-pydantic-validation",
+      "title": "Configuration System with Pydantic Validation",
+      "file": "10-configuration-system-with-pydantic-validation.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "11-jwt-authentication-and-cloudflare-turnstile-captcha",
+      "title": "JWT Authentication and Cloudflare Turnstile CAPTCHA",
+      "file": "11-jwt-authentication-and-cloudflare-turnstile-captcha.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Advanced"
+    },
+    {
+      "slug": "12-slack-notification-and-audit-trail-integration",
+      "title": "Slack Notification and Audit Trail Integration",
+      "file": "12-slack-notification-and-audit-trail-integration.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "13-user-facing-error-handling-strategy",
+      "title": "User-Facing Error Handling Strategy",
+      "file": "13-user-facing-error-handling-strategy.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "14-data-schemas-and-type-definitions",
+      "title": "Data Schemas and Type Definitions",
+      "file": "14-data-schemas-and-type-definitions.md",
+      "section": "Deep Dive",
+      "group": "Backend",
+      "level": "Beginner"
+    },
+    {
+      "slug": "15-react-app-state-machine-and-view-routing",
+      "title": "React App State Machine and View Routing",
+      "file": "15-react-app-state-machine-and-view-routing.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "16-api-client-layer-and-auth-context-provider",
+      "title": "API Client Layer and Auth Context Provider",
+      "file": "16-api-client-layer-and-auth-context-provider.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "17-request-view-natural-language-input-and-templates",
+      "title": "Request View: Natural Language Input and Templates",
+      "file": "17-request-view-natural-language-input-and-templates.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "18-review-view-risk-assessment-and-policy-approval-flow",
+      "title": "Review View: Risk Assessment and Policy Approval Flow",
+      "file": "18-review-view-risk-assessment-and-policy-approval-flow.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "19-credentials-view-multi-format-export-and-expiration-timer",
+      "title": "Credentials View: Multi-Format Export and Expiration Timer",
+      "file": "19-credentials-view-multi-format-export-and-expiration-timer.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "20-rejected-view-ai-powered-resubmission-guidance",
+      "title": "Rejected View: AI-Powered Resubmission Guidance",
+      "file": "20-rejected-view-ai-powered-resubmission-guidance.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "21-sidebar-provider-model-selector-templates-and-theme-toggle",
+      "title": "Sidebar: Provider/Model Selector, Templates, and Theme Toggle",
+      "file": "21-sidebar-provider-model-selector-templates-and-theme-toggle.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Beginner"
+    },
+    {
+      "slug": "22-ui-component-library-and-styling-tailwind-radix-ui",
+      "title": "UI Component Library and Styling (Tailwind + Radix UI)",
+      "file": "22-ui-component-library-and-styling-tailwind-radix-ui.md",
+      "section": "Deep Dive",
+      "group": "Frontend",
+      "level": "Beginner"
+    },
+    {
+      "slug": "23-docker-architecture-development-vs-production-topology",
+      "title": "Docker Architecture: Development vs Production Topology",
+      "file": "23-docker-architecture-development-vs-production-topology.md",
+      "section": "Deep Dive",
+      "group": "Infrastructure",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "24-caddy-tls-termination-with-cloudflare-dns-challenge",
+      "title": "Caddy TLS Termination with Cloudflare DNS Challenge",
+      "file": "24-caddy-tls-termination-with-cloudflare-dns-challenge.md",
+      "section": "Deep Dive",
+      "group": "Infrastructure",
+      "level": "Advanced"
+    },
+    {
+      "slug": "25-nginx-reverse-proxy-configuration-and-rate-limiting",
+      "title": "nginx Reverse Proxy Configuration and Rate Limiting",
+      "file": "25-nginx-reverse-proxy-configuration-and-rate-limiting.md",
+      "section": "Deep Dive",
+      "group": "Infrastructure",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "26-ci-cd-pipeline-pr-checks-build-and-ssh-deployment",
+      "title": "CI/CD Pipeline: PR Checks, Build, and SSH Deployment",
+      "file": "26-ci-cd-pipeline-pr-checks-build-and-ssh-deployment.md",
+      "section": "Deep Dive",
+      "group": "Infrastructure",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "27-aws-iam-role-setup-and-trust-policy-for-sts-assumerole",
+      "title": "AWS IAM Role Setup and Trust Policy for STS AssumeRole",
+      "file": "27-aws-iam-role-setup-and-trust-policy-for-sts-assumerole.md",
+      "section": "Deep Dive",
+      "group": "Infrastructure",
+      "level": "Advanced"
+    }
+  ]
+}

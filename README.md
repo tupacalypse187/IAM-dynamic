@@ -135,6 +135,7 @@ graph LR
 | `CLAUDE.md`                   | Documentation for Claude Code (AI assistant).    |
 | `GEMINI.md`                   | Roadmap and architecture for Gemini integration. |
 | `CHANGELOG.md`                | Version history and release notes.               |
+| `.zread/`                     | Generated wiki from [zread](https://zread.ai/cli) — topical markdown breakdown of the codebase. Run `zread generate` to refresh after code changes. |
 
 ---
 
