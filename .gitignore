@@ -237,3 +237,6 @@ yarn-error.log*
 
 # Zread CLI (skip in-progress drafts)
 .zread/wiki/drafts/
+
+# ZCode CLI
+.zcode/
