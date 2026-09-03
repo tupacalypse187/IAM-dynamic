@@ -1,18 +1,33 @@
 """
 Slack notification service
+
+Sends audit notifications via Slack Incoming Webhooks using Block Kit
+(https://api.slack.com/block-kit) — the current best practice for
+formatted Slack messages — with a plain-text fallback for clients and
+notification previews that don't render blocks.
 """
 import logging
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Colored status circles so risk is scannable without reading
+RISK_EMOJI = {
+    "low": ":large_green_circle:",
+    "medium": ":large_yellow_circle:",
+    "high": ":large_orange_circle:",
+    "critical": ":red_circle:",
+}
 
 
 class SlackService:
     """
     Slack webhook notification service
 
-    Sends formatted notifications to Slack for audit and approval tracking.
+    Sends Block Kit formatted notifications to Slack for audit and
+    approval tracking.
     """
 
     def __init__(self, webhook_url: Optional[str] = None):
@@ -28,12 +43,12 @@ class SlackService:
         else:
             logger.info("Slack webhook not configured, notifications will be skipped")
 
-    def send_notification(self, message: str) -> bool:
+    def send_payload(self, payload: Dict[str, Any]) -> bool:
         """
-        Send notification to Slack
+        Send a raw webhook payload to Slack
 
         Args:
-            message: Message text to send
+            payload: JSON body for the webhook (blocks and/or text)
 
         Returns:
             True if successful, False otherwise
@@ -45,7 +60,7 @@ class SlackService:
         try:
             response = requests.post(
                 self.webhook_url,
-                json={"text": message},
+                json=payload,
                 timeout=10
             )
             response.raise_for_status()
@@ -56,16 +71,28 @@ class SlackService:
             logger.error(f"Failed to send Slack notification: {e}")
             return False
 
-    def format_credential_message(
+    def send_notification(self, message: str) -> bool:
+        """
+        Send a plain-text notification to Slack
+
+        Args:
+            message: Message text to send
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.send_payload({"text": message})
+
+    def format_credential_payload(
         self,
         request_text: str,
         risk_level: str,
         duration_hours: int,
         auto_approved: bool,
         approver: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Format credential issuance message for Slack
+        Build a Block Kit payload for a credential issuance notification
 
         Args:
             request_text: The user's access request
@@ -75,15 +102,56 @@ class SlackService:
             approver: Approver name (if manual approval)
 
         Returns:
-            Formatted Slack message
+            Webhook payload with blocks plus a plain-text fallback
         """
-        base = ":unlock: AWS Temporary Credentials issued for request:\n"
-        approval_type = "AUTO-APPROVED" if auto_approved else f"MANUAL APPROVAL (by {approver})"
+        approval = (
+            "*Approval*\n:white_check_mark: Auto-approved"
+            if auto_approved
+            else f"*Approval*\n:writing_hand: Manual — {approver or 'unknown'}"
+        )
+        risk = RISK_EMOJI.get(risk_level.lower(), ":large_yellow_circle:")
+        # mrkdwn blockquotes (one ">" per line) render multi-line requests well
+        quoted_request = "\n".join(f"> {line}" for line in request_text.splitlines() if line.strip())
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-        return f"""{base}{approval_type}
-`{request_text}`
-Risk Score: {risk_level.upper()}
-Duration: {duration_hours} hour(s)"""
+        return {
+            # Plain-text fallback for previews / non-Block Kit clients
+            "text": f"AWS Temporary Credentials issued ({risk_level.upper()} risk, {duration_hours}h)",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🔓 AWS Temporary Credentials Issued",
+                        "emoji": True,
+                    },
+                },
+                {
+                    "type": "section",
+                    "fields": [
+                        {"type": "mrkdwn", "text": approval},
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Risk Score*\n{risk} {risk_level.upper()}",
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Duration*\n{duration_hours} hour(s)",
+                        },
+                    ],
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Request*\n{quoted_request}"},
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": f"IAM-Dynamic • {timestamp}"},
+                    ],
+                },
+            ],
+        }
 
     def send_credential_notification(
         self,
@@ -106,23 +174,23 @@ Duration: {duration_hours} hour(s)"""
         Returns:
             True if successful, False otherwise
         """
-        message = self.format_credential_message(
+        payload = self.format_credential_payload(
             request_text=request_text,
             risk_level=risk_level,
             duration_hours=duration_hours,
             auto_approved=auto_approved,
             approver=approver
         )
-        return self.send_notification(message)
+        return self.send_payload(payload)
 
-    def format_error_message(
+    def format_error_payload(
         self,
         error_type: str,
         request_text: str,
         error_details: str
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Format error message for Slack
+        Build a Block Kit payload for an error notification
 
         Args:
             error_type: Type of error (e.g., "Policy Generation", "Credential Issuance")
@@ -130,11 +198,38 @@ Duration: {duration_hours} hour(s)"""
             error_details: Error details
 
         Returns:
-            Formatted Slack error message
+            Webhook payload with blocks plus a plain-text fallback
         """
-        return f""":warning: IAM-Dynamic Error: {error_type}
-Request: `{request_text}`
-Details: {error_details}"""
+        quoted_request = "\n".join(f"> {line}" for line in request_text.splitlines() if line.strip())
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        return {
+            "text": f"IAM-Dynamic error: {error_type}",
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": f"⚠️ Error — {error_type}",
+                        "emoji": True,
+                    },
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Request*\n{quoted_request}"},
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Details*\n```{error_details}```"},
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": f"IAM-Dynamic • {timestamp}"},
+                    ],
+                },
+            ],
+        }
 
     def send_error_notification(
         self,
@@ -153,9 +248,9 @@ Details: {error_details}"""
         Returns:
             True if successful, False otherwise
         """
-        message = self.format_error_message(
+        payload = self.format_error_payload(
             error_type=error_type,
             request_text=request_text,
             error_details=error_details
         )
-        return self.send_notification(message)
+        return self.send_payload(payload)
