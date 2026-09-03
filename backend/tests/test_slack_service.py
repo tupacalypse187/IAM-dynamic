@@ -54,6 +54,18 @@ class TestCredentialPayload:
         body = " ".join(s["text"]["text"] for s in sections)
         assert "> line one" in body and "> line two" in body
 
+    def test_user_content_is_mrkdwn_escaped(self):
+        """Link/mention/broadcast injection must be neutralized (Slack guidance)."""
+        payload = self._payload(
+            request_text="<http://phish.example|Approve here> & <!channel>",
+            approver="<@U123>",
+        )
+        raw = str(payload)
+        assert "<http://phish.example" not in raw
+        assert "&lt;http://phish.example|Approve here&gt;" in raw
+        assert "&amp; &lt;!channel&gt;" in raw
+        assert "&lt;@U123&gt;" in raw
+
 
 class TestSendPayload:
     def test_posts_payload_to_webhook(self, monkeypatch):

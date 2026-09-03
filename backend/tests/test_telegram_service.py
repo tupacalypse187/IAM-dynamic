@@ -50,6 +50,17 @@ class TestMessageFormatting:
         )
         assert "<blockquote>line one\nline two</blockquote>" in message
 
+    def test_blockquote_strips_blank_lines(self):
+        """_blockquote drops empty lines rather than emitting empty quote lines."""
+        service = TelegramService(bot_token="t", chat_id="1")
+        message = service.format_credential_message(
+            request_text="line one\n\n\nline two",
+            risk_level="low",
+            duration_hours=12,
+            auto_approved=True,
+        )
+        assert "<blockquote>line one\nline two</blockquote>" in message
+
     def test_auto_approved_message(self):
         service = TelegramService(bot_token="t", chat_id="1")
         message = service.format_credential_message(

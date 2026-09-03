@@ -22,6 +22,18 @@ RISK_EMOJI = {
 }
 
 
+def _escape_mrkdwn(text: str) -> str:
+    """
+    Neutralize user-controlled text inside mrkdwn.
+
+    Slack has no mrkdwn escape syntax; per Slack's own formatting guidance
+    (https://api.slack.com/reference/surfaces/formatting#escaping), replacing
+    &, <, and > with their HTML entities prevents link, mention, and
+    broadcast-command injection (e.g. <http://phish|Click here> or <!channel>).
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 class SlackService:
     """
     Slack webhook notification service
@@ -107,11 +119,16 @@ class SlackService:
         approval = (
             "*Approval*\n:white_check_mark: Auto-approved"
             if auto_approved
-            else f"*Approval*\n:writing_hand: Manual — {approver or 'unknown'}"
+            else f"*Approval*\n:writing_hand: Manual — {_escape_mrkdwn(approver or 'unknown')}"
         )
         risk = RISK_EMOJI.get(risk_level.lower(), ":large_yellow_circle:")
-        # mrkdwn blockquotes (one ">" per line) render multi-line requests well
-        quoted_request = "\n".join(f"> {line}" for line in request_text.splitlines() if line.strip())
+        # mrkdwn blockquotes (one ">" per line) render multi-line requests well;
+        # escape user content before adding our own ">" prefixes
+        quoted_request = "\n".join(
+            f"> {line}"
+            for line in _escape_mrkdwn(request_text).splitlines()
+            if line.strip()
+        )
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
         return {
@@ -200,7 +217,11 @@ class SlackService:
         Returns:
             Webhook payload with blocks plus a plain-text fallback
         """
-        quoted_request = "\n".join(f"> {line}" for line in request_text.splitlines() if line.strip())
+        quoted_request = "\n".join(
+            f"> {line}"
+            for line in _escape_mrkdwn(request_text).splitlines()
+            if line.strip()
+        )
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
         return {
@@ -220,7 +241,7 @@ class SlackService:
                 },
                 {
                     "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Details*\n```{error_details}```"},
+                    "text": {"type": "mrkdwn", "text": f"*Details*\n```{_escape_mrkdwn(error_details)}```"},
                 },
                 {
                     "type": "context",
