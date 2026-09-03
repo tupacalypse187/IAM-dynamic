@@ -186,6 +186,9 @@ JWT_EXPIRY_HOURS=8
 # Optional
 APPROVER_NAME=Admin
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+# Telegram (optional): bot token from @BotFather + your chat id
+# TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+# TELEGRAM_CHAT_ID=123456789
 ```
 
 > **⚠️ Security Note:** Never commit `.env` to version control!
@@ -342,7 +345,7 @@ Make sure the IAM role exists and your user is in the trust policy.
 | **Risk Assessment** | Duration limits based on risk level |
 | **Session Policies** | Credentials scoped to generated policy only |
 | **Temporary Access** | Credentials auto-expire (max 12 hours) |
-| **Audit Trail** | Optional Slack logging for all requests |
+| **Audit Trail** | Optional Slack and/or Telegram logging for all requests |
 
 ---
 

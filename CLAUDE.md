@@ -79,7 +79,8 @@ Display + Slack audit log
 ### Backend Services
 
 - **`backend/services/sts_service.py`**: AWS STS AssumeRole with session policies
-- **`backend/services/slack_service.py`**: Webhook notifications for audit trail
+- **`backend/services/slack_service.py`**: Slack Block Kit webhook notifications for audit trail
+- **`backend/services/telegram_service.py`**: Telegram Bot API notifications (HTML messages, @BotFather credentials)
 - **`backend/services/auth_service.py`**: JWT creation/verification, bcrypt password checking
 - **`backend/services/turnstile_service.py`**: Cloudflare Turnstile CAPTCHA verification
 - **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
@@ -174,9 +175,9 @@ Key files:
 Triggers on `pull_request` to `main`. Jobs: `frontend-checks` (lint, typecheck, build), `backend-checks` (ruff, pytest), `docker-build` (build all 3 images, no push).
 
 ### `.github/workflows/deploy.yml` — Main Branch Deployment
-Triggers on `push` to `main`. Jobs: `security` → `test` → `build-images` (push to GHCR + Trivy scan for frontend/backend/caddy) → `deploy` (SSH) → `cleanup`.
+Triggers on `push` to `main`. Jobs: `security` → `test` → `build-images` (push to GHCR + Trivy scan for frontend/backend/caddy) → `deploy` (SSH) → `cleanup`. A `publish-dockerhub` job mirrors all three images to Docker Hub when configured.
 
-Required GitHub Secrets: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL` (optional), `TURNSTILE_SITE_KEY` (optional, for CAPTCHA). `GITHUB_TOKEN` is automatic.
+Required GitHub Secrets: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL` (optional), `TURNSTILE_SITE_KEY` (optional, for CAPTCHA), `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` (optional — enables the Docker Hub publish job; it is skipped while unset). `GITHUB_TOKEN` is automatic for GHCR.
 
 ## Configuration
 
@@ -239,6 +240,9 @@ AWS_ROLE_NAME=AgentPOCSessionRole
 # Optional Configuration
 # ============================================
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+# Telegram notifications (optional — both values required to enable)
+# TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+# TELEGRAM_CHAT_ID=123456789
 APPROVER_NAME=Admin
 ```
 

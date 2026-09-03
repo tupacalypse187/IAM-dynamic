@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - **UI/UX refresh**: Inter typography, refined light/dark palettes with success/warning tokens, toast notifications, error boundary, reject-action confirmation dialog, responsive layout with mobile navigation drawer, accessibility improvements (ARIA labels, live error regions)
 - **Markdown & copy UX**: GitHub-flavored markdown tables styled with horizontal scroll, expanded theme-aware syntax highlighting, clipboard fallback chain (Async Clipboard API → `execCommand`), one-click copy buttons on credential scripts, policy JSON, and every markdown code block
 - **Backend test suite**: pytest coverage for config validation, provider factory, model catalog integrity, and API endpoints
+- **Telegram notifications**: credential-issuance audit messages mirrored to a Telegram bot (HTML formatting with risk emoji and blockquoted requests) alongside Slack; Slack messages upgraded to Block Kit with plain-text fallback. Configure via `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` (see README for @BotFather setup)
+- **Docker Hub publishing**: optional `publish-dockerhub` job mirrors the GHCR images to Docker Hub when `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets are set
 - **`setup-env.sh`**: interactive `.env` builder — shows existing values masked for verification (keep or replace), configures AI providers with model defaults, AWS account details, and Slack webhook
 
 ### 🐛 Bug Fixes
