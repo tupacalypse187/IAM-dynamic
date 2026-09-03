@@ -1,9 +1,9 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 export type ToastProps = {
   id: string
-  title?: React.ReactNode
-  description?: React.ReactNode
+  title?: ReactNode
+  description?: ReactNode
   variant?: 'default' | 'destructive' | 'success'
 }
 
