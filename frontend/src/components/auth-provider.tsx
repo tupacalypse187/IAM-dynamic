@@ -1,25 +1,6 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { api, setToken } from '@/lib/api'
-
-type AuthState = {
-  isAuthenticated: boolean
-  username: string | null
-  isLoading: boolean
-  authRequired: boolean
-  login: (token: string, username: string) => void
-  logout: () => void
-}
-
-const initialState: AuthState = {
-  isAuthenticated: false,
-  username: null,
-  isLoading: true,
-  authRequired: true,
-  login: () => null,
-  logout: () => null,
-}
-
-const AuthContext = createContext<AuthState>(initialState)
+import { AuthContext, type AuthState } from '@/hooks/use-auth'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -61,15 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:logout', handler)
   }, [logout])
 
-  return (
-    <AuthContext.Provider value={{ isAuthenticated, username, isLoading, authRequired, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
+  const value: AuthState = { isAuthenticated, username, isLoading, authRequired, login, logout }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider')
-  return context
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
