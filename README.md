@@ -220,7 +220,22 @@ pip install -r backend/requirements.txt
 cd frontend && npm install
 ```
 
-### 2. Run the App
+### 2. Configure the Environment
+
+Build or edit your `.env` interactively — the script shows existing values
+masked so you can verify them, then keep or replace each one. It walks you
+through AI providers (with model defaults), AWS account details, and Slack:
+
+```bash
+./setup-env.sh           # interactive; creates .env from the template if missing
+./setup-env.sh --fresh   # start over from .env.example (backs up the old file)
+```
+
+For non-interactive or auth-focused setup, the older scripts remain:
+`./setup.sh` (full orchestrator), `./setup-auth.sh` (auth + LLM provider),
+`./setup-aws.sh` (IAM role), or edit `.env` manually (see `.env.example`).
+
+### 3. Run the App
 
 **Option A: Development Script**
 ```bash
@@ -240,7 +255,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
 
-### 3. Run with Docker
+### 4. Run with Docker
 
 ```bash
 # Build and start both containers
