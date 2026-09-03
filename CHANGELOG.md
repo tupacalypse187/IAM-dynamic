@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### ✨ New Features
+
+- **New LLM providers**: Meta Muse (`MUSE_API_KEY`, default `muse-spark-1.3-contributor`, via the OpenAI-compatible Meta Model API) and OpenRouter gateway (`OPENROUTER_API_KEY`, `vendor/model` slugs, default `z-ai/glm-5.3`)
+- **Model catalog refresh (September 2026)**: GLM-5.3/GLM-5.3-Flash (new Z.AI defaults), GPT-5.6 family, Claude Opus/Sonnet 5, Gemini 3.8/3.7 Flash; removed shut-down `gemini-3.1-flash-lite-preview` and deprecated `o1-preview`
+- **UI/UX refresh**: Inter typography, refined light/dark palettes with success/warning tokens, toast notifications, error boundary, reject-action confirmation dialog, responsive layout with mobile navigation drawer, accessibility improvements (ARIA labels, live error regions)
+- **Markdown & copy UX**: GitHub-flavored markdown tables styled with horizontal scroll, expanded theme-aware syntax highlighting, clipboard fallback chain (Async Clipboard API → `execCommand`), one-click copy buttons on credential scripts, policy JSON, and every markdown code block
+- **Backend test suite**: pytest coverage for config validation, provider factory, model catalog integrity, and API endpoints
+
+### 🐛 Bug Fixes
+
+- **`docker-compose.prod.yml` passed `ZHIPUAI_API_KEY`/`ZHIPUAI_MODEL`** which the backend never read — Z.AI was silently unconfigured in production; now uses `ZAI_API_KEY`/`ZAI_MODEL` and includes `MUSE_*`/`OPENROUTER_*`
+- **`setup.sh` had a syntax error** (duplicated fragment after `run_auth_setup`) that made the script unrunnable
+- `ZhipuProvider.generate_rejection_guidance` crashed with `AttributeError` when no API key was configured; all providers now degrade gracefully
+- `GeminiProvider` construction crashed when `GOOGLE_API_KEY` was unset (`genai.Client(api_key=None)`); now returns actionable setup instructions
+- Risk-colored card border in the review view never rendered (dynamic Tailwind class names are invisible to the JIT compiler); replaced with static class maps
+- CI `pytest ... || true` masked test failures; tests are now enforced (and the npm audit gate is blocking)
+
+### 🔧 Maintenance
+
+- Dependency updates: frontend at zero npm-audit vulnerabilities; backend minimums raised to current stable (fastapi 0.141, openai 3.7, google-genai 2.22, anthropic 1.3) with `requirements.txt`/`pyproject.toml` aligned
+- Removed dead dependencies (`cors`, `zhipuai`) and legacy files (root Streamlit `requirements.txt`, `.streamlit/`, stray `backend/package.json`)
+- OpenAI-compatible providers (OpenAI/Zhipu/Muse/OpenRouter) consolidated onto a shared base class
+
 ## [3.0.0] - 2025-01-30
 
 ### 🚀 Major Architecture Migration
