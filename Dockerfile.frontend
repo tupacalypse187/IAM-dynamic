@@ -1,5 +1,10 @@
+# check=skip=SecretsUsedInArgOrEnv
+# ^ Vite build-time config, not secrets: these values are inlined into the
+#   public client bundle on purpose (the Turnstile site key ships in page
+#   HTML). The check matches on the "KEY" name only.
+
 # ---- Stage 1: Build ----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
