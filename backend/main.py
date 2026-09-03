@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Import services
 from services.sts_service import STSService, STSAssumeRoleError
 from services.slack_service import SlackService
+from services.telegram_service import TelegramService
 from services.auth_service import AuthService
 from services.turnstile_service import TurnstileService
 from services.error_handler import UserFacingError
@@ -38,6 +39,10 @@ config = load_config()
 # Initialize services
 sts_service = STSService(config.aws.role_arn)
 slack_service = SlackService(config.slack.webhook_url)
+telegram_service = TelegramService(
+    bot_token=config.telegram.bot_token,
+    chat_id=config.telegram.chat_id,
+)
 
 # Auth services (optional — disabled when AUTH_PASSWORD_HASH is not set)
 auth_service: Optional[AuthService] = None
@@ -248,8 +253,12 @@ PROVIDER_MODELS = {
 }
 
 
-def send_slack_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
-    """Send notification to Slack via service"""
+def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
+    """
+    Send audit notification to every configured channel (Slack, Telegram).
+
+    Notification failures are logged but never fail the credential request.
+    """
     try:
         slack_service.send_credential_notification(
             request_text=req,
@@ -260,6 +269,17 @@ def send_slack_notification(auto_approved: bool, req: str, risk: str, duration: 
         )
     except Exception as e:
         logger.error(f"Failed to send Slack notification: {e}")
+
+    try:
+        telegram_service.send_credential_notification(
+            request_text=req,
+            risk_level=risk,
+            duration_hours=duration,
+            auto_approved=auto_approved,
+            approver=approver
+        )
+    except Exception as e:
+        logger.error(f"Failed to send Telegram notification: {e}")
 
 
 # --- API Endpoints ---
@@ -428,7 +448,7 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
         creds = sts_service.assume_role_with_policy(request.policy, request.duration)
 
         # Send notification
-        send_slack_notification(
+        send_audit_notification(
             auto_approved=True,  # If we got here, it was approved
             req="Policy-based credential issuance",
             risk="medium",  # Default notification risk

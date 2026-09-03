@@ -58,7 +58,7 @@ graph LR
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
 -   **Modern React UI:** Multi-view state machine (request → review → credentials/rejected) with responsive design.
 -   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, or OpenRouter (one key, many vendors).
--   **Slack Integration:** Audit logs and approval notifications sent directly to Slack.
+-   **Notifications:** Audit logs and approval notifications delivered to Slack, Telegram, or both.
 
 ### New in v3.0
 -   **🎨 React Frontend:** TypeScript with Vite for fast development, Radix UI components for accessibility
@@ -97,6 +97,7 @@ graph LR
 | `config.py`                   | **Configuration**. Centralized config with pydantic. |
 | `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
+| `services/telegram_service.py`| **Telegram Service**. Bot API notifications.     |
 | `services/auth_service.py`    | **Auth Service**. JWT tokens and bcrypt password verification. |
 | `services/turnstile_service.py`| **Turnstile Service**. Cloudflare CAPTCHA verification. |
 | `services/error_handler.py`   | **Error Handler**. Maps provider API errors to actionable user messages. |
@@ -196,15 +197,22 @@ AWS_ROLE_NAME=AgentPOCSessionRole  # Role to be assumed by the app
 # CLOUDFLARE_API_TOKEN=...
 # CADDY_DOMAIN=iam.yantorno.dev
 
-# --- Slack Integration (Optional) ---
+# --- Notifications (Optional) ---
 SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+# Telegram: bot token from @BotFather + the chat id that receives messages
+# TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+# TELEGRAM_CHAT_ID=123456789
 
 # --- Approval Configuration ---
 APPROVER_NAME=Admin
-
-# --- Database Configuration ---
-DATABASE_PATH=iam_dynamic.db
 ```
+
+### Setting up Telegram notifications
+
+1. **Create the bot** — message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts (name + a username ending in `bot`), and copy the **HTTP API token** it shows.
+2. **Get your chat ID** — open a chat with your new bot and press **Start** (or send any message). Then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy the numeric `chat.id` from the response. (Alternative: message [@userinfobot](https://t.me/userinfobot) — it replies with your ID.) ⚠️ Use **your** chat ID — not the bot's own ID (the number before the `:` in the token); the API returns `403 Forbidden` if you mix them up.
+3. **Group notifications** — add the bot to a Telegram group and send a message in it; group chat IDs appear as negative numbers in `getUpdates` (e.g. `-1001234567890`). The bot only needs to *send*, so privacy mode can stay on.
+4. **Configure** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (or run `./setup-env.sh`), then restart the backend. Every credential issuance is now mirrored to Telegram alongside any configured Slack webhook.
 
 ---
 
@@ -224,7 +232,8 @@ cd frontend && npm install
 
 Build or edit your `.env` interactively — the script shows existing values
 masked so you can verify them, then keep or replace each one. It walks you
-through AI providers (with model defaults), AWS account details, and Slack:
+through AI providers (with model defaults), AWS account details, and
+Slack/Telegram notifications:
 
 ```bash
 ./setup-env.sh           # interactive; creates .env from the template if missing
@@ -281,7 +290,7 @@ GitHub Actions workflows are included for automated checks and deployment:
 | Workflow | Trigger | What it does |
 | -------- | ------- | ------------ |
 | **CI** (`.github/workflows/ci.yml`) | Pull requests to `main` | Lint, typecheck, and build both frontend and backend. Docker build test (no push). |
-| **Deploy** (`.github/workflows/deploy.yml`) | Push to `main` | Security scan, test, build & push images to GHCR, Trivy vulnerability scan, deploy via SSH, cleanup old images. |
+| **Deploy** (`.github/workflows/deploy.yml`) | Push to `main` | Security scan, test, build & push images to GHCR, Trivy vulnerability scan, deploy via SSH, cleanup old images. Optionally mirrors all three images to Docker Hub. |
 
 **Required GitHub Secrets for deployment:**
 
@@ -292,8 +301,15 @@ GitHub Actions workflows are included for automated checks and deployment:
 | `PROD_SSH_KEY` | SSH private key |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile public key (optional) |
 | `SLACK_WEBHOOK_URL` | Deployment notifications (optional) |
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | Docker Hub publishing (optional — the job is skipped until both are set) |
 
 `GITHUB_TOKEN` is automatic — no separate Docker registry credentials needed for GHCR.
+
+### Publishing images
+
+- **GHCR (default):** every push to `main` builds and pushes `ghcr.io/tupacalypse187/iam-dynamic-{frontend,backend,caddy}` (tags: `latest` + commit SHA).
+- **Docker Hub (optional):** create an access token at [hub.docker.com → Account Settings → Security](https://app.docker.com/settings/personal-access-tokens), add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` as repository secrets, and the deploy workflow additionally publishes `docker.io/<username>/iam-dynamic-{frontend,backend,caddy}` with the same tags. Production still pulls from GHCR unless you retag the images in `docker-compose.prod.yml`.
+- **npm:** IAM-Dynamic is a deployed application (FastAPI backend + React SPA served by nginx), not an installable library, so there is nothing meaningful to publish to npm — Docker images are the distribution channel.
 
 ---
 
@@ -303,7 +319,7 @@ GitHub Actions workflows are included for automated checks and deployment:
 -   **Authentication Portal:** JWT-based login with bcrypt password hashing and optional Cloudflare Turnstile CAPTCHA.
 -   **HTTPS by Default:** Caddy with automatic Let's Encrypt certificates via Cloudflare DNS challenge in production.
 -   **Rate Limiting:** Login endpoint limited to 5 requests/minute per IP via nginx.
--   **Audit Trail:** All requests (and their risk scores) are logged to Slack.
+-   **Audit Trail:** All requests (and their risk scores) are logged to Slack and/or Telegram.
 -   **Ephemeral Access:** Credentials issued are valid *only* for the requested duration.
 
 ---
