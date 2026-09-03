@@ -95,11 +95,21 @@ jobs:
       - uses: actions/checkout@v4
 
       # The secrets context is not allowed in a job-level `if`, so gate each
-      # publishing step on this output instead. Skipped automatically until
-      # DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets are configured.
+      # publishing step on this output instead. Secrets are passed through
+      # env (never interpolated into the script text) and tested in shell.
+      # Skipped automatically until DOCKERHUB_USERNAME / DOCKERHUB_TOKEN
+      # secrets are configured.
       - name: Check Docker Hub credentials
         id: dockerhub
-        run: echo "enabled=${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: docker/setup-buildx-action@v3
         if: steps.dockerhub.outputs.enabled == 'true'
