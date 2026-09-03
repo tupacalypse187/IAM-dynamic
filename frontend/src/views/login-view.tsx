@@ -21,14 +21,34 @@ declare global {
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
 const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
 
+// One shared load promise per page: remounts (e.g. React StrictMode
+// double-invocation) await the same in-flight load instead of attaching
+// listeners to a script tag whose load/error events already fired.
+let turnstileLoadPromise: Promise<void> | null = null
+
 /** Load the Turnstile script only when a site key is configured. */
 function loadTurnstileScript(): Promise<void> {
   if (window.turnstile) return Promise.resolve()
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SRC}"]`)
+  if (turnstileLoadPromise) return turnstileLoadPromise
+
+  turnstileLoadPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${TURNSTILE_SRC}"]`
+    )
     if (existing) {
-      existing.addEventListener('load', () => resolve())
-      existing.addEventListener('error', () => reject(new Error('Turnstile failed to load')))
+      // Tag exists but window.turnstile is not defined yet — poll for it,
+      // since load/error events on an already-settled tag never fire.
+      const started = Date.now()
+      const poll = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(poll)
+          resolve()
+        } else if (Date.now() - started > 10000) {
+          clearInterval(poll)
+          turnstileLoadPromise = null
+          reject(new Error('Turnstile failed to load'))
+        }
+      }, 100)
       return
     }
     const script = document.createElement('script')
@@ -36,9 +56,14 @@ function loadTurnstileScript(): Promise<void> {
     script.async = true
     script.defer = true
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Turnstile failed to load'))
+    script.onerror = () => {
+      turnstileLoadPromise = null
+      reject(new Error('Turnstile failed to load'))
+    }
     document.head.appendChild(script)
   })
+
+  return turnstileLoadPromise
 }
 
 export default function LoginView() {

@@ -1,4 +1,5 @@
 """API endpoint tests via FastAPI TestClient."""
+import pytest
 from fastapi.testclient import TestClient
 
 import main
@@ -8,6 +9,16 @@ def llm_config():
     # main.py builds its own config via load_config(), distinct from the
     # config.py singleton — patch the instance the app actually uses.
     return main.config.llm
+
+
+@pytest.fixture(autouse=True)
+def _auth_disabled(monkeypatch):
+    """
+    Protected endpoints bypass auth only when no auth service is
+    configured. Force that state so these tests pass deterministically
+    even when a developer's .env enables authentication.
+    """
+    monkeypatch.setattr(main, "auth_service", None)
 
 
 class TestHealth:

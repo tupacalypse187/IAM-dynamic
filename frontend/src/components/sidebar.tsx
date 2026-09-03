@@ -66,12 +66,14 @@ export function SidebarContent({
   }, [provider, onProviderChange])
 
   // Follow the parent's selection when it changes externally (e.g. after
-  // the backend config loads and App sets the default provider)
+  // the backend config loads and App sets the default provider). Including
+  // `provider` here is safe: the setProvider below only fires when the
+  // values differ, so the effect settles instead of looping.
   useEffect(() => {
     if (selectedProvider && selectedProvider !== provider) {
       setProvider(selectedProvider)
     }
-  }, [selectedProvider]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedProvider, provider])
 
   // Sync model with parent
   useEffect(() => {

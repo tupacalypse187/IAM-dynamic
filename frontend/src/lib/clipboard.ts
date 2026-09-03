@@ -24,11 +24,14 @@ export async function copyText(text: string): Promise<boolean> {
     textarea.style.top = '0'
     textarea.style.opacity = '0'
     document.body.appendChild(textarea)
-    textarea.select()
-    textarea.setSelectionRange(0, text.length)
-    const succeeded = document.execCommand('copy')
-    document.body.removeChild(textarea)
-    return succeeded
+    try {
+      textarea.select()
+      textarea.setSelectionRange(0, text.length)
+      return document.execCommand('copy')
+    } finally {
+      // execCommand can throw in some browsers; never leak the textarea
+      document.body.removeChild(textarea)
+    }
   } catch {
     return false
   }
