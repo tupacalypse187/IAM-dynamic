@@ -55,7 +55,7 @@ mask() {
     local v="$1" len
     len=${#v}
     if [ -z "$v" ]; then
-        printf '%s' "${YELLOW}(not set)${NC}"
+        printf '%b' "${YELLOW}(not set)${NC}"
     elif [ "$len" -le 10 ]; then
         printf '%s' "**** (${len} chars)"
     else
@@ -109,7 +109,7 @@ prompt_value() {  # prompt_value <key> <label> <default>
     existing=$(get_env "$key" 2>/dev/null || true)
     local show="${existing:-$default}"
 
-    printf '  Current %s: %s\n' "$label" "$( [ -n "$existing" ] && printf '%s' "$existing" || printf '%s' "${YELLOW}(not set)${NC}")"
+    printf '  Current %s: %s\n' "$label" "$( [ -n "$existing" ] && printf '%s' "$existing" || printf '%b' "${YELLOW}(not set)${NC}")"
     read -rp "$(printf '%b' "  ${label} [${show}]: ")" value
     value=${value:-$show}
     set_env "$key" "$value"
@@ -270,10 +270,24 @@ prompt_value "AWS_ACCOUNT_ID" "AWS account ID (12 digits)" "123456789012"
 prompt_value "AWS_ROLE_NAME"  "IAM role to assume"          "AgentPOCSessionRole"
 prompt_value "AWS_DEFAULT_REGION" "Default region"          "us-east-1"
 
-# ─── 3. Slack ──────────────────────────────────────────────────────────
+# ─── 3. Notifications (Slack / Telegram) ───────────────────────────────
 
-printf '\n%b' "${CYAN}${BOLD}── 3. Slack Integration (optional) ──${NC}\n"
+printf '\n%b' "${CYAN}${BOLD}── 3. Notifications (optional: Slack / Telegram) ──${NC}\n"
 prompt_secret "SLACK_WEBHOOK_URL" "Slack webhook URL" "https://api.slack.com/messaging/webhooks"
+
+printf '\n  Telegram: create a bot via @BotFather (/newbot), then message it\n'
+printf '  once and open https://api.telegram.org/bot<TOKEN>/getUpdates to\n'
+printf '  copy your chat id (the "chat":{"id":...} value), or ask @userinfobot.\n\n'
+prompt_secret "TELEGRAM_BOT_TOKEN" "Telegram bot token" "https://t.me/BotFather"
+telegram_chat_id=$(get_env "TELEGRAM_CHAT_ID" 2>/dev/null || true)
+printf '  Current Telegram chat ID: %b\n' "${telegram_chat_id:-${YELLOW}(not set)${NC}}"
+read -rp "$(printf '%b' "  Telegram chat ID (blank to skip): ")" chat_id
+if [ -n "$chat_id" ]; then
+    set_env "TELEGRAM_CHAT_ID" "$chat_id"
+    printf '  %b saved.\n' "${GREEN}Telegram chat ID${NC}"
+else
+    printf '  %b skipped.\n' "${YELLOW}Telegram chat ID${NC}"
+fi
 
 # ─── 4. Approver (optional) ────────────────────────────────────────────
 
@@ -295,6 +309,11 @@ for pid in "${PROVIDER_IDS[@]}"; do
 done
 printf '    AWS account:  %s (role: %s)\n' "$(get_env AWS_ACCOUNT_ID 2>/dev/null || echo '?')" "$(get_env AWS_ROLE_NAME 2>/dev/null || echo '?')"
 printf '    Slack:        %s\n' "$(mask "$(get_env SLACK_WEBHOOK_URL 2>/dev/null || true)")"
+if [ -n "$(get_env TELEGRAM_BOT_TOKEN 2>/dev/null || true)" ] && [ -n "$(get_env TELEGRAM_CHAT_ID 2>/dev/null || true)" ]; then
+    printf '    Telegram:     chat %s (bot token %s)\n' "$(get_env TELEGRAM_CHAT_ID 2>/dev/null)" "$(mask "$(get_env TELEGRAM_BOT_TOKEN 2>/dev/null)")"
+else
+    printf '    Telegram:     %b\n' "${YELLOW}(not configured)${NC}"
+fi
 printf '\n  Default provider: %s\n' "$(get_env LLM_PROVIDER 2>/dev/null || echo '?')"
 printf '  %b Restart the backend after changing .env values.\n' "${YELLOW}ℹ${NC}"
 printf '%b' "${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}\n"

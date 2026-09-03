@@ -50,6 +50,8 @@ services:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-iam.yantorno.dev}
       # Optional
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - APPROVER_NAME=${APPROVER_NAME:-Admin}
     deploy:
       resources:
