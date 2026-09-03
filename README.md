@@ -10,7 +10,7 @@
 
 ## 🚀 Overview
 
-**IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
+**IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, and OpenRouter) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
 
 **Key Capabilities:**
 -   **♊ Gemini First:** Powered by Gemini 3 Pro for high-reasoning policy generation.
@@ -57,7 +57,7 @@ graph LR
 -   **Natural Language Input:** "I need read-only access to the production S3 bucket."
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
 -   **Modern React UI:** Multi-view state machine (request → review → credentials/rejected) with responsive design.
--   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, or Z.AI GLM.
+-   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, or OpenRouter (one key, many vendors).
 -   **Slack Integration:** Audit logs and approval notifications sent directly to Slack.
 
 ### New in v3.0
@@ -68,9 +68,7 @@ graph LR
 -   **🚦 Real-time Risk Assessment:** Color-coded badges (Low/Medium/High/Critical) with duration limits
 -   **🔐 Session Policies:** AWS STS AssumeRole with scoped-down session policies
 -   **📊 FastAPI Backend:** REST API with OpenAPI documentation at `/docs`
--   **🗄️ SQLite Persistence:** Request history and audit logs persisted across application restarts
 -   **🛡️ Comprehensive Error Handling:** Structured logging and CORS configuration
--   **🔄 Retry Mechanism:** Automatic retry with exponential backoff for transient failures
 
 ### New in v3.1
 -   **🔒 Authentication Portal:** Login page with JWT-based session management (bcrypt password hashing)
@@ -78,6 +76,14 @@ graph LR
 -   **🔐 HTTPS via Caddy:** Automatic TLS certificates via Let's Encrypt with Cloudflare DNS challenge
 -   **🛡️ Rate Limiting:** nginx rate limits on login endpoint (5 requests/minute)
 -   **⚡ Zero-config Local Dev:** Auth is optional — omit `AUTH_PASSWORD_HASH` and the app works without login
+
+### New in v3.2
+-   **🆕 New Providers:** Meta Muse (Meta Model API) and OpenRouter gateway (one key, many vendors) alongside Gemini, OpenAI, Claude, and Z.AI GLM
+-   **🧠 September 2026 Models:** GLM-5.3/GLM-5.3-Flash, GPT-5.6 family, Claude Opus/Sonnet 5, Gemini 3.8 Flash
+-   **🎨 UI Refresh:** Inter typography, refined light/dark palettes, toast notifications, error boundary, mobile-first responsive layout with navigation drawer
+-   **📋 Modern Copy UX:** Clipboard fallback chain (Async Clipboard API → execCommand), one-click copy buttons on credential scripts, policy JSON, and every markdown code block
+-   **🗣️ Accessible:** ARIA labels, live error regions, focus-visible rings, WCAG-compliant risk colors
+-   **✅ Real Test Suite:** pytest coverage for config, provider factory, catalog integrity, and API endpoints — now enforced in CI
 
 ---
 
@@ -87,18 +93,16 @@ graph LR
 | File                          | Description                                      |
 | ----------------------------- | ------------------------------------------------ |
 | `main.py`                     | **FastAPI Application**. REST API with endpoints. |
-| `llm_service.py`              | **AI Service Layer**. Multi-provider LLM abstraction (Gemini/OpenAI/Anthropic/Z.AI). |
+| `llm_service.py`              | **AI Service Layer**. Multi-provider LLM abstraction (Gemini/OpenAI/Anthropic/Z.AI/Muse/OpenRouter). |
 | `config.py`                   | **Configuration**. Centralized config with pydantic. |
 | `services/sts_service.py`     | **AWS STS Service**. Credential issuance operations. |
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
 | `services/auth_service.py`    | **Auth Service**. JWT tokens and bcrypt password verification. |
 | `services/turnstile_service.py`| **Turnstile Service**. Cloudflare CAPTCHA verification. |
+| `services/error_handler.py`   | **Error Handler**. Maps provider API errors to actionable user messages. |
+| `tests/`                      | **Test Suite**. Config, provider factory, catalog, and API endpoint tests (pytest). |
 | `scripts/hash_password.py`    | **CLI Utility**. Generate bcrypt hashes for `.env`. |
-| `services/database.py`        | **Database Service**. SQLite persistence layer.   |
-| `services/policy_validator.py`| **Policy Validator**. IAM policy risk assessment. |
-| `utils/validators.py`         | **Input Validators**. Request validation.        |
-| `utils/logging_config.py`     | **Logging Config**. Structured logging setup.     |
-| `requirements.txt`            | Python dependencies (pinned versions).           |
+| `requirements.txt`            | Python dependencies (minimum versions, kept in sync with `pyproject.toml`). |
 
 ### Frontend (`frontend/`)
 | File/Directory                | Description                                      |
@@ -145,28 +149,38 @@ Create a `.env` file in the root directory (see `.env.example` for template):
 
 ```bash
 # --- AI Provider Configuration ---
-# Choose: gemini, openai, anthropic/claude, or zhipu/z.ai
+# Choose: gemini, openai, anthropic/claude, zhipu/glm, muse/meta, or openrouter
 LLM_PROVIDER=gemini
 
 # Gemini 3.1 Pro Preview
 GOOGLE_API_KEY=AIzaSy...
 GEMINI_MODEL=gemini-3.1-pro-preview
-# Alternatives: gemini-3-flash-preview, gemini-3.1-flash-lite-preview
+# Alternatives: gemini-3.8-flash, gemini-3.7-flash, gemini-3.5-flash-lite
 
-# OpenAI GPT-5.4
+# OpenAI GPT-5.6
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.4
-# Alternatives: gpt-5-mini-2025-08-07, gpt-4o, gpt-4o-mini, o1-preview
+# OPENAI_MODEL=gpt-5.6
+# Alternatives: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.4, gpt-5-mini-2025-08-07
 
-# Anthropic Claude Opus 4.6
+# Anthropic Claude Opus 5
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-6
-# Alternatives: claude-opus-4-5, claude-sonnet-4-5
+# ANTHROPIC_MODEL=claude-opus-5
+# Alternatives: claude-sonnet-5, claude-opus-4-6, claude-haiku-4-5
 
-# Z.AI GLM-5.1 (Global platform via api.z.ai)
+# Z.AI GLM-5.3 (Global platform via api.z.ai)
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5.1
-# Alternatives: glm-5, glm-4.7, glm-4.7-flash
+# ZAI_MODEL=glm-5.3
+# Alternatives: glm-5.3-flash, glm-5.1, glm-5, glm-4.7
+
+# Meta Muse (Meta Model API via api.meta.ai)
+# MUSE_API_KEY=...
+# MUSE_MODEL=muse-spark-1.3-contributor
+# Alternatives: muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
+
+# OpenRouter (gateway — one key for many vendors' models)
+# OPENROUTER_API_KEY=sk-or-...
+# OPENROUTER_MODEL=z-ai/glm-5.3
+# Alternatives: openai/gpt-5.6, anthropic/claude-opus-5, google/gemini-3.1-pro, meta/muse-spark-1.3
 
 # --- AWS Configuration ---
 AWS_ACCOUNT_ID=123456789012
@@ -206,7 +220,22 @@ pip install -r backend/requirements.txt
 cd frontend && npm install
 ```
 
-### 2. Run the App
+### 2. Configure the Environment
+
+Build or edit your `.env` interactively — the script shows existing values
+masked so you can verify them, then keep or replace each one. It walks you
+through AI providers (with model defaults), AWS account details, and Slack:
+
+```bash
+./setup-env.sh           # interactive; creates .env from the template if missing
+./setup-env.sh --fresh   # start over from .env.example (backs up the old file)
+```
+
+For non-interactive or auth-focused setup, the older scripts remain:
+`./setup.sh` (full orchestrator), `./setup-auth.sh` (auth + LLM provider),
+`./setup-aws.sh` (IAM role), or edit `.env` manually (see `.env.example`).
+
+### 3. Run the App
 
 **Option A: Development Script**
 ```bash
@@ -226,7 +255,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
 
-### 3. Run with Docker
+### 4. Run with Docker
 
 ```bash
 # Build and start both containers

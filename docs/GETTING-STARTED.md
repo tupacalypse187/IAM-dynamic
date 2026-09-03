@@ -96,10 +96,12 @@ Choose one (or more) AI providers:
 
 | Provider | Model Options | Get API Key | Docs |
 |----------|---------------|-------------|------|
-| **Google Gemini** | gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-3.1-flash-lite-preview | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | [models](https://ai.google.dev/api/models) |
-| **OpenAI** | gpt-5.4, gpt-5-mini-2025-08-07, gpt-4o | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | [models](https://platform.openai.com/docs/models) |
-| **Anthropic Claude** | claude-opus-4-6, claude-opus-4-5, claude-sonnet-4-5 | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | [models](https://docs.anthropic.com/en/docs/models-overview) |
-| **Z.AI GLM (Global)** | glm-5.1, glm-5, glm-4.7, glm-4.7-flash | [api.z.ai](https://api.z.ai) | [docs](https://docs.z.ai/guides/llm/glm-5) |
+| **Google Gemini** | gemini-3.1-pro-preview, gemini-3.8-flash, gemini-3.7-flash, gemini-3.5-flash-lite | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | [models](https://ai.google.dev/gemini-api/docs/models) |
+| **OpenAI** | gpt-5.6, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.4, gpt-5-mini-2025-08-07 | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | [models](https://developers.openai.com/api/docs/models) |
+| **Anthropic Claude** | claude-opus-5, claude-sonnet-5, claude-opus-4-6, claude-haiku-4-5 | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | [models](https://platform.claude.com/docs/en/docs/about-claude/models/overview) |
+| **Z.AI GLM (Global)** | glm-5.3, glm-5.3-flash, glm-5.1, glm-5, glm-4.7 | [api.z.ai](https://api.z.ai) | [docs](https://docs.z.ai/guides/llm/glm-5.3) |
+| **Meta Muse** | muse-spark-1.3-contributor, muse-spark-1.3, muse-spark-1.2, muse-spark-1.1 | [ai.developer.meta.com](https://ai.developer.meta.com/) | [docs](https://ai.developer.meta.com/docs/overview/) |
+| **OpenRouter (gateway)** | z-ai/glm-5.3, openai/gpt-5.6, anthropic/claude-opus-5, google/gemini-3.1-pro, meta/muse-spark-1.3 | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | [models](https://openrouter.ai/models) |
 
 > **Tip:** The setup script can fetch available models when you provide your API key. Model availability depends on your provider account and region.
 

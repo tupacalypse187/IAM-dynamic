@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
+**IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, OpenRouter) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ The application uses a modern frontend/backend separation pattern:
   - Multiple credential export formats (Bash, PowerShell, AWS CLI)
 
 - **Backend (`backend/`)**: FastAPI REST API
-  - Multi-provider LLM support (Gemini, OpenAI, Anthropic, Z.AI)
+  - Multi-provider LLM support (Gemini, OpenAI, Anthropic, Z.AI, Muse, OpenRouter)
   - Policy generation and validation endpoints
   - Credential issuance via AWS STS AssumeRole
   - Rejection guidance with AI-powered suggestions
@@ -35,11 +35,14 @@ The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_serv
 
 - **`LLMProvider`** (ABC): Abstract base class defining `generate_policy(request_text: str) -> PolicyResponse`
 - **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3.1 Pro Preview
-- **`OpenAIProvider`**: OpenAI GPT-5.3
-- **`AnthropicProvider`**: Anthropic Claude Opus 4.6
-- **`ZhipuProvider`**: Z.AI GLM-5.1 (global platform via api.z.ai)
+- **`OpenAICompatibleProvider`**: Shared base for OpenAI-compatible Chat Completions APIs — subclasses declare env vars, base URL, default model, and parameter capabilities (`supports_json_response_format`, `supports_temperature`)
+  - **`OpenAIProvider`**: OpenAI GPT-5.6 family
+  - **`ZhipuProvider`**: Z.AI GLM-5.3 (global platform via api.z.ai coding endpoint)
+  - **`MuseProvider`**: Meta Muse Spark 1.3 (Meta Model API via api.meta.ai)
+  - **`OpenRouterProvider`**: OpenRouter gateway using `vendor/model` slugs (e.g. `z-ai/glm-5.3`)
+- **`AnthropicProvider`**: Anthropic Claude Opus 5
 
-The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `claude`, or `zhipu`).
+The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `anthropic`/`claude`, `zhipu`/`glm`, `muse`/`meta`, or `openrouter`) and can be switched per-request from the UI. The model catalog served to the frontend lives in `PROVIDER_MODELS` in `backend/main.py`.
 
 ### Data Flow
 
@@ -79,6 +82,8 @@ Display + Slack audit log
 - **`backend/services/slack_service.py`**: Webhook notifications for audit trail
 - **`backend/services/auth_service.py`**: JWT creation/verification, bcrypt password checking
 - **`backend/services/turnstile_service.py`**: Cloudflare Turnstile CAPTCHA verification
+- **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
+- **`backend/tests/`**: pytest suite (config validation, provider factory, catalog integrity, API endpoints) — run with `pytest` from `backend/`
 
 ## Running the Application
 
@@ -186,19 +191,27 @@ LLM_PROVIDER=gemini
 # --- Gemini Configuration (Google) ---
 GOOGLE_API_KEY=AIzaSy...
 GEMINI_MODEL=gemini-3.1-pro-preview
-# Alternative: gemini-3-flash-preview
+# Alternative: gemini-3.8-flash
 
 # --- OpenAI Configuration ---
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.3
+# OPENAI_MODEL=gpt-5.6
 
 # --- Anthropic Claude Configuration ---
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-6-20250205
+# ANTHROPIC_MODEL=claude-opus-5
 
 # --- Z.AI GLM Configuration ---
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5.1
+# ZAI_MODEL=glm-5.3
+
+# --- Meta Muse Configuration ---
+# MUSE_API_KEY=...
+# MUSE_MODEL=muse-spark-1.3-contributor
+
+# --- OpenRouter Configuration (gateway) ---
+# OPENROUTER_API_KEY=sk-or-...
+# OPENROUTER_MODEL=z-ai/glm-5.3
 
 # ============================================
 # AWS Configuration
@@ -259,22 +272,27 @@ Risk-based duration limits:
 - Template buttons for common patterns
 
 ### Review View (`frontend/src/views/review-view.tsx`)
-- Display generated policy (JSON)
-- Risk assessment badge
+- Display generated policy (JSON) with a one-click copy button
+- Risk assessment badge (token-based, WCAG-compliant colors)
 - Approver note and explanation
-- Issue credentials or reject buttons
+- Issue credentials, or reject via a confirmation dialog
 
 ### Credentials View (`frontend/src/views/credentials-view.tsx`)
 - Display temporary credentials
-- Multiple export formats (Bash, PowerShell, AWS CLI)
-- Expiration time
+- Multiple export formats (Bash, PowerShell, AWS CLI) with copy buttons (clipboard API + legacy fallback)
+- Live expiration countdown
 - New request button
 
 ### Rejected View (`frontend/src/views/rejected-view.tsx`)
 - Rejection reason
 - AI-generated guidance for resubmission
-- Markdown-formatted suggestions
+- GitHub-flavored markdown with syntax highlighting, styled tables, and per-code-block copy buttons
 - Revise request or start fresh buttons
+
+### App Shell (`frontend/src/App.tsx`)
+- Error boundary around view content (a render crash shows a recoverable fallback)
+- Toast notifications (session expiry, copy failures)
+- Responsive layout: desktop sidebar rail + mobile navigation drawer
 
 ## API Endpoints
 

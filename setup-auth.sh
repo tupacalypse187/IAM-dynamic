@@ -178,10 +178,12 @@ echo
 echo -e "${CYAN}── Step 2: LLM Provider ──${NC}"
 echo
 echo "  Available LLM providers:"
-echo "    1) gemini     — Google Gemini (default)"
-echo "    2) openai     — OpenAI GPT"
-echo "    3) anthropic  — Anthropic Claude"
-echo "    4) zhipu      — Zhipu GLM"
+echo "    1) gemini      — Google Gemini (default)"
+echo "    2) openai      — OpenAI GPT"
+echo "    3) anthropic   — Anthropic Claude"
+echo "    4) zhipu       — Z.AI GLM"
+echo "    5) muse        — Meta Muse"
+echo "    6) openrouter  — OpenRouter (gateway, many vendors)"
 echo
 
 # Check for existing provider in .env
@@ -200,6 +202,8 @@ case "$LLM_PROVIDER" in
     2|openai)    LLM_PROVIDER="openai" ;;
     3|anthropic|claude) LLM_PROVIDER="anthropic" ;;
     4|zhipu|glm) LLM_PROVIDER="zhipu" ;;
+    5|muse|meta) LLM_PROVIDER="muse" ;;
+    6|openrouter) LLM_PROVIDER="openrouter" ;;
     *)           LLM_PROVIDER="gemini" ;;
 esac
 
@@ -247,13 +251,17 @@ except:
 
 # ─── Default models for each provider ───────────────────────────────
 # Gemini: https://ai.google.dev/api/models
-GEMINI_DEFAULTS="gemini-3.1-pro-preview\ngemini-3-flash-preview\ngemini-3.1-flash-lite-preview"
-# OpenAI: https://platform.openai.com/docs/models
-OPENAI_DEFAULTS="gpt-5.4\ngpt-5-mini-2025-08-07\ngpt-4o\ngpt-4o-mini\no1-preview\no1-mini"
-# Anthropic: https://docs.anthropic.com/en/docs/models-overview
-ANTHROPIC_DEFAULTS="claude-opus-4-6\nclaude-opus-4-5\nclaude-sonnet-4-5\nclaude-haiku-4-20250214"
-# Z.AI GLM (Global): https://docs.z.ai/guides/llm/glm-5
-ZHIPU_DEFAULTS="glm-5.1\nglm-5\nglm-4.7\nglm-4.7-flash"
+GEMINI_DEFAULTS="gemini-3.1-pro-preview\ngemini-3.8-flash\ngemini-3.7-flash\ngemini-3.5-flash-lite"
+# OpenAI: https://developers.openai.com/api/docs/models
+OPENAI_DEFAULTS="gpt-5.6\ngpt-5.6-sol\ngpt-5.6-terra\ngpt-5.6-luna\ngpt-5.4\ngpt-5-mini-2025-08-07"
+# Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models/overview
+ANTHROPIC_DEFAULTS="claude-opus-5\nclaude-sonnet-5\nclaude-opus-4-6\nclaude-haiku-4-5"
+# Z.AI GLM (Global): https://docs.z.ai/guides/llm/glm-5.3
+ZHIPU_DEFAULTS="glm-5.3\nglm-5.3-flash\nglm-5.1\nglm-5"
+# Meta Muse: https://ai.developer.meta.com/docs/overview/
+MUSE_DEFAULTS="muse-spark-1.3-contributor\nmuse-spark-1.3\nmuse-spark-1.2\nmuse-spark-1.1"
+# OpenRouter: https://openrouter.ai/models
+OPENROUTER_DEFAULTS="z-ai/glm-5.3\nz-ai/glm-5.3-flash\nopenai/gpt-5.6\nanthropic/claude-opus-5\ngoogle/gemini-3.1-pro\nmeta/muse-spark-1.3"
 
 # ─── Provider-specific configuration ───────────────────────────────────
 SELECTED_MODEL=""
@@ -382,10 +390,64 @@ case "$LLM_PROVIDER" in
             read -rp "Model [${CURRENT_MODEL}]: " SELECTED_MODEL
             SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}"
         else
-            read -rp "Model [glm-5.1]: " SELECTED_MODEL
-            SELECTED_MODEL="${SELECTED_MODEL:-glm-5.1}"
+            read -rp "Model [glm-5.3]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-glm-5.3}"
         fi
         set_env "ZAI_MODEL" "$SELECTED_MODEL"
+        ;;
+
+    muse)
+        API_KEY_VALUE=$(grep "^MUSE_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "")
+        if [ -z "$API_KEY_VALUE" ]; then
+            echo -e "  Get your API key at: ${YELLOW}https://ai.developer.meta.com${NC}"
+            read -rp "Meta Model API Key: " API_KEY_VALUE
+            if [ -n "$API_KEY_VALUE" ]; then
+                set_env "MUSE_API_KEY" "$API_KEY_VALUE"
+            fi
+        else
+            echo -e "  ${GREEN}Found existing MUSE_API_KEY${NC}"
+        fi
+
+        echo "  Available models (hardcoded):"
+        echo "$MUSE_DEFAULTS" | nl -w2 -s') '
+        echo
+
+        CURRENT_MODEL=$(grep "^MUSE_MODEL=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 || echo "")
+        if [ -n "$CURRENT_MODEL" ]; then
+            read -rp "Model [${CURRENT_MODEL}]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}"
+        else
+            read -rp "Model [muse-spark-1.3-contributor]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-muse-spark-1.3-contributor}"
+        fi
+        set_env "MUSE_MODEL" "$SELECTED_MODEL"
+        ;;
+
+    openrouter)
+        API_KEY_VALUE=$(grep "^OPENROUTER_API_KEY=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- || echo "")
+        if [ -z "$API_KEY_VALUE" ]; then
+            echo -e "  Get your API key at: ${YELLOW}https://openrouter.ai/settings/keys${NC}"
+            read -rp "OpenRouter API Key: " API_KEY_VALUE
+            if [ -n "$API_KEY_VALUE" ]; then
+                set_env "OPENROUTER_API_KEY" "$API_KEY_VALUE"
+            fi
+        else
+            echo -e "  ${GREEN}Found existing OPENROUTER_API_KEY${NC}"
+        fi
+
+        echo "  Popular models (vendor/model slugs, see https://openrouter.ai/models):"
+        echo "$OPENROUTER_DEFAULTS" | nl -w2 -s') '
+        echo
+
+        CURRENT_MODEL=$(grep "^OPENROUTER_MODEL=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 || echo "")
+        if [ -n "$CURRENT_MODEL" ]; then
+            read -rp "Model [${CURRENT_MODEL}]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-$CURRENT_MODEL}"
+        else
+            read -rp "Model [z-ai/glm-5.3]: " SELECTED_MODEL
+            SELECTED_MODEL="${SELECTED_MODEL:-z-ai/glm-5.3}"
+        fi
+        set_env "OPENROUTER_MODEL" "$SELECTED_MODEL"
         ;;
 esac
 

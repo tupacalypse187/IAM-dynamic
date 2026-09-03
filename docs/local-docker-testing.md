@@ -77,15 +77,15 @@ APPROVER_NAME=Admin
 ```env
 # OpenAI
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.1
+# OPENAI_MODEL=gpt-5.6
 
 # Anthropic Claude
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-5-20251101
+# ANTHROPIC_MODEL=claude-opus-5
 
 # Z.AI GLM
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5.1
+# ZAI_MODEL=glm-5.3
 
 # AWS Credentials (for credential issuance)
 # AWS_ACCESS_KEY_ID=AKIA...

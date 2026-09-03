@@ -232,12 +232,6 @@ run_auth_setup() {
 
     print_success "Auth setup complete"
 }
-    else
-        bash "$auth_script" "--${mode}"
-    fi
-
-    print_success "Auth setup complete"
-}
 
 # =============================================================================
 # CONFIGURATION VALIDATION
@@ -276,6 +270,12 @@ validate_env_file() {
             ;;
         zhipu|glm)
             grep -q "^ZAI_API_KEY=" "$env_file" 2>/dev/null || warnings+=("ZAI_API_KEY (Zhipu provider selected)")
+            ;;
+        muse|meta)
+            grep -q "^MUSE_API_KEY=" "$env_file" 2>/dev/null || warnings+=("MUSE_API_KEY (Muse provider selected)")
+            ;;
+        openrouter)
+            grep -q "^OPENROUTER_API_KEY=" "$env_file" 2>/dev/null || warnings+=("OPENROUTER_API_KEY (OpenRouter provider selected)")
             ;;
     esac
 

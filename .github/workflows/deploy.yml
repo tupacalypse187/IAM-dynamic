@@ -37,7 +37,8 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm audit --audit-level=high || true
+          # Blocking: no known high/critical vulnerabilities may ship
+          npm audit --audit-level=high
           npm run lint
           npx tsc -b --noEmit
           npm run build
@@ -84,7 +85,7 @@ jobs:
         working-directory: backend
         run: |
           pip install -r requirements.txt pytest
-          pytest --tb=short -q || true
+          pytest --tb=short -q
 
   build-images:
     name: Build & Push Images

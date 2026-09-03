@@ -1,17 +1,36 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Loader2, AlertCircle, Lightbulb, RefreshCw, FileEdit, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import 'highlight.js/styles/github-dark.css'
 import { api } from '@/lib/api'
+import type { PolicyResponse } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { CopyButton } from '@/components/copy-button'
+
+/** Code block with a hover/focus-revealed copy button (the modern standard). */
+function MarkdownPre({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) {
+  const preRef = useRef<HTMLPreElement>(null)
+  return (
+    <div className="group relative">
+      <CopyButton
+        value={() => preRef.current?.textContent ?? ''}
+        label="Copy"
+        variant="secondary"
+        className="absolute right-2 top-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+      />
+      <pre ref={preRef} {...props}>
+        {children}
+      </pre>
+    </div>
+  )
+}
 
 interface RejectedViewProps {
-  policyData: any
+  policyData: PolicyResponse
   requestText: string
   duration: number
   selectedProvider: string
@@ -20,12 +39,20 @@ interface RejectedViewProps {
   onStartFresh: () => void
 }
 
-const riskConfig = {
-  low: { color: 'bg-green-500', label: 'Low Risk' },
-  medium: { color: 'bg-yellow-500', label: 'Medium Risk' },
-  high: { color: 'bg-orange-500', label: 'High Risk' },
-  critical: { color: 'bg-red-500', label: 'Critical Risk' },
-}
+// Soft tint + strong text keeps every pair readable in both themes
+const riskBadgeClass = {
+  low: 'bg-success/15 text-success',
+  medium: 'bg-warning/15 text-warning',
+  high: 'bg-orange-600/15 text-orange-700 dark:text-orange-400',
+  critical: 'bg-destructive/15 text-destructive',
+} as const
+
+const riskLabel = {
+  low: 'Low Risk',
+  medium: 'Medium Risk',
+  high: 'High Risk',
+  critical: 'Critical Risk',
+} as const
 
 export default function RejectedView({
   policyData,
@@ -40,7 +67,8 @@ export default function RejectedView({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const risk = riskConfig[policyData.risk as keyof typeof riskConfig] || riskConfig.medium
+  const badgeClass = riskBadgeClass[policyData.risk] ?? riskBadgeClass.medium
+  const label = riskLabel[policyData.risk] ?? riskLabel.medium
 
   // Fetch AI guidance for improving the request
   const fetchGuidance = async () => {
@@ -69,7 +97,9 @@ export default function RejectedView({
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight text-destructive">Request Rejected</h2>
+        <h2 className="text-2xl font-bold tracking-tight text-destructive sm:text-3xl">
+          Request Rejected
+        </h2>
         <p className="text-muted-foreground">
           Your access request was rejected. You can revise and resubmit with better scoping.
         </p>
@@ -80,7 +110,7 @@ export default function RejectedView({
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Request Rejected</AlertTitle>
         <AlertDescription>
-          This request was rejected due to elevated risk level ({risk.label}).
+          This request was rejected due to elevated risk level ({label}).
           Please review the guidance below and revise your request with more specific scoping.
         </AlertDescription>
       </Alert>
@@ -96,9 +126,9 @@ export default function RejectedView({
             <p className="text-sm font-medium text-muted-foreground mb-2">Request Text:</p>
             <p className="p-3 bg-muted rounded-md">{requestText}</p>
           </div>
-          <div className="flex items-center gap-4">
-            <Badge variant="outline" className={`${risk.color} text-white border-0`}>
-              {risk.label}
+          <div className="flex flex-wrap items-center gap-4">
+            <Badge variant="outline" className={`border-0 ${badgeClass}`}>
+              {label}
             </Badge>
             <Badge variant="outline">
               Duration: {duration}h
@@ -108,7 +138,7 @@ export default function RejectedView({
       </Card>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Button
           onClick={fetchGuidance}
           disabled={loading}
@@ -154,7 +184,7 @@ export default function RejectedView({
 
       {/* Error */}
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" role="alert">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
@@ -166,7 +196,7 @@ export default function RejectedView({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Lightbulb className="h-5 w-5 text-yellow-500" />
+              <Lightbulb className="h-5 w-5 text-warning" aria-hidden="true" />
               AI Guidance for Resubmission
             </CardTitle>
             <CardDescription>
@@ -178,6 +208,7 @@ export default function RejectedView({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeHighlight]}
+                components={{ pre: MarkdownPre }}
               >
                 {guidance}
               </ReactMarkdown>

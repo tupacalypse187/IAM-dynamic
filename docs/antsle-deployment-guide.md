@@ -191,19 +191,19 @@ LLM_PROVIDER=gemini
 
 # --- Gemini Configuration (Google) ---
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3-pro-preview
+GEMINI_MODEL=gemini-3.1-pro-preview
 
 # --- OpenAI Configuration (optional) ---
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.1
+# OPENAI_MODEL=gpt-5.6
 
 # --- Anthropic Claude Configuration (optional) ---
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-4-5-20251101
+# ANTHROPIC_MODEL=claude-opus-5
 
 # --- Z.AI GLM Configuration (optional) ---
 # ZAI_API_KEY=...
-# ZAI_MODEL=glm-5.1
+# ZAI_MODEL=glm-5.3
 
 # ============================================
 # AWS Configuration
