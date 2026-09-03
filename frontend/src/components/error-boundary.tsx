@@ -21,7 +21,7 @@ const MAX_RETRIES = 3
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, retryCount: 0 }
 
-  static getDerivedStateFromError(_: Error): Partial<ErrorBoundaryState> {
+  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
     return { hasError: true }
   }
 
