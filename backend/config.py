@@ -107,11 +107,25 @@ class SlackConfig(BaseModel):
     webhook_url: Optional[str] = Field(default=None, env="SLACK_WEBHOOK_URL")
 
 
+class TelegramConfig(BaseModel):
+    """Telegram bot integration configuration"""
+    # Bot API token from @BotFather (https://t.me/BotFather)
+    bot_token: Optional[str] = Field(default=None, env="TELEGRAM_BOT_TOKEN")
+    # Chat ID of the user/group receiving notifications
+    chat_id: Optional[str] = Field(default=None, env="TELEGRAM_CHAT_ID")
+
+    @property
+    def enabled(self) -> bool:
+        """Telegram notifications require both the token and the chat ID"""
+        return bool(self.bot_token and self.chat_id)
+
+
 class AppConfig(BaseModel):
     """Main application configuration"""
     aws: AWSConfig
     llm: LLMConfig
     slack: SlackConfig
+    telegram: TelegramConfig
     auth: AuthConfig
     approver_name: str = Field(default="Admin", env="APPROVER_NAME")
 
@@ -153,6 +167,11 @@ def load_config() -> AppConfig:
             webhook_url=os.getenv("SLACK_WEBHOOK_URL")
         )
 
+        telegram_config = TelegramConfig(
+            bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
+            chat_id=os.getenv("TELEGRAM_CHAT_ID")
+        )
+
         auth_config = AuthConfig(
             admin_username=os.getenv("AUTH_USERNAME", "admin"),
             admin_password_hash=os.getenv("AUTH_PASSWORD_HASH", ""),
@@ -165,6 +184,7 @@ def load_config() -> AppConfig:
             aws=aws_config,
             llm=llm_config,
             slack=slack_config,
+            telegram=telegram_config,
             auth=auth_config,
             approver_name=os.getenv("APPROVER_NAME", "Admin")
         )
