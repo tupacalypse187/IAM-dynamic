@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { copyText } from '@/lib/clipboard'
-import { useToast } from './ui/use-toast'
+import { useToast } from '@/hooks/use-toast'
 import { Button } from './ui/button'
 import { cn } from '@/lib/utils'
 

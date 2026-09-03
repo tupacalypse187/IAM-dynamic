@@ -1,19 +1,5 @@
 import * as React from 'react'
-
-export type ToastProps = {
-  id: string
-  title?: React.ReactNode
-  description?: React.ReactNode
-  variant?: 'default' | 'destructive' | 'success'
-}
-
-type ToastContextState = {
-  toasts: ToastProps[]
-  toast: (toast: Omit<ToastProps, 'id'>) => void
-  dismiss: (id: string) => void
-}
-
-const ToastContext = React.createContext<ToastContextState | null>(null)
+import { ToastContext, type ToastProps } from '@/hooks/use-toast'
 
 const TOAST_LIMIT = 3
 const TOAST_DURATION_MS = 5000
@@ -51,10 +37,4 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const value = React.useMemo(() => ({ toasts, toast, dismiss }), [toasts, toast, dismiss])
 
   return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>
-}
-
-export function useToast() {
-  const context = React.useContext(ToastContext)
-  if (!context) throw new Error('useToast must be used within a ToastProvider')
-  return context
 }
