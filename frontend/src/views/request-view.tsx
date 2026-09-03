@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { Loader2, AlertCircle, Info } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from '@/lib/api'
+import type { PolicyResponse } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,7 +18,7 @@ interface RequestViewProps {
   onDurationChange: (duration: number) => void
   selectedProvider: string
   selectedModel?: string
-  onPolicyGenerated: (data: any) => void
+  onPolicyGenerated: (data: PolicyResponse) => void
 }
 
 export default function RequestView({
@@ -58,13 +59,13 @@ export default function RequestView({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">New Request</h2>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">New Request</h2>
         <p className="text-muted-foreground">
           Describe your AWS access needs and AI will generate a least-privilege IAM policy.
         </p>
       </div>
 
-      <Card>
+      <Card className="shadow-card">
         <CardHeader>
           <CardTitle>Access Request</CardTitle>
           <CardDescription>
@@ -89,10 +90,12 @@ export default function RequestView({
           {/* Duration */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Label>Session Duration</Label>
-              <span className="text-sm font-medium">{duration} hours</span>
+              <Label htmlFor="session-duration">Session Duration</Label>
+              <span className="text-sm font-medium tabular-nums">{duration} hours</span>
             </div>
             <Slider
+              id="session-duration"
+              aria-label="Session duration in hours"
               value={[duration]}
               onValueChange={(values) => onDurationChange(values[0])}
               min={1}
@@ -107,9 +110,13 @@ export default function RequestView({
 
           {/* Error */}
           {error && (
-            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4">
+            <div
+              className="rounded-md bg-destructive/10 border border-destructive/20 p-4"
+              role="alert"
+              aria-live="polite"
+            >
               <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="flex-1 text-sm prose prose-sm max-w-none dark:prose-invert">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {error}
@@ -142,20 +149,8 @@ export default function RequestView({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
-            <div className="rounded-full bg-primary/10 p-2">
-              <svg
-                className="h-4 w-4 text-primary"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+            <div className="rounded-full bg-primary/10 p-2" aria-hidden="true">
+              <Info className="h-4 w-4 text-primary" />
             </div>
             <div className="text-sm">
               <p className="font-medium">How it works</p>

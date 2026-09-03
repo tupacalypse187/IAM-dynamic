@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Lock, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/components/auth-provider'
+import { useTheme } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -18,9 +19,31 @@ declare global {
 }
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || ''
+const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
+
+/** Load the Turnstile script only when a site key is configured. */
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SRC}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve())
+      existing.addEventListener('error', () => reject(new Error('Turnstile failed to load')))
+      return
+    }
+    const script = document.createElement('script')
+    script.src = TURNSTILE_SRC
+    script.async = true
+    script.defer = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Turnstile failed to load'))
+    document.head.appendChild(script)
+  })
+}
 
 export default function LoginView() {
   const { login } = useAuth()
+  const { theme } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -28,6 +51,12 @@ export default function LoginView() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const turnstileRef = useRef<HTMLDivElement>(null)
   const widgetIdRef = useRef<string | null>(null)
+
+  const isDark =
+    theme === 'dark' ||
+    (theme === 'system' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   const renderTurnstile = useCallback(() => {
     if (!TURNSTILE_SITE_KEY || !turnstileRef.current || !window.turnstile) return
@@ -40,24 +69,21 @@ export default function LoginView() {
       sitekey: TURNSTILE_SITE_KEY,
       callback: (token: string) => setTurnstileToken(token),
       'expired-callback': () => setTurnstileToken(null),
-      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+      theme: isDark ? 'dark' : 'light',
     })
-  }, [])
+  }, [isDark])
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return
 
-    // Turnstile script may still be loading
-    if (window.turnstile) {
-      renderTurnstile()
-    } else {
-      const interval = setInterval(() => {
-        if (window.turnstile) {
-          clearInterval(interval)
-          renderTurnstile()
-        }
-      }, 200)
-      return () => clearInterval(interval)
+    let cancelled = false
+    loadTurnstileScript()
+      .then(() => {
+        if (!cancelled) renderTurnstile()
+      })
+      .catch(() => setError('CAPTCHA failed to load. Reload the page and try again.'))
+    return () => {
+      cancelled = true
     }
   }, [renderTurnstile])
 
@@ -86,11 +112,16 @@ export default function LoginView() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+      {/* Subtle ambient gradient backdrop */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/_0.12),_transparent_60%)]"
+        aria-hidden="true"
+      />
+      <Card className="relative w-full max-w-md shadow-card">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Lock className="h-6 w-6 text-primary" />
+            <Lock className="h-6 w-6 text-primary" aria-hidden="true" />
           </div>
           <CardTitle className="text-2xl">IAM-Dynamic Portal</CardTitle>
           <CardDescription>Sign in to manage IAM access requests</CardDescription>
@@ -129,7 +160,11 @@ export default function LoginView() {
             )}
 
             {error && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              <div
+                className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                role="alert"
+                aria-live="polite"
+              >
                 {error}
               </div>
             )}

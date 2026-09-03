@@ -1,24 +1,21 @@
 import { useState, useEffect } from 'react'
-import { Copy, Check, Download, RotateCcw } from 'lucide-react'
+import { Download, RotateCcw, ShieldAlert } from 'lucide-react'
+import type { Credentials } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { CopyButton } from '@/components/copy-button'
 
 interface CredentialsViewProps {
-  credentials: {
-    access_key_id: string
-    secret_access_key: string
-    session_token: string
-    expiration: string
-    region: string
-  }
+  credentials: Credentials
   duration: number
   onNewRequest: () => void
 }
 
+type ScriptFormat = 'bash' | 'powershell' | 'aws-cli'
+
 export default function CredentialsView({ credentials, duration, onNewRequest }: CredentialsViewProps) {
-  const [copied, setCopied] = useState<'bash' | 'powershell' | 'aws-cli' | null>(null)
   const [timeRemaining, setTimeRemaining] = useState('')
 
   useEffect(() => {
@@ -43,17 +40,6 @@ export default function CredentialsView({ credentials, duration, onNewRequest }:
 
     return () => clearInterval(interval)
   }, [credentials.expiration])
-
-  const copyToClipboard = async (type: 'bash' | 'powershell' | 'aws-cli', text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(type)
-      setTimeout(() => setCopied(null), 2000)
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error)
-      // Optionally show user feedback about the failure
-    }
-  }
 
   const bashScript = `export AWS_ACCESS_KEY_ID="${credentials.access_key_id}"
 export AWS_SECRET_ACCESS_KEY="${credentials.secret_access_key}"
@@ -85,23 +71,29 @@ aws configure set aws_session_token ${credentials.session_token} --profile iam-s
     URL.revokeObjectURL(url)
   }
 
+  const scriptTabs: Array<{ format: ScriptFormat; label: string; script: string }> = [
+    { format: 'bash', label: 'Bash / Zsh', script: bashScript },
+    { format: 'powershell', label: 'PowerShell', script: psScript },
+    { format: 'aws-cli', label: 'AWS CLI', script: awsCli },
+  ]
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Credentials Issued</h2>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Credentials Issued</h2>
         <p className="text-muted-foreground">
           Your temporary AWS credentials have been successfully issued.
         </p>
       </div>
 
       {/* Expiration Timer */}
-      <Card>
+      <Card className="shadow-card">
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Time Remaining</p>
-              <p className="text-3xl font-bold">{timeRemaining}</p>
+              <p className="text-3xl font-bold tabular-nums">{timeRemaining}</p>
             </div>
             <Badge variant="outline" className="text-base">
               {duration} hour session
@@ -121,85 +113,36 @@ aws configure set aws_session_token ${credentials.session_token} --profile iam-s
         <CardContent>
           <Tabs defaultValue="bash">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="bash">Bash / Zsh</TabsTrigger>
-              <TabsTrigger value="powershell">PowerShell</TabsTrigger>
-              <TabsTrigger value="aws-cli">AWS CLI</TabsTrigger>
+              {scriptTabs.map(({ format, label }) => (
+                <TabsTrigger key={format} value={format}>
+                  {label}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
-            <TabsContent value="bash" className="mt-4">
-              <pre className="overflow-auto rounded-md bg-muted p-4 text-sm">
-                {bashScript}
-              </pre>
-              <Button
-                onClick={() => copyToClipboard('bash', bashScript)}
-                variant="outline"
-                className="mt-2"
-              >
-                {copied === 'bash' ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy to Clipboard
-                  </>
-                )}
-              </Button>
-            </TabsContent>
-
-            <TabsContent value="powershell" className="mt-4">
-              <pre className="overflow-auto rounded-md bg-muted p-4 text-sm">
-                {psScript}
-              </pre>
-              <Button
-                onClick={() => copyToClipboard('powershell', psScript)}
-                variant="outline"
-                className="mt-2"
-              >
-                {copied === 'powershell' ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy to Clipboard
-                  </>
-                )}
-              </Button>
-            </TabsContent>
-
-            <TabsContent value="aws-cli" className="mt-4">
-              <pre className="overflow-auto rounded-md bg-muted p-4 text-sm">
-                {awsCli}
-              </pre>
-              <Button
-                onClick={() => copyToClipboard('aws-cli', awsCli)}
-                variant="outline"
-                className="mt-2"
-              >
-                {copied === 'aws-cli' ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copy to Clipboard
-                  </>
-                )}
-              </Button>
-            </TabsContent>
+            {scriptTabs.map(({ format, label, script }) => (
+              <TabsContent key={format} value={format} className="mt-4">
+                <div className="relative">
+                  <pre className="overflow-auto rounded-md bg-muted p-4 pr-24 font-mono text-sm">
+                    {script}
+                  </pre>
+                  <CopyButton
+                    value={script}
+                    label="Copy"
+                    className="absolute right-2 top-2"
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {label} export script — paste it into your terminal before running AWS commands.
+                </p>
+              </TabsContent>
+            ))}
           </Tabs>
         </CardContent>
       </Card>
 
       {/* Actions */}
-      <div className="flex gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row">
         <Button onClick={downloadScript} variant="outline" className="flex-1">
           <Download className="mr-2 h-4 w-4" />
           Download Script
@@ -211,9 +154,10 @@ aws configure set aws_session_token ${credentials.session_token} --profile iam-s
       </div>
 
       {/* Security Notice */}
-      <Card className="border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950">
-        <CardContent className="pt-6">
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+      <Card className="border-warning/40 bg-warning/5">
+        <CardContent className="flex items-start gap-3 pt-6">
+          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+          <p className="text-sm text-foreground">
             <strong>Security Notice:</strong> These credentials will expire automatically. Never share
             your credentials or commit them to version control. All credential issuance is logged
             for audit purposes.

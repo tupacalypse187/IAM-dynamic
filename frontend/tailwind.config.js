@@ -7,6 +7,23 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          'Inter Variable',
+          'Inter',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'sans-serif',
+        ],
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Consolas',
+          'monospace',
+        ],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -24,6 +41,14 @@ export default {
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+        },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
         },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
@@ -51,6 +76,11 @@ export default {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+      },
+      boxShadow: {
+        card: '0 1px 2px 0 hsl(224 40% 10% / 0.04), 0 1px 3px 0 hsl(224 40% 10% / 0.06)',
+        'card-hover':
+          '0 2px 4px 0 hsl(224 40% 10% / 0.05), 0 4px 12px 0 hsl(224 40% 10% / 0.08)',
       },
       borderRadius: {
         lg: 'var(--radius)',

@@ -1,3 +1,5 @@
+import type { Credentials, PolicyResponse, ProvidersResponse } from '@/types/api'
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const TOKEN_KEY = 'iam_token'
 
@@ -63,19 +65,16 @@ export const api = {
     }),
 
   // Providers
-  getProviders: () =>
-    request<{ providers: Array<{ id: string; name: string; model: string; models: Array<{ id: string; name: string }> }>; account_id: string; current_provider: string }>(
-      '/config/providers'
-    ),
+  getProviders: () => request<ProvidersResponse>('/config/providers'),
 
   generatePolicy: (data: { request_text: string; provider: string; model?: string; duration: number }) =>
-    request('/api/generate-policy', {
+    request<PolicyResponse>('/api/generate-policy', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
   issueCredentials: (data: { policy: Record<string, unknown>; duration: number; approved: boolean; change_case?: string }) =>
-    request('/api/issue-credentials', {
+    request<Credentials>('/api/issue-credentials', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
