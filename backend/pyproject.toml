@@ -24,6 +24,13 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pytest.ini_options]
+# Bare `pytest` (as CI invokes it) does not put the working directory on
+# sys.path the way `python -m pytest` does — declare it explicitly so the
+# top-level modules (main, config, llm_service) import from backend/.
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0.0",
