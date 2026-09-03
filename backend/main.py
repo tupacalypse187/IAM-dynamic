@@ -200,31 +200,50 @@ def get_max_duration(risk: str) -> int:
     return {"low": 12, "medium": 4, "high": 2, "critical": 1}.get(risk.lower(), 2)
 
 
-# Available models per provider (updated March 2026)
+# Available models per provider (updated September 2026)
 PROVIDER_MODELS = {
     "gemini": [
         {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro"},
-        {"id": "gemini-3-flash-preview", "name": "Gemini 3 Flash"},
-        {"id": "gemini-3.1-flash-lite-preview", "name": "Gemini 3.1 Flash Lite"},
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
+        {"id": "gemini-3.7-flash", "name": "Gemini 3.7 Flash"},
+        {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite"},
     ],
     "openai": [
+        {"id": "gpt-5.6", "name": "GPT-5.6"},
+        {"id": "gpt-5.6-sol", "name": "GPT-5.6 Sol"},
+        {"id": "gpt-5.6-terra", "name": "GPT-5.6 Terra"},
+        {"id": "gpt-5.6-luna", "name": "GPT-5.6 Luna"},
         {"id": "gpt-5.4", "name": "GPT-5.4"},
         {"id": "gpt-5-mini-2025-08-07", "name": "GPT-5 Mini"},
-        {"id": "gpt-4o", "name": "GPT-4o"},
-        {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
-        {"id": "o1-preview", "name": "o1-preview"},
     ],
     "claude": [
+        {"id": "claude-opus-5", "name": "Claude Opus 5"},
+        {"id": "claude-sonnet-5", "name": "Claude Sonnet 5"},
         {"id": "claude-opus-4-6", "name": "Claude Opus 4.6"},
         {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
-        {"id": "claude-opus-4-5", "name": "Claude Opus 4.5"},
-        {"id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5"},
+        {"id": "claude-haiku-4-5", "name": "Claude Haiku 4.5"},
     ],
     "zhipu": [
+        {"id": "glm-5.3", "name": "GLM-5.3"},
+        {"id": "glm-5.3-flash", "name": "GLM-5.3 Flash"},
         {"id": "glm-5.1", "name": "GLM-5.1"},
         {"id": "glm-5", "name": "GLM-5"},
         {"id": "glm-4.7", "name": "GLM-4.7"},
         {"id": "glm-4.7-flash", "name": "GLM-4.7 Flash"},
+    ],
+    "muse": [
+        {"id": "muse-spark-1.3-contributor", "name": "Muse Spark 1.3 (Contributor)"},
+        {"id": "muse-spark-1.3", "name": "Muse Spark 1.3"},
+        {"id": "muse-spark-1.2", "name": "Muse Spark 1.2"},
+        {"id": "muse-spark-1.1", "name": "Muse Spark 1.1"},
+    ],
+    "openrouter": [
+        {"id": "z-ai/glm-5.3", "name": "GLM-5.3 (Z.AI)"},
+        {"id": "z-ai/glm-5.3-flash", "name": "GLM-5.3 Flash (Z.AI)"},
+        {"id": "openai/gpt-5.6", "name": "GPT-5.6 (OpenAI)"},
+        {"id": "anthropic/claude-opus-5", "name": "Claude Opus 5 (Anthropic)"},
+        {"id": "google/gemini-3.1-pro", "name": "Gemini 3.1 Pro (Google)"},
+        {"id": "meta/muse-spark-1.3", "name": "Muse Spark 1.3 (Meta)"},
     ],
 }
 
@@ -329,6 +348,20 @@ async def get_providers(_user: str = Depends(get_current_user)):
             "name": "Z.AI GLM",
             "model": config.llm.zai_model,
             "models": PROVIDER_MODELS["zhipu"]
+        })
+    if config.llm.muse_api_key:
+        providers.append({
+            "id": "muse",
+            "name": "Meta Muse",
+            "model": config.llm.muse_model,
+            "models": PROVIDER_MODELS["muse"]
+        })
+    if config.llm.openrouter_api_key:
+        providers.append({
+            "id": "openrouter",
+            "name": "OpenRouter",
+            "model": config.llm.openrouter_model,
+            "models": PROVIDER_MODELS["openrouter"]
         })
     return {
         "providers": providers,

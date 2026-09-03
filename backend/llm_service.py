@@ -2,16 +2,20 @@
 LLM Service Layer - Supports multiple AI providers for IAM policy generation
 
 Providers supported:
-- Google Gemini 3.1 Pro Preview
-- OpenAI GPT-5.4
-- Anthropic Claude Opus 4.6
-- Zhipu GLM-5.1 (via api.z.ai global platform)
+- Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
+- OpenAI GPT-5.6 family (gpt-5.6)
+- Anthropic Claude Opus 5 (claude-opus-5)
+- Z.AI GLM-5.3 (glm-5.3, via api.z.ai global platform)
+- Meta Muse (muse-spark-1.3, via api.meta.ai Meta Model API)
+- OpenRouter gateway (vendor/model slugs, e.g. z-ai/glm-5.3)
 
 Sources:
 - Gemini: https://ai.google.dev/api/models
-- OpenAI: https://platform.openai.com/docs/models
-- Anthropic: https://docs.anthropic.com/en/docs/models-overview
-- Zhipu: https://docs.z.ai/guides/llm/glm-5
+- OpenAI: https://developers.openai.com/api/docs/models
+- Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models/overview
+- Zhipu: https://docs.z.ai/guides/llm/glm-5.3
+- Meta Muse: https://ai.developer.meta.com/docs/overview/
+- OpenRouter: https://openrouter.ai/docs
 """
 import os
 import json
@@ -54,6 +58,12 @@ load_dotenv()
 # Logger setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# Shown to users when guidance generation fails for any provider
+FALLBACK_GUIDANCE = (
+    "Unable to generate AI guidance. Please review your request and be more "
+    "specific about resources and actions needed."
+)
 
 
 # AWS Service name mappings for dynamic guidance
@@ -198,7 +208,7 @@ Be conversational and helpful, not robotic.
 
 IMPORTANT: Output raw markdown directly. Do NOT escape quotes, backticks, or other special characters. For example:
 - Use: "example text" (with actual quotes, not \" or \")
-- Use: `code` (with actual backticks, not \`)
+- Use: `code` (with actual backticks, not \\`)
 - Do NOT wrap the entire response in code blocks"""
 
 
@@ -256,10 +266,10 @@ RULES:
 
 class GeminiProvider(LLMProvider):
     """
-    Google Gemini 3 Pro Preview provider
+    Google Gemini provider
 
-    Latest model: gemini-3-pro-preview-11-2025
-    Source: https://blog.google/products-and-platforms/products/gemini/gemini-3/
+    Latest model: gemini-3.1-pro-preview (flagship)
+    Source: https://ai.google.dev/gemini-api/docs/models
     """
 
     def __init__(self):
@@ -271,14 +281,29 @@ class GeminiProvider(LLMProvider):
         # Model code: gemini-3.1-pro-preview
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
 
-        # Initialize client based on API version
+        # Initialize client based on API version.
+        # genai.Client raises on api_key=None, so only build it when present;
+        # genai.configure() only exists in the deprecated google.generativeai SDK.
         if GOOGLE_GENAI_NEW:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
+            self.client = genai.Client(api_key=self.api_key) if self.api_key else None
+        elif self.api_key:
             genai.configure(api_key=self.api_key)
+            self.client = None
+        else:
             self.client = None
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
+        if not self.api_key:
+            raise UserFacingError(
+                "🔑 **API Key Missing**\n\n"
+                "The Google API key is not configured. Please:\n"
+                "1. Get a valid API key from [Google AI Studio](https://makersuite.google.com/app/apikey)\n"
+                "2. Set `GOOGLE_API_KEY=your-key` in your `.env` file\n"
+                "3. Restart the backend\n\n"
+                "[**Get API Key →**](https://makersuite.google.com/app/apikey)",
+                log_message="Gemini API key not configured"
+            )
+
         try:
             if GOOGLE_GENAI_NEW:
                 # New google-genai API
@@ -338,39 +363,16 @@ class GeminiProvider(LLMProvider):
             return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
 
 
-class OpenAIProvider(LLMProvider):
-    """
-    OpenAI provider - GPT-5 and o3-pro
+def _parse_json_content(content: str) -> Dict[str, Any]:
+    """Parse an LLM response as JSON, tolerating markdown code fences."""
+    if "```json" in content:
+        content = content.split("```json")[1].split("```")[0].strip()
+    elif "```" in content:
+        content = content.split("```")[1].split("```")[0].strip()
+    return json.loads(content)
 
-    Latest models: gpt-5 (flagship), o3-pro (reasoning)
-    Source: https://openai.com/index/introducing-o3-and-o4-mini/
-    """
 
-    def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        # GPT-5.2 (latest) - GPT-5.1 and GPT-5 are previous models
-        # Model code: gpt-5.2 (OpenAI recommends using latest)
-        self.model_name = os.getenv("OPENAI_MODEL", "gpt-5.3")
-        if self.api_key:
-            self.client = openai.OpenAI(api_key=self.api_key)
-        else:
-            self.client = None
-            logger.warning("OPENAI_API_KEY not found")
-
-    def generate_policy(self, request_text: str) -> PolicyResponse:
-        if not self.client:
-            raise UserFacingError(
-                "🔑 **API Key Missing**\n\n"
-                "The OpenAI API key is not configured. Please:\n"
-                "1. Get a valid API key from [OpenAI Platform](https://platform.openai.com/api-keys)\n"
-                "2. Set `OPENAI_API_KEY=your-key` in your `.env` file\n"
-                "3. Restart the backend\n\n"
-                "[**Get API Key →**](https://platform.openai.com/api-keys)",
-                log_message="OpenAI client not initialized"
-            )
-
-        prompt = f"""
-You are a security agent that writes AWS IAM policies from user requests.
+POLICY_PROMPT_TEMPLATE = """You are a security agent that writes AWS IAM policies from user requests.
 - ALWAYS create a policy that grants what is requested, scoped to least privilege.
 - Respond with a JSON object.
 
@@ -379,21 +381,77 @@ Format:
   "policy": {{ ... }},
   "risk_score": "low|medium|high|critical",
   "explanation": "...",
-  "approver_note": "...",
-  "suggested_refinement": "..."
+  "approver_note": "..."
 }}
 
 Request: "{request_text}"
-"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                response_format={"type": "json_object"}
+
+Respond ONLY with the JSON object, no additional text."""
+
+GUIDANCE_SYSTEM_INSTRUCTION = (
+    "You are a helpful security assistant that provides clear guidance on AWS IAM access requests."
+)
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """
+    Base class for providers that expose an OpenAI-compatible Chat Completions API.
+
+    Subclasses declare their env var names, default model, base URL and the
+    markdown instructions shown to the user when the API key is missing.
+    """
+
+    provider_key = "openai"  # key used for error mapping in handle_llm_error
+    display_name = "OpenAI-compatible"
+    api_key_env = "OPENAI_API_KEY"
+    model_env = "OPENAI_MODEL"
+    default_model = "gpt-5.6"
+    base_url = None
+    # Set False for gateways whose models may not accept response_format
+    supports_json_response_format = True
+    # Set False for models that only support the default temperature (e.g.
+    # OpenAI's GPT-5 reasoning family rejects temperature != 1 with a 400)
+    supports_temperature = True
+    key_setup_instructions = (
+        "🔑 **API Key Missing**\n\n"
+        "The API key is not configured. Please set it in your `.env` file "
+        "and restart the backend."
+    )
+
+    def __init__(self):
+        self.api_key = os.getenv(self.api_key_env)
+        self.model_name = os.getenv(self.model_env, self.default_model)
+        if not self.api_key:
+            logger.warning(f"{self.api_key_env} not found. {self.display_name} provider may fail.")
+            self.client = None
+        else:
+            self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            logger.info(f"Using {self.display_name} with model {self.model_name}")
+
+    def generate_policy(self, request_text: str) -> PolicyResponse:
+        if not self.client:
+            raise UserFacingError(
+                self.key_setup_instructions,
+                log_message=f"{self.display_name} API key not configured"
             )
-            content = response.choices[0].message.content
-            data = json.loads(content)
+
+        prompt = POLICY_PROMPT_TEMPLATE.format(request_text=request_text)
+
+        try:
+            request_kwargs = {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_INSTRUCTION},
+                    {"role": "user", "content": prompt}
+                ],
+            }
+            if self.supports_temperature:
+                request_kwargs["temperature"] = 0.2
+            if self.supports_json_response_format:
+                request_kwargs["response_format"] = {"type": "json_object"}
+
+            response = self.client.chat.completions.create(**request_kwargs)
+            data = _parse_json_content(response.choices[0].message.content)
 
             return PolicyResponse(
                 policy=data.get("policy", {}),
@@ -404,44 +462,77 @@ Request: "{request_text}"
         except UserFacingError:
             raise
         except Exception as e:
-            raise handle_llm_error(e, "openai")
+            raise handle_llm_error(e, self.provider_key)
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
         if not self.client:
-            return "OpenAI client not initialized. Please review your request and be more specific about resources and actions needed."
+            return FALLBACK_GUIDANCE
 
         guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": guidance_prompt}],
-                temperature=0.3
-            )
+            guidance_kwargs = {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": GUIDANCE_SYSTEM_INSTRUCTION},
+                    {"role": "user", "content": guidance_prompt}
+                ],
+            }
+            if self.supports_temperature:
+                guidance_kwargs["temperature"] = 0.3
+            response = self.client.chat.completions.create(**guidance_kwargs)
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"OpenAI rejection guidance error: {e}")
-            return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
+            logger.error(f"{self.display_name} rejection guidance error: {e}")
+            return FALLBACK_GUIDANCE
+
+
+class OpenAIProvider(OpenAICompatibleProvider):
+    """
+    OpenAI provider - GPT-5.6 family
+
+    Latest models: gpt-5.6 (Sol alias), gpt-5.6-terra, gpt-5.6-luna
+    Source: https://developers.openai.com/api/docs/models
+    """
+
+    provider_key = "openai"
+    display_name = "OpenAI"
+    api_key_env = "OPENAI_API_KEY"
+    model_env = "OPENAI_MODEL"
+    default_model = "gpt-5.6"
+    base_url = None
+    # GPT-5 reasoning models only accept the default temperature (1)
+    supports_temperature = False
+    key_setup_instructions = (
+        "🔑 **API Key Missing**\n\n"
+        "The OpenAI API key is not configured. Please:\n"
+        "1. Get a valid API key from [OpenAI Platform](https://platform.openai.com/api-keys)\n"
+        "2. Set `OPENAI_API_KEY=your-key` in your `.env` file\n"
+        "3. Restart the backend\n\n"
+        "[**Get API Key →**](https://platform.openai.com/api-keys)"
+    )
 
 
 class AnthropicProvider(LLMProvider):
     """
-    Anthropic Claude provider - Opus 4.6
+    Anthropic Claude provider
 
-    Latest model: claude-opus-4-6
-    Source: https://docs.anthropic.com/en/docs/models-overview
+    Latest model: claude-opus-5 (July 2026)
+    Source: https://platform.claude.com/docs/en/docs/about-claude/models/overview
     """
 
     def __init__(self):
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6")
-        # Claude Opus 4.6 (February 2026)
+        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
+            self.client = None
+        else:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def generate_policy(self, request_text: str) -> PolicyResponse:
-        if not self.api_key:
+        if not self.client:
             raise UserFacingError(
                 "🔑 **API Key Missing**\n\n"
                 "The Anthropic API key is not configured. Please:\n"
@@ -461,8 +552,7 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
 - approver_note: recommendation for the approver"""
 
         try:
-            client = anthropic.Anthropic(api_key=self.api_key)
-            response = client.messages.create(
+            response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
                 system=SYSTEM_INSTRUCTION,
@@ -470,15 +560,7 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
                 temperature=0.2
             )
 
-            # Extract JSON from response
-            content = response.content[0].text
-            # Remove markdown code blocks if present
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-
-            data = json.loads(content)
+            data = _parse_json_content(response.content[0].text)
 
             return PolicyResponse(
                 policy=data.get("policy", {}),
@@ -493,11 +575,13 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
 
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
+        if not self.client:
+            return FALLBACK_GUIDANCE
+
         guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
 
         try:
-            client = anthropic.Anthropic(api_key=self.api_key)
-            response = client.messages.create(
+            response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": guidance_prompt}],
@@ -506,103 +590,90 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
             return response.content[0].text
         except Exception as e:
             logger.error(f"Anthropic rejection guidance error: {e}")
-            return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
+            return FALLBACK_GUIDANCE
 
 
-class ZhipuProvider(LLMProvider):
+class ZhipuProvider(OpenAICompatibleProvider):
     """
-    Zhipu AI GLM provider - Global platform (api.z.ai)
+    Z.AI GLM provider - Global platform (api.z.ai)
 
-    Uses OpenAI-compatible API.
-    Latest models: glm-5.1, glm-5, glm-4.7
-    Source: https://docs.z.ai/guides/llm/glm-5
+    Uses OpenAI-compatible API (coding endpoint).
+    Latest models: glm-5.3, glm-5.3-flash
+    Source: https://docs.z.ai/guides/llm/glm-5.3
     """
 
-    def __init__(self):
-        from openai import OpenAI
+    provider_key = "zhipu"
+    display_name = "Z.AI GLM (api.z.ai)"
+    api_key_env = "ZAI_API_KEY"
+    model_env = "ZAI_MODEL"
+    default_model = "glm-5.3"
+    base_url = "https://api.z.ai/api/coding/paas/v4/"
+    key_setup_instructions = (
+        "🔑 **API Key Missing**\n\n"
+        "The Z.AI API key is not configured. Please:\n"
+        "1. Get a valid API key from [Z.AI Platform](https://api.z.ai)\n"
+        "2. Set `ZAI_API_KEY=your-key` in your `.env` file\n"
+        "3. Restart the backend\n\n"
+        "[**Get API Key →**](https://api.z.ai)"
+    )
 
-        self.api_key = os.getenv("ZAI_API_KEY")
-        self.model_name = os.getenv("ZAI_MODEL", "glm-5.1")
-        if not self.api_key:
-            logger.warning("ZAI_API_KEY not found. ZhipuProvider may fail.")
-            self.client = None
-        else:
-            self.client = OpenAI(
-                api_key=self.api_key,
-                base_url="https://api.z.ai/api/coding/paas/v4/"
-            )
-            logger.info(f"Using Zhipu global platform (api.z.ai) with model {self.model_name}")
 
-    def generate_policy(self, request_text: str) -> PolicyResponse:
-        if not self.client:
-            raise UserFacingError(
-                "🔑 **API Key Missing**\n\n"
-                "The Z.AI API key is not configured. Please:\n"
-                "1. Get a valid API key from [Z.AI Platform](https://api.z.ai)\n"
-                "2. Set `ZAI_API_KEY=your-key` in your `.env` file\n"
-                "3. Restart the backend\n\n"
-                "[**Get API Key →**](https://api.z.ai)",
-                log_message="Zhipu API key not configured"
-            )
+class MuseProvider(OpenAICompatibleProvider):
+    """
+    Meta Muse provider - Meta Model API (api.meta.ai)
 
-        prompt = f"""You are a security agent that writes AWS IAM policies from user requests.
-- ALWAYS create a policy that grants what is requested, scoped to least privilege.
-- Respond with a JSON object.
+    Uses the OpenAI-compatible Meta Model API.
+    Latest models: muse-spark-1.3-contributor, muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
+    Source: https://ai.developer.meta.com/docs/overview/
+    """
 
-Format:
-{{
-  "policy": {{ ... }},
-  "risk_score": "low|medium|high|critical",
-  "explanation": "...",
-  "approver_note": "..."
-}}
+    provider_key = "muse"
+    display_name = "Meta Muse (api.meta.ai)"
+    api_key_env = "MUSE_API_KEY"
+    model_env = "MUSE_MODEL"
+    default_model = "muse-spark-1.3-contributor"
+    base_url = "https://api.meta.ai/v1"
+    # Meta's API accepts the OpenAI SDK surface, but response_format support is
+    # not guaranteed across Muse tiers - rely on prompt + fence-stripping parse.
+    supports_json_response_format = False
+    key_setup_instructions = (
+        "🔑 **API Key Missing**\n\n"
+        "The Meta Model API key is not configured. Please:\n"
+        "1. Create an API key at [Meta Model API](https://ai.developer.meta.com/)\n"
+        "2. Set `MUSE_API_KEY=your-key` in your `.env` file\n"
+        "3. Restart the backend\n\n"
+        "[**Get API Key →**](https://ai.developer.meta.com/)"
+    )
 
-Request: "{request_text}"
 
-Respond ONLY with the JSON object, no additional text."""
+class OpenRouterProvider(OpenAICompatibleProvider):
+    """
+    OpenRouter gateway provider - one API key for many vendors' models
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": SYSTEM_INSTRUCTION},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                response_format={"type": "json_object"}
-            )
+    Uses the OpenAI-compatible OpenRouter API. Models are `vendor/model`
+    slugs, e.g. z-ai/glm-5.3 or anthropic/claude-opus-5.
+    Source: https://openrouter.ai/docs
+    """
 
-            content = response.choices[0].message.content
-            data = json.loads(content)
-
-            return PolicyResponse(
-                policy=data.get("policy", {}),
-                risk=data.get("risk_score", "medium"),
-                explanation=data.get("explanation", ""),
-                approver_note=data.get("approver_note", "")
-            )
-        except UserFacingError:
-            raise
-        except Exception as e:
-            raise handle_llm_error(e, "zhipu")
-
-    def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
-        """Generate guidance for rejected requests to help user resubmit with better scoping"""
-        guidance_prompt = _build_rejection_guidance_prompt(original_request, policy, risk)
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful security assistant that provides clear guidance on AWS IAM access requests."},
-                    {"role": "user", "content": guidance_prompt}
-                ],
-                temperature=0.3
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"Zhipu rejection guidance error: {e}")
-            return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
+    provider_key = "openrouter"
+    display_name = "OpenRouter"
+    api_key_env = "OPENROUTER_API_KEY"
+    model_env = "OPENROUTER_MODEL"
+    default_model = "z-ai/glm-5.3"
+    base_url = "https://openrouter.ai/api/v1"
+    # Slugs from many vendors route through here; not all accept
+    # response_format or non-default temperature, so rely on the prompt
+    # plus fence-stripping parse and the provider's default temperature.
+    supports_json_response_format = False
+    supports_temperature = False
+    key_setup_instructions = (
+        "🔑 **API Key Missing**\n\n"
+        "The OpenRouter API key is not configured. Please:\n"
+        "1. Get a valid API key from [OpenRouter](https://openrouter.ai/settings/keys)\n"
+        "2. Set `OPENROUTER_API_KEY=your-key` in your `.env` file\n"
+        "3. Restart the backend\n\n"
+        "[**Get API Key →**](https://openrouter.ai/settings/keys)"
+    )
 
 
 def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvider:
@@ -611,9 +682,11 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
 
     Providers:
     - gemini: Google Gemini 3.1 Pro Preview
-    - openai: OpenAI GPT-5.4
-    - anthropic/claude: Anthropic Claude Opus 4.6
-    - zhipu/glm: Zhipu AI GLM-5.1
+    - openai: OpenAI GPT-5.6
+    - anthropic/claude: Anthropic Claude Opus 5
+    - zhipu/glm: Z.AI GLM-5.3
+    - muse/meta: Meta Muse Spark
+    - openrouter: OpenRouter gateway (vendor/model slugs)
 
     Args:
         provider_type: Optional provider type to override environment variable
@@ -633,6 +706,10 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
         provider = AnthropicProvider()
     elif provider_type in ("zhipu", "glm"):
         provider = ZhipuProvider()
+    elif provider_type in ("muse", "meta"):
+        provider = MuseProvider()
+    elif provider_type == "openrouter":
+        provider = OpenRouterProvider()
     elif provider_type == "gemini":
         provider = GeminiProvider()
     else:

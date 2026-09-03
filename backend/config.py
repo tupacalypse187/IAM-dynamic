@@ -3,15 +3,19 @@ Centralized configuration with pydantic validation
 
 Supports LLM providers:
 - Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
-- OpenAI GPT-5.3 (gpt-5.3) and o3-pro
-- Anthropic Claude Opus 4.6 (claude-opus-4-6-20250205)
-- Zhipu GLM-5.1 (glm-5.1)
+- OpenAI GPT-5.6 (gpt-5.6)
+- Anthropic Claude Opus 5 (claude-opus-5)
+- Zhipu GLM-5.3 (glm-5.3)
+- Meta Muse (muse-spark-1.3-contributor)
+- OpenRouter gateway (z-ai/glm-5.3)
 
 Sources:
-- Gemini: https://blog.google/products-and-platforms/products/gemini/gemini-3/
-- OpenAI: https://openai.com/index/introducing-o3-and-o4-mini/
-- Anthropic: https://www.anthropic.com/news/claude-opus-4-5
-- Zhipu: https://docs.z.ai/guides/llm/glm-5
+- Gemini: https://ai.google.dev/gemini-api/docs/models
+- OpenAI: https://developers.openai.com/api/docs/models
+- Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models/overview
+- Zhipu: https://docs.z.ai/guides/llm/glm-5.3
+- Meta Muse: https://ai.developer.meta.com/docs/overview/
+- OpenRouter: https://openrouter.ai/docs
 """
 import os
 import logging
@@ -45,21 +49,32 @@ class LLMConfig(BaseModel):
 
     # OpenAI
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.4", env="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.6", env="OPENAI_MODEL")
 
     # Anthropic
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-opus-4-6", env="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-opus-5", env="ANTHROPIC_MODEL")
 
     # Z.AI GLM (Global platform via api.z.ai)
     zai_api_key: Optional[str] = Field(default=None, env="ZAI_API_KEY")
-    zai_model: str = Field(default="glm-5.1", env="ZAI_MODEL")
+    zai_model: str = Field(default="glm-5.3", env="ZAI_MODEL")
+
+    # Meta Muse (Meta Model API via api.meta.ai)
+    muse_api_key: Optional[str] = Field(default=None, env="MUSE_API_KEY")
+    muse_model: str = Field(default="muse-spark-1.3-contributor", env="MUSE_MODEL")
+
+    # OpenRouter (gateway - one key for many vendors' models)
+    openrouter_api_key: Optional[str] = Field(default=None, env="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(default="z-ai/glm-5.3", env="OPENROUTER_MODEL")
 
     @field_validator("provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validate LLM provider is supported"""
-        valid_providers = {"gemini", "openai", "anthropic", "claude", "zhipu", "glm"}
+        valid_providers = {
+            "gemini", "openai", "anthropic", "claude",
+            "zhipu", "glm", "muse", "meta", "openrouter",
+        }
         if v.lower() not in valid_providers:
             logger.warning(f"Unknown LLM provider '{v}', defaulting to 'gemini'")
             return "gemini"
@@ -123,11 +138,15 @@ def load_config() -> AppConfig:
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.6"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-6"),
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-5"),
             zai_api_key=os.getenv("ZAI_API_KEY"),
-            zai_model=os.getenv("ZAI_MODEL", "glm-5.1")
+            zai_model=os.getenv("ZAI_MODEL", "glm-5.3"),
+            muse_api_key=os.getenv("MUSE_API_KEY"),
+            muse_model=os.getenv("MUSE_MODEL", "muse-spark-1.3-contributor"),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
+            openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3")
         )
 
         slack_config = SlackConfig(
