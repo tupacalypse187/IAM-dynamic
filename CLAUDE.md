@@ -1,12 +1,26 @@
-# CLAUDE.md
+# 🤖 CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## 📑 Table of Contents
+
+- [📋 Project Overview](#-project-overview)
+- [🏗️ Architecture](#-architecture)
+- [🚀 Running the Application](#-running-the-application)
+- [🐳 Docker Architecture](#-docker-architecture)
+- [🔄 CI/CD](#-cicd)
+- [⚙️ Configuration](#-configuration)
+- [🛡️ Security Guardrails](#-security-guardrails)
+- [🖥️ Frontend Views](#-frontend-views)
+- [🔌 API Endpoints](#-api-endpoints)
+- [📚 Zread Wiki (`.zread/`)](#-zread-wiki-zread)
+- [🗺️ Roadmap (See GEMINI.md)](#-roadmap-see-geminimd)
+
+## 📋 Project Overview
 
 **IAM-Dynamic** is an AI-driven Just-In-Time AWS IAM access request portal. It uses multiple LLM providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, OpenRouter) to generate least-privilege IAM policies from natural language requests, then issues temporary credentials via AWS STS.
 
-## Architecture
+## 🏗️ Architecture
 
 ### Modern React/FastAPI Architecture (v3.0+)
 
@@ -86,7 +100,7 @@ Display + Slack audit log
 - **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
 - **`backend/tests/`**: pytest suite (config validation, provider factory, catalog integrity, API endpoints) — run with `pytest` from `backend/`
 
-## Running the Application
+## 🚀 Running the Application
 
 ### Local Development (without Docker)
 
@@ -136,7 +150,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 Uses pre-built images from `ghcr.io/tupacalypse187/iam-dynamic-*`.
 
-## Docker Architecture
+## 🐳 Docker Architecture
 
 ### Development (docker-compose.yml)
 
@@ -169,7 +183,7 @@ Key files:
 - `docker/default.conf`: nginx reverse proxy config (mirrors Vite dev proxy from `vite.config.ts`)
 - `docker/nginx.conf`: Main nginx config (gzip, rate limiting for API and login)
 
-## CI/CD
+## 🔄 CI/CD
 
 ### `.github/workflows/ci.yml` — PR Checks
 Triggers on `pull_request` to `main`. Jobs: `frontend-checks` (lint, typecheck, build), `backend-checks` (ruff, pytest), `docker-build` (build all 3 images, no push).
@@ -179,7 +193,7 @@ Triggers on `push` to `main`. Jobs: `security` → `test` → `build-images` (pu
 
 Required GitHub Secrets: `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL` (optional), `TURNSTILE_SITE_KEY` (optional, for CAPTCHA), `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` (optional — enables the Docker Hub publish job; it is skipped while unset). `GITHUB_TOKEN` is automatic for GHCR.
 
-## Configuration
+## ⚙️ Configuration
 
 Create a `.env` file in the project root:
 
@@ -248,7 +262,7 @@ APPROVER_NAME=Admin
 
 **Authentication behavior:** When `AUTH_PASSWORD_HASH` is empty/unset, authentication is completely disabled — all endpoints are open and the login page is not shown. This preserves the local dev workflow.
 
-## Security Guardrails
+## 🛡️ Security Guardrails
 
 The LLM system instruction enforces:
 1. **No wildcards** (`*:*`) on sensitive actions/resources (scored as HIGH/CRITICAL)
@@ -262,7 +276,7 @@ Risk-based duration limits:
 - High: 2 hours max
 - Critical: 1 hour max
 
-## Frontend Views
+## 🖥️ Frontend Views
 
 ### Login View (`frontend/src/views/login-view.tsx`)
 - Username/password form with optional Cloudflare Turnstile CAPTCHA
@@ -298,7 +312,7 @@ Risk-based duration limits:
 - Toast notifications (session expiry, copy failures)
 - Responsive layout: desktop sidebar rail + mobile navigation drawer
 
-## API Endpoints
+## 🔌 API Endpoints
 
 **Public (no auth required):**
 - `GET /health` - Health check
@@ -312,7 +326,7 @@ Risk-based duration limits:
 - `POST /api/issue-credentials` - Issue temporary AWS credentials
 - `POST /api/generate-rejection-guidance` - Get AI guidance for rejected requests
 
-## Zread Wiki (`.zread/`)
+## 📚 Zread Wiki (`.zread/`)
 
 The `.zread/` directory contains a machine-generated wiki produced by [zread](https://zread.ai/cli). It breaks the codebase into topical markdown files (architecture, services, views, Docker, CI/CD, etc.) that can be used for quick orientation or fed to AI tools.
 
@@ -323,7 +337,7 @@ The `.zread/` directory contains a machine-generated wiki produced by [zread](ht
 
 **Gitignore:** `.zread/wiki/drafts/` is excluded (in-progress generation artifacts). Everything else (`current` pointer + latest `versions/` snapshot) is tracked.
 
-## Roadmap (See GEMINI.md)
+## 🗺️ Roadmap (See GEMINI.md)
 
 Phase 2: Model Context Protocol (MCP) integration for resource validation tools
 Phase 3: Advanced approval workflows (Slack interactive buttons, Jira integration)

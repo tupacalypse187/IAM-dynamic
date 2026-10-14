@@ -4,6 +4,20 @@ Test the full Docker stack locally before deploying to production.
 
 ---
 
+## 📑 Table of Contents
+
+- [📋 Overview](#-overview)
+- [🎯 Prerequisites](#-prerequisites)
+- [⚙️ Step 1: Create Your `.env` File](#-step-1-create-your-env-file)
+- [🔐 Optional: Enable Authentication Locally](#-optional-enable-authentication-locally)
+- [🚀 Step 2: Build and Start](#-step-2-build-and-start)
+- [✅ Step 3: Verify Everything Works](#-step-3-verify-everything-works)
+- [🧪 Step 4: Test the Full Flow](#-step-4-test-the-full-flow)
+- [💻 Step 5: Development Mode](#-step-5-development-mode)
+- [🛠️ Step 6: Useful Commands](#-step-6-useful-commands)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [📚 Additional Resources](#-additional-resources)
+
 ## 📋 Overview
 
 This guide covers running **IAM-Dynamic** locally using Docker Compose on your development machine. Perfect for testing changes before pushing to production.

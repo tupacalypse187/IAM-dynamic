@@ -4,6 +4,26 @@ Deploy **IAM-Dynamic** on your MicroK8s home lab using ArgoCD GitOps automation.
 
 ---
 
+## 📑 Table of Contents
+
+- [📋 Overview](#-overview)
+- [🎯 Prerequisites](#-prerequisites)
+- [🏗️ Architecture Overview](#-architecture-overview)
+- [📁 Step 1: Create Directory Structure](#-step-1-create-directory-structure)
+- [🔐 Step 2: Create Kubernetes Secrets](#-step-2-create-kubernetes-secrets)
+- [📝 Step 3: Create Kubernetes Manifests](#-step-3-create-kubernetes-manifests)
+- [🚀 Step 4: Create ArgoCD Application Manifest](#-step-4-create-argocd-application-manifest)
+- [📤 Step 5: Push to GitHub](#-step-5-push-to-github)
+- [🎯 Step 6: Deploy via ArgoCD](#-step-6-deploy-via-argocd)
+- [✅ Step 7: Verify Deployment](#-step-7-verify-deployment)
+- [🔄 Updating the Application](#-updating-the-application)
+- [🔄 Rollback Procedures](#-rollback-procedures)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [🔒 Security Best Practices](#-security-best-practices)
+- [📊 Monitoring & Logging](#-monitoring--logging)
+- [🎉 Next Steps](#-next-steps)
+- [📚 Additional Resources](#-additional-resources)
+
 ## 📋 Overview
 
 This guide covers deploying IAM-Dynamic on a MicroK8s cluster with ArgoCD for continuous deployment. This approach follows the same patterns used in the [yantorno-party](https://github.com/tupacalypse187/yantorno-party) project.

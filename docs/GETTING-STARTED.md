@@ -4,6 +4,21 @@ Welcome! This guide will help you get **IAM-Dynamic** up and running in about 5 
 
 ---
 
+## 📑 Table of Contents
+
+- [📋 What You'll Need](#-what-youll-need)
+- [⚡ Quick Start (5 Minutes)](#-quick-start-5-minutes)
+- [🎥 Walkthrough](#-walkthrough)
+- [🔑 AI Provider Setup](#-ai-provider-setup)
+- [🛠️ Setup Modes](#-setup-modes)
+- [📁 Your `.env` File](#-your-env-file)
+- [🏃 Running the Application](#-running-the-application)
+- [✅ Making Your First Request](#-making-your-first-request)
+- [🐛 Troubleshooting](#-troubleshooting)
+- [📚 Next Steps](#-next-steps)
+- [🆘 Getting Help](#-getting-help)
+- [🎓 Concepts](#-concepts)
+
 ## 📋 What You'll Need
 
 | Requirement | Why | How to Get It |

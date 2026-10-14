@@ -2,6 +2,22 @@
 
 This guide walks you through configuring your AWS account for **IAM-Dynamic** using the automated setup script.
 
+## 📑 Table of Contents
+
+- [📋 Overview](#-overview)
+- [🎯 Prerequisites](#-prerequisites)
+- [🚀 Usage](#-usage)
+- [🎬 Example User Run](#-example-user-run)
+- [🔧 What Gets Created](#-what-gets-created)
+- [📁 Updated .env Variables](#-updated-env-variables)
+- [🛡️ Security Best Practices](#-security-best-practices)
+- [🔍 Troubleshooting](#-troubleshooting)
+- [🧪 Verification](#-verification)
+- [🔄 Cleanup](#-cleanup)
+- [📚 Related Documentation](#-related-documentation)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
 ## 📋 Overview
 
 The `setup-aws.sh` script automates the creation and configuration of AWS resources required for IAM-Dynamic to issue temporary credentials via AWS STS (Security Token Service).

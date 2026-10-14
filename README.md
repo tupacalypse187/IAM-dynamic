@@ -8,6 +8,18 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
+## 📑 Table of Contents
+
+- [🚀 Overview](#-overview)
+- [🧠 How It Works](#-how-it-works)
+- [✨ Features](#-features)
+- [📦 Project Structure](#-project-structure)
+- [⚙️ Configuration](#-configuration)
+- [🧪 Getting Started](#-getting-started)
+- [🔄 CI/CD](#-cicd)
+- [🛡️ Security Notes](#-security-notes)
+- [📄 License](#-license)
+
 ## 🚀 Overview
 
 **IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, and OpenRouter) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.

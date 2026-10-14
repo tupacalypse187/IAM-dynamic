@@ -2,6 +2,13 @@
 
 This document outlines the strategic integration of Google's **Gemini** models into the **IAM-Dynamic** project.
 
+## 📑 Table of Contents
+
+- [🎯 Status: Implemented](#-status-implemented)
+- [🛠️ Technical Implementation](#-technical-implementation)
+- [🚀 Future Roadmap (Pending)](#-future-roadmap-pending)
+- [📝 Configuration](#-configuration)
+
 ## 🎯 Status: Implemented
 
 ✅ **Default Engine:** Gemini (`gemini-3.1-pro-preview`) is the default provider for policy generation.

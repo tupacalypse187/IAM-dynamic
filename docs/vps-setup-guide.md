@@ -4,6 +4,26 @@ Deploy **IAM-Dynamic** on your Contabo Ubuntu VPS with automated GitHub Actions 
 
 ---
 
+## 📑 Table of Contents
+
+- [📋 Overview](#-overview)
+- [🎯 Prerequisites](#-prerequisites)
+- [🚀 Step 1: Initial Server Access](#-step-1-initial-server-access)
+- [👤 Step 2: Create a Deploy User](#-step-2-create-a-deploy-user)
+- [🐳 Step 3: Install Docker & Docker Compose](#-step-3-install-docker--docker-compose)
+- [🔑 Step 4: Set Up SSH Key Authentication](#-step-4-set-up-ssh-key-authentication)
+- [📁 Step 5: Create the Application Directory](#-step-5-create-the-application-directory)
+- [📦 Step 6: Copy Production Files to the VPS](#-step-6-copy-production-files-to-the-vps)
+- [⚙️ Step 7: Create the `.env` File](#-step-7-create-the-env-file)
+- [🔐 Step 8: Authenticate Docker with GHCR](#-step-8-authenticate-docker-with-ghcr)
+- [🧪 Step 9: Test Deployment Manually](#-step-9-test-deployment-manually)
+- [🔧 Step 10: Configure GitHub Secrets](#-step-10-configure-github-secrets)
+- [🔥 Step 11: Firewall Setup](#-step-11-firewall-setup)
+- [🚀 Step 12: Trigger a Deployment](#-step-12-trigger-a-deployment)
+- [🔒 HTTPS with Caddy (Built-in)](#-https-with-caddy-built-in)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [📚 Additional Resources](#-additional-resources)
+
 ## 📋 Overview
 
 This guide covers setting up a Contabo Ubuntu VPS to receive automated deployments from GitHub Actions. Perfect for production hosting with CI/CD automation.
@@ -40,7 +60,7 @@ This guide covers setting up a Contabo Ubuntu VPS to receive automated deploymen
 |-------------|---------|
 | **VPS** | Contabo VPS with Ubuntu 22.04 or 24.04 |
 | **Access** | Root SSH access to the VPS |
-| **Repo** | Your fork of https://github.com/tupacalypse187/IAM-dynamic |
+| **Repo** | Your fork of [https://github.com/tupacalypse187/IAM-dynamic](https://github.com/tupacalypse187/IAM-dynamic) |
 | **Domain** | Domain with DNS pointed at your VPS (for HTTPS) |
 | **Cloudflare** | Cloudflare API token (for Let's Encrypt via DNS challenge) |
 
@@ -236,7 +256,7 @@ The VPS needs to pull container images from GitHub Container Registry (GHCR).
 
 ### Create a GitHub Personal Access Token (PAT)
 
-1. Go to https://github.com/settings/tokens
+1. Go to [https://github.com/settings/tokens](https://github.com/settings/tokens)
 2. Click **"Generate new token (classic)"**
 3. Name it `contabo-ghcr-pull`
 4. Select scope: **`read:packages`** (that's all you need)
@@ -289,7 +309,7 @@ The app is accessible at `https://iam.yantorno.dev` (via Caddy). Frontend/backen
 
 ## 🔧 Step 10: Configure GitHub Secrets
 
-Go to https://github.com/tupacalypse187/IAM-dynamic/settings/secrets/actions and add these repository secrets:
+Go to [https://github.com/tupacalypse187/IAM-dynamic/settings/secrets/actions](https://github.com/tupacalypse187/IAM-dynamic/settings/secrets/actions) and add these repository secrets:
 
 | Secret | Value | Example |
 |--------|-------|---------|
@@ -402,7 +422,7 @@ docker compose -f docker-compose.prod.yml logs
 |-------|----------|
 | Not logged in | Verify GHCR login: `docker login ghcr.io` |
 | Wrong PAT scope | Check the PAT has `read:packages` scope |
-| Images don't exist | Verify images exist: https://github.com/tupacalypse187?tab=packages |
+| Images don't exist | Verify images exist: [https://github.com/tupacalypse187?tab=packages](https://github.com/tupacalypse187?tab=packages) |
 
 ### Health Checks Fail After Deployment
 

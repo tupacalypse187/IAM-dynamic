@@ -4,6 +4,28 @@ Deploy **IAM-Dynamic** on your antsle home lab appliance with Ubuntu 24 or AlmaL
 
 ---
 
+## 📑 Table of Contents
+
+- [📋 Overview](#-overview)
+- [🎯 Prerequisites](#-prerequisites)
+- [🚀 Initial Server Setup](#-initial-server-setup)
+- [🔑 SSH Key Authentication (Optional)](#-ssh-key-authentication-optional)
+- [📁 Clone the Repository](#-clone-the-repository)
+- [⚙️ Environment Configuration](#-environment-configuration)
+- [🐳 Deployment Option 1: Build Locally](#-deployment-option-1-build-locally)
+- [🐳 Deployment Option 2: Pull from GHCR](#-deployment-option-2-pull-from-ghcr)
+- [🔥 Firewall Configuration](#-firewall-configuration)
+- [🔒 HTTPS Setup](#-https-setup)
+- [✅ Health Checks & Verification](#-health-checks--verification)
+- [🔄 Auto-Start on Boot](#-auto-start-on-boot)
+- [🛠️ AlmaLinux-Specific Considerations](#-almalinux-specific-considerations)
+- [📊 Monitoring & Logs](#-monitoring--logs)
+- [🔧 Troubleshooting](#-troubleshooting)
+- [🔄 Updating the Deployment](#-updating-the-deployment)
+- [📚 Useful Commands](#-useful-commands)
+- [🎉 Next Steps](#-next-steps)
+- [📖 Additional Resources](#-additional-resources)
+
 ## 📋 Overview
 
 The **antsle** is a compact home lab appliance that provides a perfect environment for self-hosted services. This guide covers deploying IAM-Dynamic using Docker Compose on your antsle, with support for:
@@ -271,7 +293,7 @@ Use pre-built images from GitHub Container Registry. Much faster setup.
 
 You'll need a GitHub Personal Access Token with `read:packages` scope:
 
-1. Go to https://github.com/settings/tokens
+1. Go to [https://github.com/settings/tokens](https://github.com/settings/tokens)
 2. Click **"Generate new token (classic)"**
 3. Name it `antsle-ghcr-pull`
 4. Select scope: **`read:packages`**
