@@ -11,6 +11,7 @@
 ## 📑 Table of Contents
 
 - [🚀 Overview](#-overview)
+- [🏗️ Architecture](#-architecture)
 - [🧠 How It Works](#-how-it-works)
 - [✨ Features](#-features)
 - [📦 Project Structure](#-project-structure)
@@ -32,6 +33,40 @@
 -   **🔐 Just-In-Time:** Credentials are temporary and expire automatically.
 
 ---
+
+## 🏗️ Architecture
+
+The portal is a three-tier app — React frontend, Caddy TLS proxy, FastAPI backend — wrapped around a policy pipeline: an LLM drafts a least-privilege policy, a risk gate decides between auto-approval and human sign-off, and only then does the STS service mint short-lived credentials.
+
+```mermaid
+flowchart TD
+    User["👤 User"] -->|natural-language request| FE["⚛️ React frontend<br/>Vite + TypeScript"]
+    FE -->|HTTPS| Caddy["🔐 Caddy reverse proxy<br/>TLS via Let's Encrypt"]
+    Caddy --> API["🐍 FastAPI backend"]
+    API --> Auth["🔑 Auth service<br/>JWT · bcrypt · Turnstile"]
+    API --> LLM["🧠 LLM service"]
+    LLM --> Providers["🤖 AI providers<br/>Gemini · OpenAI · Claude · GLM · Muse · OpenRouter"]
+    LLM --> Policy["📜 Draft IAM policy"]
+    Policy --> Risk{"🚦 Risk scoring"}
+    Risk -->|Low| Auto["✅ Auto-approve"]
+    Risk -->|High / Critical| Manual["🧑 Manual approval"]
+    Auto --> STS["🎟️ STS service<br/>boto3 AssumeRole + session policy"]
+    Manual --> STS
+    STS -->|temporary credentials| API
+    API --> Notify["📣 Slack / Telegram notifications"]
+    API -->|credentials + exports| FE
+```
+
+**Components**
+
+- **Frontend (`frontend/`)** — React + Vite + TypeScript UI with a request → review → credentials state machine; exports credentials in Bash, PowerShell, and AWS CLI formats.
+- **Caddy proxy (`Dockerfile.caddy`)** — terminates HTTPS with automatic Let's Encrypt certificates (Cloudflare DNS challenge) in the production compose stack.
+- **Backend (`backend/main.py`)** — FastAPI REST API that orchestrates auth, policy generation, risk gating, and credential issuance.
+- **LLM service (`backend/llm_service.py`)** — provider-agnostic layer over Gemini (default), OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, and OpenRouter, with system guardrails that block over-privileged policies (e.g. `*:*`).
+- **STS service (`backend/services/sts_service.py`)** — calls `sts:AssumeRole` with a scoped-down session policy, so issued credentials are temporary and least-privilege.
+- **Support services** — auth (JWT sessions, bcrypt hashing, optional Cloudflare Turnstile) and Slack/Telegram services for audit logs and approval notifications.
+
+**Deployment variants** — the same images run under local Docker Compose (`docker-compose.yml`), the production Compose stack with Caddy (`docker-compose.prod.yml`), a VPS, an Antsle host, or MicroK8s via Argo CD; see the guides in [`docs/`](docs/).
 
 ## 🧠 How It Works
 
