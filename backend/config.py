@@ -6,7 +6,7 @@ Supports LLM providers:
 - OpenAI GPT-6 Astra (gpt-6-astra)
 - Anthropic Claude Opus 5.5 (claude-opus-5-5)
 - Zhipu GLM-5.3 (glm-5.3)
-- Meta Muse (muse-spark-1.3-contributor)
+- Meta Muse (muse-wonder-1.0)
 - OpenRouter gateway (z-ai/glm-5.3)
 
 Sources:
@@ -61,7 +61,7 @@ class LLMConfig(BaseModel):
 
     # Meta Muse (Meta Model API via api.meta.ai)
     muse_api_key: Optional[str] = Field(default=None, env="MUSE_API_KEY")
-    muse_model: str = Field(default="muse-spark-1.3-contributor", env="MUSE_MODEL")
+    muse_model: str = Field(default="muse-wonder-1.0", env="MUSE_MODEL")
 
     # OpenRouter (gateway - one key for many vendors' models)
     openrouter_api_key: Optional[str] = Field(default=None, env="OPENROUTER_API_KEY")
@@ -164,7 +164,7 @@ def load_config() -> AppConfig:
             zai_api_key=os.getenv("ZAI_API_KEY"),
             zai_model=os.getenv("ZAI_MODEL", "glm-5.3"),
             muse_api_key=os.getenv("MUSE_API_KEY"),
-            muse_model=os.getenv("MUSE_MODEL", "muse-spark-1.3-contributor"),
+            muse_model=os.getenv("MUSE_MODEL", "muse-wonder-1.0"),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
             openrouter_model=os.getenv("OPENROUTER_MODEL", "z-ai/glm-5.3")
         )

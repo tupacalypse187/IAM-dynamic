@@ -47,7 +47,7 @@ class TestGatewayDefaults:
     def test_muse_uses_meta_model_api(self):
         provider = MuseProvider()
         assert provider.base_url == "https://api.meta.ai/v1"
-        assert provider.default_model == "muse-spark-1.3-contributor"
+        assert provider.default_model == "muse-wonder-1.0"
 
     def test_openrouter_uses_gateway(self):
         provider = OpenRouterProvider()
