@@ -137,13 +137,15 @@ export default function LoginView() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+    // app-drag: the login screen renders without the app header, so the
+    // backdrop itself is the window drag surface; the card opts out.
+    <div className="app-drag relative flex min-h-screen items-center justify-center bg-background p-4">
       {/* Subtle ambient gradient backdrop */}
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/_0.12),_transparent_60%)]"
         aria-hidden="true"
       />
-      <Card className="relative w-full max-w-md shadow-card">
+      <Card className="app-no-drag relative w-full max-w-md shadow-card">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Lock className="h-6 w-6 text-primary" aria-hidden="true" />
