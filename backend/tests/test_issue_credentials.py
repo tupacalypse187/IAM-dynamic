@@ -137,3 +137,73 @@ def test_scoped_read_action_calls_sts(monkeypatch):
     response = _post(client, policy)
     assert response.status_code == 200, response.text
     assert calls == [policy]
+
+
+def _post_with_assessment(client, policy, risk, auto_approved):
+    return client.post(
+        "/api/issue-credentials",
+        json={
+            "policy": policy,
+            "duration": 12,
+            "approved": True,
+            "risk": risk,
+            "auto_approved": auto_approved,
+        },
+    )
+
+
+def test_notification_reports_reviewed_risk_not_hardcoded_medium(monkeypatch):
+    """Regression: a LOW assessment must not be notified as MEDIUM."""
+    _mock_sts(monkeypatch)
+    notifications = []
+    monkeypatch.setattr(
+        main,
+        "send_audit_notification",
+        lambda **kwargs: notifications.append(kwargs),
+    )
+    client = TestClient(main.app)
+    policy = _policy("s3:GetObject", "arn:aws:s3:::my-bucket/*")
+    response = _post_with_assessment(client, policy, "low", True)
+    assert response.status_code == 200, response.text
+    assert notifications == [
+        {
+            "auto_approved": True,
+            "req": "Policy-based credential issuance",
+            "risk": "low",
+            "duration": 12,
+            "approver": None,
+        }
+    ]
+
+
+def test_notification_reports_manual_approval_honestly(monkeypatch):
+    """A manually approved HIGH request must not be notified as auto-approved."""
+    _mock_sts(monkeypatch)
+    notifications = []
+    monkeypatch.setattr(
+        main,
+        "send_audit_notification",
+        lambda **kwargs: notifications.append(kwargs),
+    )
+    client = TestClient(main.app)
+    policy = _policy("s3:GetObject", "arn:aws:s3:::my-bucket/*")
+    response = _post_with_assessment(client, policy, "high", False)
+    assert response.status_code == 200, response.text
+    assert notifications[0]["risk"] == "high"
+    assert notifications[0]["auto_approved"] is False
+
+
+def test_unknown_risk_label_falls_back_to_medium(monkeypatch):
+    _mock_sts(monkeypatch)
+    notifications = []
+    monkeypatch.setattr(
+        main,
+        "send_audit_notification",
+        lambda **kwargs: notifications.append(kwargs),
+    )
+    client = TestClient(main.app)
+    policy = _policy("s3:GetObject", "arn:aws:s3:::my-bucket/*")
+    response = _post_with_assessment(client, policy, "banana", True)
+    assert response.status_code == 200, response.text
+    assert notifications[0]["risk"] == "medium"
+    assert notifications[0]["auto_approved"] is True

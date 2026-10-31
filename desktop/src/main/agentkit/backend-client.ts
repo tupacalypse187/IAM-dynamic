@@ -76,12 +76,16 @@ export function createBackendClient(config: BackendConfig) {
       duration: number
       approved: boolean
       changeCase?: string
+      risk?: string
+      autoApproved?: boolean
     }) =>
       callBackend<LeaseCredentials>(config, '/api/issue-credentials', {
         policy: input.policy,
         duration: input.duration,
         approved: input.approved,
         change_case: input.changeCase,
+        risk: input.risk ?? 'medium',
+        auto_approved: input.autoApproved ?? false,
       }),
   }
 }

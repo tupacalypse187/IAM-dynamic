@@ -100,6 +100,8 @@ export interface IssueInput {
   durationHours: number
   approved: boolean
   changeCase?: string
+  risk?: RiskLevel
+  autoApproved?: boolean
 }
 
 export interface LeaseStatus {

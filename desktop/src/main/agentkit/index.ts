@@ -121,11 +121,16 @@ export async function issueCredentials(
   const { findings, risk: guardrailRisk } = analyzePolicy(input.policy)
   const requestedDuration = input.durationHours || 1
   const durationHours = Math.min(requestedDuration, maxDurationForRisk(guardrailRisk))
+  // Report the reviewed assessment, raised by the guardrail if the issued
+  // policy is broader than what was reviewed — never lowered.
+  const risk = combineRisk(input.risk ?? guardrailRisk, guardrailRisk)
   onProgress({ stage: 'done', message: 'Issuing temporary credentials…' })
   const creds = await deps.backend.issueCredentials({
     policy: input.policy,
     duration: durationHours,
     approved: true,
+    risk,
+    autoApproved: input.autoApproved ?? false,
   })
   lease.credentials = creds
   lease.issuedAt = new Date().toISOString()
