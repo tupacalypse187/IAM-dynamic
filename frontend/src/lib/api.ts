@@ -15,7 +15,7 @@ export function setToken(token: string | null) {
   }
 }
 
-import { describeUnreachable } from './net-error'
+import { describeUnreachable, formatErrorDetail } from './net-error'
 
 /**
  * The raw `fetch` TypeError ("Failed to fetch") tells users nothing.
@@ -54,7 +54,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new Error(error.detail || `Request failed: ${response.status}`)
+    throw new Error(formatErrorDetail(error.detail, `Request failed: ${response.status}`))
   }
 
   return response.json()
