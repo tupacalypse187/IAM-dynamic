@@ -154,14 +154,14 @@ function AppShell() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+        {/* Header — drags the frameless desktop window (see .app-drag) */}
+        <header className="app-drag sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
           <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
             <div className="flex min-w-0 items-center">
               <Button
                 variant="ghost"
                 size="icon"
-                className="mr-1 lg:hidden"
+                className="app-no-drag mr-1 lg:hidden"
                 onClick={() => setMobileNavOpen(true)}
                 aria-label="Open navigation menu"
               >
@@ -179,6 +179,7 @@ function AppShell() {
               <Button
                 variant="ghost"
                 size="sm"
+                className="app-no-drag"
                 onClick={() => setView('help')}
                 aria-label="Open help and keyboard shortcuts"
                 title="Help & shortcuts (?)"
@@ -194,6 +195,7 @@ function AppShell() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="app-no-drag"
                     onClick={logout}
                     aria-label="Sign out"
                   >

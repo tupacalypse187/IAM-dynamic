@@ -78,6 +78,24 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
+  // Never show a blank window silently: surface load failures in-window
+  // with the URL and error code so a bad base path or missing bundle
+  // is diagnosable instead of a blue screen.
+  window.webContents.on('did-fail-load', (_event, code, description, url) => {
+    // eslint-disable-next-line no-console
+    console.error(`Renderer failed to load ${url}: [${code}] ${description}`)
+    if (window.isDestroyed() || url.startsWith('data:')) return
+    const safeUrl = url.replace(/[<>&"]/g, '')
+    const safeDescription = description.replace(/[<>&"]/g, '')
+    void window.loadURL(
+      `data:text/html,<html><body style="font-family:sans-serif;padding:40px;background:#0f172a;color:#e2e8f0">` +
+        `<h1>Could not load the app</h1><p>${safeDescription} (code ${code})</p>` +
+        `<p><code>${safeUrl}</code></p>` +
+        `<p>Check IAM_DESKTOP_BACKEND_URL and reinstall from a fresh download.</p>` +
+        `</body></html>`,
+    )
+  })
+
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
   })

@@ -251,6 +251,16 @@
   }
 }
 
+/* Frameless-window dragging (Electron hiddenInset shell).
+   The header drags the window; interactive children opt out so they stay clickable.
+   Ignored by browsers. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* Monaco IAM risk decorations — whole-line wash + gutter marker */
 .iam-risk-line {
   background: hsl(var(--destructive) / 0.12);

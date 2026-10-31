@@ -133,6 +133,8 @@ The first-run tour (Next/Back/Skip, 5 steps) launches once automatically and rep
 
 | Symptom | Cause / Fix |
 | ------- | ----------- |
+| Blank/blue window in the packaged app | Renderer assets must use relative URLs (`base: './'` in `vite.config.ts`) — absolute `/assets/...` resolves to `file:///...` and fails. The shell now also renders load errors in-window instead of staying blank. |
+| Window can't be dragged | Only the header is a drag surface (`.app-drag`); all header buttons opt out (`.app-no-drag`). Content areas intentionally don't drag. |
 | `iconutil: Invalid Iconset` | Sandbox/broken `iconutil` — `icon.py` detects the failure and writes a spec-compliant `.icns` directly (validated with `sips` + Pillow). No action needed. |
 | DMG step fails in `dmgbuild`/hdiutil parsing | Environmental (sandboxed shells); the `.app` and `-mac.zip` still build fine — retry `dmg` outside the sandbox. |
 | `Cannot reach the backend` toast | `IAM_DESKTOP_BACKEND_URL` wrong or backend down; the error names the URL it tried. |
