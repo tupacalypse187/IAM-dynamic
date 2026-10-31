@@ -10,6 +10,23 @@ export function isDesktop(): boolean {
   return typeof window !== 'undefined' && typeof window.desktopApi !== 'undefined'
 }
 
+/**
+ * True only inside the packaged app on macOS — the one configuration with a
+ * frameless `hiddenInset` window whose traffic lights overlay the top-left
+ * of the UI. Callers reserve a drag strip there; browsers (no preload
+ * bridge) always get false so web layouts are untouched. Parameters default
+ * to the live globals and exist so tests can inject values.
+ */
+export function isMacDesktop(
+  bridge: unknown = typeof window !== 'undefined' ? window.desktopApi : undefined,
+  platform: string = typeof navigator !== 'undefined'
+    ? ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+        ?.platform ?? navigator.platform ?? '')
+    : '',
+): boolean {
+  return typeof bridge !== 'undefined' && /^mac/i.test(platform)
+}
+
 function requireApi(): DesktopApi {
   if (!window.desktopApi) {
     throw new Error('Desktop bridge is unavailable (running in a browser).')
