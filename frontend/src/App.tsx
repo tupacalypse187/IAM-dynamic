@@ -14,7 +14,7 @@ import {
   Eye,
 } from 'lucide-react'
 import { api } from './lib/api'
-import { desktop, isMacDesktop } from './lib/desktop'
+import { desktop, isMacDesktop, queryPlatform } from './lib/desktop'
 import { useGlobalShortcuts, useCaptureShortcut } from './lib/shortcuts'
 import { hasSeenTour, launchTour } from './lib/tour'
 import { useAuth } from './hooks/use-auth'
@@ -76,10 +76,15 @@ function AppShell() {
   // Effective role for UI gating. Server enforcement is unchanged.
   const showAdminUI = isAdmin && !previewAsUser
 
-  // macOS frameless detection: sync signals plus the authoritative
-  // main-process platform once the bridge answers (covers exotic cases
-  // where both navigator signals fail).
-  const macDesktop = isMacDesktop() || (desktop.isDesktop && appPlatform === 'darwin')
+  // macOS frameless clearance, most-authoritative first: the platform the
+  // main process injected into the URL (?platform=darwin) — structural and
+  // independent of bridge/navigator — then live detection, then the IPC
+  // platform once the bridge answers.
+  const [queryPlat] = useState(() => queryPlatform())
+  const macDesktop =
+    queryPlat === 'darwin' ||
+    isMacDesktop() ||
+    (desktop.isDesktop && appPlatform === 'darwin')
 
   // Fetch providers and config (only when authenticated)
   const {
@@ -100,6 +105,15 @@ function AppShell() {
     refetchInterval: 30000,
   })
   const pendingCount = queueCountQuery.data?.length ?? 0
+
+  // Saved LLM profiles; the active one's key evaluates new requests.
+  const profilesQuery = useQuery({
+    queryKey: ['profiles'],
+    queryFn: api.listProfiles,
+    enabled: isAuthenticated,
+  })
+  const profiles = profilesQuery.data ?? []
+  const activeProfile = profiles.find((p) => p.active) ?? null
 
   // Surface forced 401 logouts with an explanation instead of silently
   // snapping back to the login screen
@@ -265,6 +279,21 @@ function AppShell() {
     config,
     onRequestTextChange: setRequestText,
     macDesktop,
+    showTopStrip: false,
+    profiles,
+    onSelectProfile: (id: number) => {
+      void api
+        .activateProfile(id)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['profiles'] }))
+        .catch((err: Error) => {
+          toast({
+            title: 'Could not switch profile',
+            description: err.message,
+            variant: 'destructive',
+          })
+        })
+    },
+    onManageProfiles: () => setView('settings'),
   }
 
   const navButtonClass = (target: ViewType) =>
@@ -273,26 +302,35 @@ function AppShell() {
       : 'text-muted-foreground'
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Collapsible sidebar rail (toolbar toggle; drawer covers small screens) */}
-      {!prefs.sidebarCollapsed && <Sidebar {...sidebarProps} />}
+    <div className="flex h-screen flex-col overflow-hidden">
+      {/* Full-width traffic-light clearance (macOS frameless window only).
+          Structural: sits above sidebar AND content, so the lights overlap
+          nothing whether the rail is open or closed — independent of bridge
+          and navigator detection, which both failed in the field. */}
+      {macDesktop && (
+        <div className="app-drag h-7 w-full shrink-0 select-none" aria-hidden="true" />
+      )}
 
-      {/* Mobile navigation drawer */}
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent
-          side="left"
-          className="w-80 bg-sidebar p-0 text-sidebar-foreground [&>button]:text-sidebar-foreground"
-        >
-          <SheetTitle className="sr-only">Navigation and settings</SheetTitle>
-          <SheetDescription className="sr-only">
-            Quick request templates
-          </SheetDescription>
-          <SidebarContent {...sidebarProps} onTemplateSelected={() => setMobileNavOpen(false)} />
-        </SheetContent>
-      </Sheet>
+      <div className="flex min-h-0 flex-1">
+        {/* Collapsible sidebar rail (toolbar toggle; drawer covers small screens) */}
+        {!prefs.sidebarCollapsed && <Sidebar {...sidebarProps} />}
 
-      {/* Right column: fixed bars + independent scroll area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile navigation drawer */}
+        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <SheetContent
+            side="left"
+            className="w-80 bg-sidebar p-0 text-sidebar-foreground [&>button]:text-sidebar-foreground"
+          >
+            <SheetTitle className="sr-only">Navigation and settings</SheetTitle>
+            <SheetDescription className="sr-only">
+              Quick request templates
+            </SheetDescription>
+            <SidebarContent {...sidebarProps} showTopStrip onTemplateSelected={() => setMobileNavOpen(false)} />
+          </SheetContent>
+        </Sheet>
+
+        {/* Right column: fixed bars + independent scroll area */}
+        <div className="flex min-w-0 flex-1 flex-col">
         {/* Title bar — the window drag region (see .app-drag). Text only,
             never clickable controls, so grabbing anywhere on this bar moves
             the window. Fully opaque: content scrolls underneath invisibly. */}
@@ -420,6 +458,8 @@ function AppShell() {
                   onDurationChange={setDuration}
                   selectedProvider={selectedProvider}
                   selectedModel={selectedModel}
+                  activeProfileId={activeProfile?.id ?? null}
+                  activeProfileName={activeProfile?.name ?? null}
                   onSubmitted={handleSubmitted}
                 />
               )}
@@ -483,6 +523,13 @@ function AppShell() {
                 <SettingsView
                   appVersion={appVersion}
                   backendUrl={backendUrl}
+                  isAdmin={isAdmin}
+                  diagnostics={{
+                    bridge: desktop.isDesktop,
+                    urlPlatform: queryPlat,
+                    liveDetect: isMacDesktop(),
+                    effective: macDesktop,
+                  }}
                   config={config}
                   configLoading={configLoading}
                   configError={configError}
@@ -531,6 +578,7 @@ function AppShell() {
             </ErrorBoundary>
           </div>
         </main>
+        </div>
       </div>
 
       <Toaster />

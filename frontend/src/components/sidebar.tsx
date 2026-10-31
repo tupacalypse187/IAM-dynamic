@@ -1,11 +1,12 @@
-import { ProvidersResponse } from '@/types/api'
+import type { LlmProfile, ProvidersResponse } from '@/types/api'
 import { useTheme } from '@/hooks/use-theme'
 import { Button } from './ui/button'
 import { Tip } from './tip'
 import { ScrollArea } from './ui/scroll-area'
 import { Separator } from './ui/separator'
 import { Label } from './ui/label'
-import { Monitor, Moon, Sun, LayoutTemplate } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { Monitor, Moon, Sun, LayoutTemplate, Settings2 } from 'lucide-react'
 
 interface SidebarContentProps {
   config?: ProvidersResponse
@@ -13,6 +14,12 @@ interface SidebarContentProps {
   onTemplateSelected?: () => void
   /** True on macOS frameless windows — reserves the traffic-light strip. */
   macDesktop?: boolean
+  /** Show the strip here (drawer). The rail leaves it to the full-width strip. */
+  showTopStrip?: boolean
+  /** Saved LLM profiles for the switcher (empty = server defaults). */
+  profiles?: LlmProfile[]
+  onSelectProfile?: (id: number) => void
+  onManageProfiles?: () => void
 }
 
 const templates = [
@@ -41,7 +48,12 @@ export function SidebarContent({
   onRequestTextChange,
   onTemplateSelected,
   macDesktop = false,
+  showTopStrip = true,
+  profiles = [],
+  onSelectProfile,
+  onManageProfiles,
 }: SidebarContentProps) {
+  const activeProfile = profiles.find((p) => p.active) ?? null
   const { theme, setTheme } = useTheme()
 
   const cycleTheme = () => {
@@ -56,9 +68,9 @@ export function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Traffic-light safe area (macOS frameless window only): clears the
-          hiddenInset lights and doubles as a grabbable drag strip. Lives
-          here (not the rail) so the mobile drawer is covered too. */}
-      {macDesktop && (
+          hiddenInset lights and doubles as a grabbable drag strip. The rail
+          is already below the full-width strip, so only the drawer shows it. */}
+      {macDesktop && showTopStrip && (
         <div className="app-drag h-7 w-full shrink-0 select-none" aria-hidden="true" />
       )}
 
@@ -78,6 +90,58 @@ export function SidebarContent({
             </Button>
           </Tip>
         </div>
+      </div>
+
+      {/* LLM profile switcher */}
+      <div className="border-b border-sidebar-border p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <Label className="text-xs text-sidebar-foreground/70">LLM Profile</Label>
+          {onManageProfiles && (
+            <Tip label="Add, rename, or rotate profile keys in Settings">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
+                onClick={onManageProfiles}
+              >
+                <Settings2 className="mr-1 h-3 w-3" />
+                Manage
+              </Button>
+            </Tip>
+          )}
+        </div>
+        {profiles.length === 0 ? (
+          <p className="text-xs text-sidebar-foreground/60">
+            Server defaults.{' '}
+            {onManageProfiles && (
+              <button
+                type="button"
+                className="underline hover:text-sidebar-accent-foreground"
+                onClick={onManageProfiles}
+              >
+                Save your own key
+              </button>
+            )}
+          </p>
+        ) : (
+          <Tip label="Whose key evaluates new requests">
+            <Select
+              value={activeProfile ? String(activeProfile.id) : ''}
+              onValueChange={(v) => onSelectProfile?.(Number(v))}
+            >
+              <SelectTrigger className="border-sidebar-border bg-transparent text-sidebar-foreground">
+                <SelectValue placeholder="Select profile" />
+              </SelectTrigger>
+              <SelectContent>
+                {profiles.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name} · {p.model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Tip>
+        )}
       </div>
 
       {/* Quick Templates */}

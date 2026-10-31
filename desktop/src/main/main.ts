@@ -104,11 +104,18 @@ function createWindow(): BrowserWindow {
     },
   })
 
+  // The main process knows the OS with certainty; inject it as a query
+  // param so the renderer reserves traffic-light clearance structurally
+  // instead of depending on bridge/navigator sniffing (both have failed in
+  // the field). No client router exists, so the query string is inert.
+  const platformQuery = { platform: process.platform }
   if (config.isDev) {
-    void window.loadURL(DEV_URL)
+    void window.loadURL(`${DEV_URL}?platform=${process.platform}`)
     window.webContents.openDevTools({ mode: 'detach' })
   } else {
-    void window.loadFile(path.join(__dirname, '../../frontend-dist/index.html'))
+    void window.loadFile(path.join(__dirname, '../../frontend-dist/index.html'), {
+      query: platformQuery,
+    })
   }
 
   // Keep navigation inside the app; http(s) links open in the OS browser,

@@ -26,10 +26,26 @@ export function resolvePlatform(
   return navigatorPlatform || ''
 }
 
-/** macOS reports "MacIntel"/"macOS" via navigator; main-process IPC reports "darwin". */
+/** macOS reports "MacIntel"/"macOS" via navigator; main-process values report "darwin". */
 export function isMacPlatformString(platform: string | null | undefined): boolean {
   if (!platform) return false
   return /^mac/i.test(platform) || platform === 'darwin'
+}
+
+/**
+ * Platform injected by the main process (`?platform=darwin` on the
+ * renderer URL). Deterministic — independent of bridge and navigator
+ * quirks, which both failed in the field.
+ */
+export function queryPlatform(search?: string): string | null {
+  try {
+    const raw =
+      search ?? (typeof window !== 'undefined' ? window.location.search : '')
+    const value = new URLSearchParams(raw).get('platform')
+    return value || null
+  } catch {
+    return null
+  }
 }
 
 /**

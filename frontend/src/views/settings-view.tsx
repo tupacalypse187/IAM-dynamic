@@ -8,12 +8,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ProviderSelects } from '@/components/provider-selects'
+import { ProfileManager } from '@/components/profile-manager'
+import { CatalogManager } from '@/components/catalog-manager'
 import HelpSections from '@/components/help-sections'
 import { Tip } from '@/components/tip'
+
+export interface WindowDiagnostics {
+  /** Preload bridge present (false in browsers). */
+  bridge: boolean
+  /** ?platform= value injected by the main process, if any. */
+  urlPlatform: string | null
+  /** Live navigator-based macOS detection result. */
+  liveDetect: boolean
+  /** Effective clearance actually applied to the layout. */
+  effective: boolean
+}
 
 interface SettingsViewProps {
   appVersion: string | null
   backendUrl: string | null
+  diagnostics: WindowDiagnostics
+  isAdmin: boolean
   config?: ProvidersResponse
   configLoading?: boolean
   configError?: boolean
@@ -33,6 +48,8 @@ const themes = [
 export default function SettingsView({
   appVersion,
   backendUrl,
+  diagnostics,
+  isAdmin,
   config,
   configLoading,
   configError,
@@ -125,12 +142,17 @@ export default function SettingsView({
         </CardContent>
       </Card>
 
+      {/* Profiles + catalog */}
+      <ProfileManager />
+      {isAdmin && <CatalogManager />}
+
       {/* AI provider */}
       <Card>
         <CardHeader>
-          <CardTitle>AI provider</CardTitle>
+          <CardTitle>AI provider fallback</CardTitle>
           <CardDescription>
-            Defaults for new requests. Switching here applies to the next submission.
+            Server defaults used when no profile is active. Switching here applies to the next
+            submission; prefer a profile above for your own key.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -167,6 +189,9 @@ export default function SettingsView({
       <Card>
         <CardHeader>
           <CardTitle>About</CardTitle>
+          <CardDescription>
+            Build and window diagnostics — screenshot this section if the traffic lights overlap anything.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <dl className="space-y-1 text-sm">
@@ -180,6 +205,22 @@ export default function SettingsView({
                 <dd className="break-all font-mono text-xs">{backendUrl}</dd>
               </div>
             )}
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Desktop bridge:</dt>
+              <dd>{diagnostics.bridge ? 'connected' : 'missing (browser or broken preload)'}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Injected platform:</dt>
+              <dd className="font-mono text-xs">{diagnostics.urlPlatform ?? 'none (browser load)'}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Live mac detection:</dt>
+              <dd>{diagnostics.liveDetect ? 'true' : 'false'}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Clearance applied:</dt>
+              <dd>{diagnostics.effective ? 'true' : 'false'}</dd>
+            </div>
           </dl>
         </CardContent>
       </Card>
