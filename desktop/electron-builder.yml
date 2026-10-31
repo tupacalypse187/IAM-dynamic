@@ -28,6 +28,8 @@ directories:
 files:
   - dist/**/*
   - frontend-dist/**/*
+  - assets/splash.html
+  - assets/app-icon.png
   - package.json
 
 extraMetadata:

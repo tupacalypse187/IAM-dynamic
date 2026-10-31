@@ -6,7 +6,7 @@
 //   npm test
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isMacDesktop } from '../src/lib/desktop.ts'
+import { isMacDesktop, isMacPlatformString, resolvePlatform } from '../src/lib/desktop.ts'
 
 describe('isMacDesktop', () => {
   it('is false with no preload bridge (browser)', () => {
@@ -21,5 +21,29 @@ describe('isMacDesktop', () => {
   it('is true with a bridge on macOS platform strings', () => {
     assert.equal(isMacDesktop({}, 'MacIntel'), true)
     assert.equal(isMacDesktop({}, 'macOS'), true)
+  })
+
+  it('accepts the main-process darwin platform string', () => {
+    assert.equal(isMacDesktop({}, 'darwin'), true)
+    assert.equal(isMacPlatformString('darwin'), true)
+    assert.equal(isMacPlatformString(null), false)
+  })
+})
+
+describe('resolvePlatform', () => {
+  it('falls through an empty userAgentData platform to navigator.platform', () => {
+    // Packaged Electron exposes userAgentData with an EMPTY low-entropy
+    // platform (""). A ?? chain keeps "" and macOS goes undetected — the
+    // traffic lights then smoosh the sidebar. This is that regression.
+    assert.equal(resolvePlatform('', 'MacIntel'), 'MacIntel')
+  })
+
+  it('prefers a real userAgentData platform when present', () => {
+    assert.equal(resolvePlatform('macOS', 'MacIntel'), 'macOS')
+  })
+
+  it('returns empty when nothing is known', () => {
+    assert.equal(resolvePlatform(undefined, undefined), '')
+    assert.equal(resolvePlatform('', ''), '')
   })
 })

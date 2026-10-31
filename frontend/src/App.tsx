@@ -6,18 +6,23 @@ import {
   Loader2,
   Menu,
   User,
-  CircleHelp,
   FilePlus2,
   FolderOpen,
   ShieldCheck,
+  Settings as SettingsIcon,
+  PanelLeft,
+  Eye,
 } from 'lucide-react'
 import { api } from './lib/api'
 import { desktop, isMacDesktop } from './lib/desktop'
 import { useGlobalShortcuts, useCaptureShortcut } from './lib/shortcuts'
 import { hasSeenTour, launchTour } from './lib/tour'
 import { useAuth } from './hooks/use-auth'
+import { usePrefs } from './hooks/use-prefs'
 import type { SubmitOutcome } from './hooks/use-policy-agent'
 import { ThemeProvider } from './components/theme-provider'
+import { PrefsProvider, Tip } from './components/tip'
+import { PreviewBanner } from './components/preview-banner'
 import { Toaster } from './components/toaster'
 import { useToast } from './hooks/use-toast'
 import { ErrorBoundary } from './components/error-boundary'
@@ -35,10 +40,10 @@ import RequestDetailView from './views/request-detail-view'
 import ReviewDashboardView from './views/review-dashboard-view'
 import CredentialsView from './views/credentials-view'
 import RejectedView from './views/rejected-view'
-import HelpView from './views/help-view'
+import SettingsView from './views/settings-view'
 import LoginView from './views/login-view'
 
-type ViewType = 'submit' | 'mine' | 'detail' | 'dashboard' | 'credentials' | 'rejected' | 'help'
+type ViewType = 'submit' | 'mine' | 'detail' | 'dashboard' | 'credentials' | 'rejected' | 'settings'
 
 function focusRequestBox() {
   setTimeout(() => document.getElementById('request-textarea')?.focus(), 100)
@@ -46,6 +51,7 @@ function focusRequestBox() {
 
 function AppShell() {
   const { isAuthenticated, isLoading, username, isAdmin, logout, authRequired } = useAuth()
+  const { prefs, updatePrefs } = usePrefs()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ViewType>('submit')
@@ -55,6 +61,8 @@ function AppShell() {
   const [summary, setSummary] = useState<string | null>(null)
   const [baselinePolicy, setBaselinePolicy] = useState<PolicyDocument | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [backendUrl, setBackendUrl] = useState<string | null>(null)
+  const [appPlatform, setAppPlatform] = useState<string | null>(null)
   const [duration, setDuration] = useState(2)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [deniedRequest, setDeniedRequest] = useState<AccessRequest | null>(null)
@@ -62,6 +70,16 @@ function AppShell() {
   const [selectedProvider, setSelectedProvider] = useState<string>('muse')
   const [selectedModel, setSelectedModel] = useState<string>('muse-spark-1.3-contributor')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  // TEMPORARY — hackathon demo aid. Session-scoped preview that masks admin
+  // UI only; remove with PreviewBanner for production (see that file).
+  const [previewAsUser, setPreviewAsUser] = useState(false)
+  // Effective role for UI gating. Server enforcement is unchanged.
+  const showAdminUI = isAdmin && !previewAsUser
+
+  // macOS frameless detection: sync signals plus the authoritative
+  // main-process platform once the bridge answers (covers exotic cases
+  // where both navigator signals fail).
+  const macDesktop = isMacDesktop() || (desktop.isDesktop && appPlatform === 'darwin')
 
   // Fetch providers and config (only when authenticated)
   const {
@@ -74,11 +92,11 @@ function AppShell() {
     enabled: isAuthenticated,
   })
 
-  // Admin review queue count for the nav badge (admins only)
+  // Admin review queue count for the nav badge (admins only, not previewing)
   const queueCountQuery = useQuery({
     queryKey: ['requests', 'queue-count'],
     queryFn: () => api.listRequests({ status: 'pending_review' }),
-    enabled: isAuthenticated && isAdmin,
+    enabled: isAuthenticated && showAdminUI,
     refetchInterval: 30000,
   })
   const pendingCount = queueCountQuery.data?.length ?? 0
@@ -108,22 +126,30 @@ function AppShell() {
     }
   }, [config])
 
-  // Desktop app version for the title bar and Help view
+  // Desktop app info for the title bar, About section, and platform check
   useEffect(() => {
     if (!desktop.isDesktop) return
-    desktop.getAppInfo().then((info) => setAppVersion(info.version)).catch(() => undefined)
+    desktop
+      .getAppInfo()
+      .then((info) => {
+        setAppVersion(info.version)
+        setBackendUrl(info.backendUrl)
+        setAppPlatform(info.platform)
+      })
+      .catch(() => undefined)
   }, [])
 
-  // First-run guided tour (submit view only, once)
+  // First-run guided tour (submit view only, once, unless disabled in Settings)
   useEffect(() => {
-    if (!isAuthenticated || view !== 'submit' || hasSeenTour()) return
+    if (!isAuthenticated || view !== 'submit') return
+    if (!prefs.tourAutoplay || hasSeenTour()) return
     const timer = setTimeout(() => launchTour(), 800)
     return () => clearTimeout(timer)
-  }, [isAuthenticated, view])
+  }, [isAuthenticated, view, prefs.tourAutoplay])
 
-  // `?` opens Help; global capture focuses the request box
-  const openHelp = useCallback(() => setView('help'), [])
-  useGlobalShortcuts(openHelp)
+  // `?` opens Settings; global capture focuses the request box
+  const openSettings = useCallback(() => setView('settings'), [])
+  useGlobalShortcuts(openSettings)
   const handleCapture = useCallback(() => {
     setView('submit')
     toast({
@@ -237,14 +263,8 @@ function AppShell() {
 
   const sidebarProps = {
     config,
-    configLoading,
-    configError,
-    onRetryConfig: retryConfig,
     onRequestTextChange: setRequestText,
-    selectedProvider,
-    onProviderChange: setSelectedProvider,
-    selectedModel,
-    onModelChange: setSelectedModel,
+    macDesktop,
   }
 
   const navButtonClass = (target: ViewType) =>
@@ -254,8 +274,8 @@ function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar rail */}
-      <Sidebar {...sidebarProps} />
+      {/* Collapsible sidebar rail (toolbar toggle; drawer covers small screens) */}
+      {!prefs.sidebarCollapsed && <Sidebar {...sidebarProps} />}
 
       {/* Mobile navigation drawer */}
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -265,21 +285,20 @@ function AppShell() {
         >
           <SheetTitle className="sr-only">Navigation and settings</SheetTitle>
           <SheetDescription className="sr-only">
-            AI provider, model and quick request templates
+            Quick request templates
           </SheetDescription>
           <SidebarContent {...sidebarProps} onTemplateSelected={() => setMobileNavOpen(false)} />
         </SheetContent>
       </Sheet>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      {/* Right column: fixed bars + independent scroll area */}
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Title bar — the window drag region (see .app-drag). Text only,
             never clickable controls, so grabbing anywhere on this bar moves
-            the window. The macOS traffic-light safe area keeps the native
-            window controls clear of app content. */}
+            the window. Fully opaque: content scrolls underneath invisibly. */}
         <div
-          className={`app-drag sticky top-0 z-40 flex h-11 shrink-0 select-none items-center gap-2 border-b bg-muted/40 px-4 ${
-            isMacDesktop() ? 'pl-20' : ''
+          className={`app-drag flex h-11 shrink-0 select-none items-center gap-2 border-b bg-muted px-4 ${
+            macDesktop ? 'pl-20' : ''
           }`}
         >
           <Lock className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
@@ -303,27 +322,43 @@ function AppShell() {
 
         {/* Toolbar — clickable app controls, explicitly outside the drag
             region so window buttons and actions never overlap. */}
-        <header className="app-no-drag sticky top-11 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-          <div className="flex h-14 items-center gap-1 px-4 sm:gap-2 sm:px-6">
+        <header className="app-no-drag flex h-14 shrink-0 items-center gap-1 border-b bg-background px-4 sm:gap-2 sm:px-6">
+          <Tip label={prefs.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}>
             <Button
               variant="ghost"
               size="icon"
-              className="mr-1 lg:hidden"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="Open navigation menu"
+              onClick={() => updatePrefs({ sidebarCollapsed: !prefs.sidebarCollapsed })}
+              aria-label={prefs.sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+              aria-expanded={!prefs.sidebarCollapsed}
+              className="hidden lg:inline-flex"
             >
-              <Menu className="h-5 w-5" />
+              <PanelLeft className="h-5 w-5" />
             </Button>
-            <nav className="flex min-w-0 items-center gap-1" aria-label="Primary">
+          </Tip>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <nav className="flex min-w-0 items-center gap-1" aria-label="Primary">
+            <Tip label="Describe a new access need">
               <Button variant="ghost" size="sm" className={navButtonClass('submit')} onClick={() => setView('submit')}>
                 <FilePlus2 className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
                 <span className="hidden sm:inline">New Request</span>
               </Button>
+            </Tip>
+            <Tip label="Your live sessions, open requests, and history">
               <Button variant="ghost" size="sm" className={navButtonClass('mine')} onClick={() => setView('mine')}>
                 <FolderOpen className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
                 <span className="hidden sm:inline">My Requests</span>
               </Button>
-              {isAdmin && (
+            </Tip>
+            {showAdminUI && (
+              <Tip label="Review every requester’s queue">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -336,58 +371,60 @@ function AppShell() {
                     <Badge className="ml-1.5 bg-warning/20 text-warning">{pendingCount}</Badge>
                   )}
                 </Button>
-              )}
-            </nav>
-            <div className="ml-auto flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setView('help')}
-                aria-label="Open help and keyboard shortcuts"
-                title="Help & shortcuts (?)"
-              >
-                <CircleHelp className="h-4 w-4" />
+              </Tip>
+            )}
+            <Tip label="Preferences, demo, help guides, and about">
+              <Button variant="ghost" size="sm" className={navButtonClass('settings')} onClick={() => setView('settings')}>
+                <SettingsIcon className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Settings</span>
               </Button>
-              {authRequired && (
-                <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out" title="Sign out">
+            </Tip>
+          </nav>
+          <div className="ml-auto flex items-center gap-1">
+            {/* TEMPORARY — hackathon demo aid; remove with PreviewBanner. */}
+            {isAdmin && (
+              <Tip label={previewAsUser ? 'Return to the admin view' : 'Preview the app as a regular user'}>
+                <Button
+                  variant={previewAsUser ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPreviewAsUser((v) => !v)}
+                  aria-pressed={previewAsUser}
+                  aria-label={previewAsUser ? 'Exit user preview' : 'Preview as regular user'}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+              </Tip>
+            )}
+            {authRequired && (
+              <Tip label="Sign out of this session">
+                <Button variant="ghost" size="sm" onClick={logout} aria-label="Sign out">
                   <LogOut className="h-4 w-4" />
                 </Button>
-              )}
-            </div>
+              </Tip>
+            )}
           </div>
         </header>
 
-        {/* Content */}
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
-          <ErrorBoundary>
-            {view === 'submit' && (
-              <RequestView
-                requestText={requestText}
-                onRequestTextChange={setRequestText}
-                duration={duration}
-                onDurationChange={setDuration}
-                selectedProvider={selectedProvider}
-                selectedModel={selectedModel}
-                onSubmitted={handleSubmitted}
-              />
-            )}
+        {/* TEMPORARY — hackathon demo aid; remove with the toggle above. */}
+        {previewAsUser && <PreviewBanner onExit={() => setPreviewAsUser(false)} />}
 
-            {view === 'mine' && (
-              <MyRequestsView
-                onNewRequest={() => {
-                  resetSubmitForm()
-                  setView('submit')
-                  focusRequestBox()
-                }}
-                onOpenRequest={(request) => openDetail(request, 'mine')}
-                onCloneRequest={handleClone}
-              />
-            )}
+        {/* Content — the only scrolling region; bars stay fixed above it */}
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+            <ErrorBoundary>
+              {view === 'submit' && (
+                <RequestView
+                  requestText={requestText}
+                  onRequestTextChange={setRequestText}
+                  duration={duration}
+                  onDurationChange={setDuration}
+                  selectedProvider={selectedProvider}
+                  selectedModel={selectedModel}
+                  onSubmitted={handleSubmitted}
+                />
+              )}
 
-            {view === 'dashboard' &&
-              (isAdmin ? (
-                <ReviewDashboardView onOpenRequest={(request) => openDetail(request, 'dashboard')} />
-              ) : (
+              {view === 'mine' && (
                 <MyRequestsView
                   onNewRequest={() => {
                     resetSubmitForm()
@@ -397,75 +434,104 @@ function AppShell() {
                   onOpenRequest={(request) => openDetail(request, 'mine')}
                   onCloneRequest={handleClone}
                 />
-              ))}
+              )}
 
-            {view === 'detail' && activeRequest && (
-              <RequestDetailView
-                request={activeRequest}
-                isAdmin={isAdmin}
-                isOwner={username !== null && activeRequest.requester === username}
-                findings={findings}
-                summary={summary}
-                baselinePolicy={baselinePolicy}
-                onBack={() => setView(detailOrigin === 'dashboard' && isAdmin ? 'dashboard' : 'mine')}
-                onChanged={handleChanged}
-                onCredentialsIssued={handleCredentialsIssued}
-                onResubmit={(request) =>
-                  gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model)
-                }
-                onShowGuidance={(request) => {
-                  setDeniedRequest(request)
-                  setView('rejected')
-                }}
-                onApplySuggestion={(suggestion) => {
-                  setRequestText(
-                    `${requestText}\n\nRequested fix from guardrail: ${suggestion}`.trim(),
-                  )
-                  setView('submit')
-                  focusRequestBox()
-                }}
-              />
-            )}
+              {view === 'dashboard' &&
+                (showAdminUI ? (
+                  <ReviewDashboardView onOpenRequest={(request) => openDetail(request, 'dashboard')} />
+                ) : (
+                  <MyRequestsView
+                    onNewRequest={() => {
+                      resetSubmitForm()
+                      setView('submit')
+                      focusRequestBox()
+                    }}
+                    onOpenRequest={(request) => openDetail(request, 'mine')}
+                    onCloneRequest={handleClone}
+                  />
+                ))}
 
-            {view === 'help' && <HelpView appVersion={appVersion} />}
+              {view === 'detail' && activeRequest && (
+                <RequestDetailView
+                  request={activeRequest}
+                  isAdmin={showAdminUI}
+                  isOwner={username !== null && activeRequest.requester === username}
+                  findings={findings}
+                  summary={summary}
+                  baselinePolicy={baselinePolicy}
+                  onBack={() => setView(detailOrigin === 'dashboard' && showAdminUI ? 'dashboard' : 'mine')}
+                  onChanged={handleChanged}
+                  onCredentialsIssued={handleCredentialsIssued}
+                  onResubmit={(request) =>
+                    gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model)
+                  }
+                  onShowGuidance={(request) => {
+                    setDeniedRequest(request)
+                    setView('rejected')
+                  }}
+                  onApplySuggestion={(suggestion) => {
+                    setRequestText(
+                      `${requestText}\n\nRequested fix from guardrail: ${suggestion}`.trim(),
+                    )
+                    setView('submit')
+                    focusRequestBox()
+                  }}
+                />
+              )}
 
-            {view === 'rejected' && deniedPolicy && deniedRequest && (
-              <RejectedView
-                policyData={deniedPolicy}
-                requestText={deniedRequest.request_text}
-                duration={deniedRequest.duration}
-                selectedProvider={deniedRequest.provider}
-                reviewer={deniedRequest.reviewer}
-                reviewerFeedback={deniedRequest.feedback}
-                onReviseRequest={(text) => {
-                  gotoSubmitForEdit(text, deniedRequest.duration, deniedRequest.provider, deniedRequest.model)
-                }}
-                onStartFresh={() => {
-                  setDeniedRequest(null)
-                  resetSubmitForm()
-                  setView('submit')
-                  focusRequestBox()
-                }}
-              />
-            )}
+              {view === 'settings' && (
+                <SettingsView
+                  appVersion={appVersion}
+                  backendUrl={backendUrl}
+                  config={config}
+                  configLoading={configLoading}
+                  configError={configError}
+                  onRetryConfig={retryConfig}
+                  selectedProvider={selectedProvider}
+                  onProviderChange={setSelectedProvider}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
+                />
+              )}
 
-            {view === 'credentials' && credentials && (
-              <CredentialsView
-                credentials={credentials}
-                duration={duration}
-                onNewRequest={() => {
-                  setCredentials(null)
-                  setActiveRequest(null)
-                  setFindings([])
-                  setSummary(null)
-                  resetSubmitForm()
-                  setView('mine')
-                }}
-              />
-            )}
-          </ErrorBoundary>
-        </div>
-      </main>
+              {view === 'rejected' && deniedPolicy && deniedRequest && (
+                <RejectedView
+                  policyData={deniedPolicy}
+                  requestText={deniedRequest.request_text}
+                  duration={deniedRequest.duration}
+                  selectedProvider={deniedRequest.provider}
+                  reviewer={deniedRequest.reviewer}
+                  reviewerFeedback={deniedRequest.feedback}
+                  onReviseRequest={(text) => {
+                    gotoSubmitForEdit(text, deniedRequest.duration, deniedRequest.provider, deniedRequest.model)
+                  }}
+                  onStartFresh={() => {
+                    setDeniedRequest(null)
+                    resetSubmitForm()
+                    setView('submit')
+                    focusRequestBox()
+                  }}
+                />
+              )}
+
+              {view === 'credentials' && credentials && (
+                <CredentialsView
+                  credentials={credentials}
+                  duration={duration}
+                  onNewRequest={() => {
+                    setCredentials(null)
+                    setActiveRequest(null)
+                    setFindings([])
+                    setSummary(null)
+                    resetSubmitForm()
+                    setView('mine')
+                  }}
+                />
+              )}
+            </ErrorBoundary>
+          </div>
+        </main>
+      </div>
 
       <Toaster />
       <UpdateBanner />
@@ -476,7 +542,9 @@ function AppShell() {
 function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="iam-theme">
-      <AppShell />
+      <PrefsProvider>
+        <AppShell />
+      </PrefsProvider>
     </ThemeProvider>
   )
 }

@@ -7,6 +7,7 @@ import { usePolicyAgent, type SubmitOutcome } from '@/hooks/use-policy-agent'
 import type { AgentProgress, ClarifyQuestion } from '@/types/desktop'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Tip } from '@/components/tip'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
@@ -224,22 +225,24 @@ export default function RequestView({
 
           {/* Submit */}
           {!questions && (
-            <Button
-              onClick={handleSubmit}
-              disabled={pending || (!requestText.trim() && !guided.task.trim())}
-              className="w-full"
-              size="lg"
-              data-tour="request-submit"
-            >
-              {pending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {stage ?? 'Analyzing...'}
-                </>
-              ) : (
-                'Submit Request'
-              )}
-            </Button>
+            <Tip label="Evaluate with AI and route for review (low-risk requests auto-approve)">
+              <Button
+                onClick={handleSubmit}
+                disabled={pending || (!requestText.trim() && !guided.task.trim())}
+                className="w-full"
+                size="lg"
+                data-tour="request-submit"
+              >
+                {pending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {stage ?? 'Analyzing...'}
+                  </>
+                ) : (
+                  'Submit Request'
+                )}
+              </Button>
+            </Tip>
           )}
         </CardContent>
       </Card>

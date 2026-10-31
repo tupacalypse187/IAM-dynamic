@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { Tip } from '@/components/tip'
 
 interface ReviewDashboardViewProps {
   onOpenRequest: (request: AccessRequest) => void
@@ -84,14 +85,15 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
         <TabsContent value="queue" className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-2" role="group" aria-label="Filter requests">
             {FILTERS.map((f) => (
-              <Button
-                key={f.value}
-                variant={filter === f.value ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilter(f.value)}
-              >
-                {f.label}
-              </Button>
+              <Tip key={f.value} label={`Show ${f.label.toLowerCase()} requests`}>
+                <Button
+                  variant={filter === f.value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setFilter(f.value)}
+                >
+                  {f.label}
+                </Button>
+              </Tip>
             ))}
           </div>
 

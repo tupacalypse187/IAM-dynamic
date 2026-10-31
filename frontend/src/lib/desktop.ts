@@ -11,6 +11,28 @@ export function isDesktop(): boolean {
 }
 
 /**
+ * Resolve the platform string, preferring `userAgentData.platform` but
+ * falling through on empty values. Electron exposes `userAgentData` with an
+ * EMPTY low-entropy `platform` (""), so a `??` chain keeps "" and macOS goes
+ * undetected — an `||` chain falls back to `navigator.platform` ("MacIntel").
+ */
+export function resolvePlatform(
+  userAgentDataPlatform?: unknown,
+  navigatorPlatform?: string | null,
+): string {
+  if (typeof userAgentDataPlatform === 'string' && userAgentDataPlatform) {
+    return userAgentDataPlatform
+  }
+  return navigatorPlatform || ''
+}
+
+/** macOS reports "MacIntel"/"macOS" via navigator; main-process IPC reports "darwin". */
+export function isMacPlatformString(platform: string | null | undefined): boolean {
+  if (!platform) return false
+  return /^mac/i.test(platform) || platform === 'darwin'
+}
+
+/**
  * True only inside the packaged app on macOS — the one configuration with a
  * frameless `hiddenInset` window whose traffic lights overlay the top-left
  * of the UI. Callers reserve a drag strip there; browsers (no preload
@@ -19,12 +41,15 @@ export function isDesktop(): boolean {
  */
 export function isMacDesktop(
   bridge: unknown = typeof window !== 'undefined' ? window.desktopApi : undefined,
-  platform: string = typeof navigator !== 'undefined'
-    ? ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
-        ?.platform ?? navigator.platform ?? '')
-    : '',
+  platform?: string,
 ): boolean {
-  return typeof bridge !== 'undefined' && /^mac/i.test(platform)
+  if (typeof bridge === 'undefined') return false
+  if (platform !== undefined) return isMacPlatformString(platform)
+  if (typeof navigator === 'undefined') return false
+  const userAgentData = (
+    navigator as Navigator & { userAgentData?: { platform?: string } }
+  ).userAgentData
+  return isMacPlatformString(resolvePlatform(userAgentData?.platform, navigator.platform))
 }
 
 function requireApi(): DesktopApi {

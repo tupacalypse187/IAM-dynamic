@@ -20,10 +20,11 @@
     "copy-renderer": "rm -rf frontend-dist && mkdir -p frontend-dist && cp -R ../frontend/dist/. frontend-dist/",
     "build:renderer": "node scripts/build-renderer.mjs",
     "icons": "python3 build/icon.py || ../backend/.venv/bin/python build/icon.py",
-    "predist": "npm run build:renderer && npm run copy-renderer && npm run icons",
-    "predist:mac": "npm run build:renderer && npm run copy-renderer && npm run icons",
-    "predist:win": "npm run build:renderer && npm run copy-renderer && npm run icons",
-    "predist:linux": "npm run build:renderer && npm run copy-renderer && npm run icons"
+    "stage-splash": "mkdir -p assets && cp build/icons/icon.png assets/app-icon.png",
+    "predist": "npm run build:renderer && npm run copy-renderer && npm run icons && npm run stage-splash",
+    "predist:mac": "npm run build:renderer && npm run copy-renderer && npm run icons && npm run stage-splash",
+    "predist:win": "npm run build:renderer && npm run copy-renderer && npm run icons && npm run stage-splash",
+    "predist:linux": "npm run build:renderer && npm run copy-renderer && npm run icons && npm run stage-splash"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

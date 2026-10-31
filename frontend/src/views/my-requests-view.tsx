@@ -7,6 +7,7 @@ import type { AccessRequest } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Tip } from '@/components/tip'
 
 interface MyRequestsViewProps {
   onNewRequest: () => void
@@ -49,14 +50,18 @@ function RequestRow({
         </span>
       </button>
       <span className="flex shrink-0 gap-2">
-        <Button variant="outline" size="sm" onClick={() => onClone(false)} title="Submit this request again as-is">
-          <Copy className="mr-1 h-3 w-3" />
-          Clone
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onClone(true)} title="Copy into the form for editing">
-          <FileEdit className="mr-1 h-3 w-3" />
-          Clone &amp; edit
-        </Button>
+        <Tip label="Submit this exact request again as a new request">
+          <Button variant="outline" size="sm" onClick={() => onClone(false)}>
+            <Copy className="mr-1 h-3 w-3" />
+            Clone
+          </Button>
+        </Tip>
+        <Tip label="Copy this request into the submit form for editing">
+          <Button variant="outline" size="sm" onClick={() => onClone(true)}>
+            <FileEdit className="mr-1 h-3 w-3" />
+            Clone &amp; edit
+          </Button>
+        </Tip>
       </span>
     </li>
   )
@@ -88,10 +93,12 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
             Track your access requests — live sessions, open reviews, and history.
           </p>
         </div>
-        <Button onClick={onNewRequest}>
-          <Plus className="mr-1 h-4 w-4" />
-          New request
-        </Button>
+        <Tip label="Describe a new access need">
+          <Button onClick={onNewRequest}>
+            <Plus className="mr-1 h-4 w-4" />
+            New request
+          </Button>
+        </Tip>
       </div>
 
       {query.isLoading && (

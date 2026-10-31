@@ -19,6 +19,7 @@ import { reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/
 import type { AccessRequest, Credentials, ReviewDecision } from '@/types/api'
 import type { GuardrailFinding, PolicyDocument } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
+import { Tip } from '@/components/tip'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -317,15 +318,17 @@ export default function RequestDetailView({
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <p className="text-sm text-muted-foreground">{finding.suggestion}</p>
                     {onApplySuggestion && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-auto"
-                        onClick={() => onApplySuggestion(finding.suggestion)}
-                      >
-                        <Wand2 className="mr-1 h-3 w-3" />
-                        Revise with this fix
-                      </Button>
+                      <Tip label="Send this fix back to the request form">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => onApplySuggestion(finding.suggestion)}
+                        >
+                          <Wand2 className="mr-1 h-3 w-3" />
+                          Revise with this fix
+                        </Button>
+                      </Tip>
                     )}
                   </div>
                 </div>
@@ -445,24 +448,26 @@ export default function RequestDetailView({
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                onClick={() => activateMutation.mutate()}
-                disabled={busy}
-                className="flex-1"
-                size="lg"
-              >
-                {activateMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Activating…
-                  </>
-                ) : (
-                  <>
-                    <Rocket className="mr-2 h-4 w-4" />
-                    Activate credentials
-                  </>
-                )}
-              </Button>
+              <Tip label="Mint temporary credentials now — the session starts immediately">
+                <Button
+                  onClick={() => activateMutation.mutate()}
+                  disabled={busy}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {activateMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Activating…
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="mr-2 h-4 w-4" />
+                      Activate credentials
+                    </>
+                  )}
+                </Button>
+              </Tip>
               {canDiscard && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -501,19 +506,21 @@ export default function RequestDetailView({
               once they decide.
             </p>
             {canDiscard && (
-              <Button
-                variant="outline"
-                className="mt-3"
-                disabled={busy}
-                onClick={() => discardMutation.mutate()}
-              >
-                {discardMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Undo2 className="mr-2 h-4 w-4" />
-                )}
-                Withdraw request
-              </Button>
+              <Tip label="Withdraw this request — no credentials will ever be issued for it">
+                <Button
+                  variant="outline"
+                  className="mt-3"
+                  disabled={busy}
+                  onClick={() => discardMutation.mutate()}
+                >
+                  {discardMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Undo2 className="mr-2 h-4 w-4" />
+                  )}
+                  Withdraw request
+                </Button>
+              </Tip>
             )}
           </CardContent>
         </Card>
@@ -528,14 +535,18 @@ export default function RequestDetailView({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row">
-            <Button onClick={() => onResubmit(request)} className="flex-1">
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Edit &amp; resubmit
-            </Button>
-            {canDiscard && (
-              <Button variant="outline" disabled={busy} onClick={() => discardMutation.mutate()}>
-                Discard
+            <Tip label="Edit the request text and submit it again as a new revision">
+              <Button onClick={() => onResubmit(request)} className="flex-1">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Edit &amp; resubmit
               </Button>
+            </Tip>
+            {canDiscard && (
+              <Tip label="Withdraw this request instead of resubmitting">
+                <Button variant="outline" disabled={busy} onClick={() => discardMutation.mutate()}>
+                  Discard
+                </Button>
+              </Tip>
             )}
           </CardContent>
         </Card>
@@ -551,9 +562,11 @@ export default function RequestDetailView({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => onShowGuidance(request)} className="w-full">
-              View guidance
-            </Button>
+            <Tip label="Read AI suggestions for a better-scoped request">
+              <Button onClick={() => onShowGuidance(request)} className="w-full">
+                View guidance
+              </Button>
+            </Tip>
           </CardContent>
         </Card>
       )}
@@ -580,37 +593,43 @@ export default function RequestDetailView({
               />
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                onClick={() => handleReview('approve')}
-                disabled={busy}
-                className="flex-1"
-                size="lg"
-              >
-                {reviewMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                )}
-                Approve
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleReview('changes_requested')}
-                disabled={busy}
-                size="lg"
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Send back
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => handleReview('deny')}
-                disabled={busy}
-                size="lg"
-              >
-                <AlertCircle className="mr-2 h-4 w-4" />
-                Deny
-              </Button>
+              <Tip label="Approve — the requester can then activate credentials when ready">
+                <Button
+                  onClick={() => handleReview('approve')}
+                  disabled={busy}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {reviewMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                  )}
+                  Approve
+                </Button>
+              </Tip>
+              <Tip label="Return to the requester with your feedback — they can edit and resubmit">
+                <Button
+                  variant="outline"
+                  onClick={() => handleReview('changes_requested')}
+                  disabled={busy}
+                  size="lg"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Send back
+                </Button>
+              </Tip>
+              <Tip label="Deny permanently — feedback is required so they know why">
+                <Button
+                  variant="destructive"
+                  onClick={() => handleReview('deny')}
+                  disabled={busy}
+                  size="lg"
+                >
+                  <AlertCircle className="mr-2 h-4 w-4" />
+                  Deny
+                </Button>
+              </Tip>
             </div>
           </CardContent>
         </Card>

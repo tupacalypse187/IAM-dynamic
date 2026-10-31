@@ -48,12 +48,49 @@ function sendToRenderer(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
 }
 
+/** Minimum splash visibility: the brand moment is never a flash frame. */
+const SPLASH_MIN_MS = 3000
+
+function splashAssetPath(): string {
+  // dist/main/main.js -> <app-root>/assets in dev and packaged builds alike.
+  return path.join(__dirname, '../../assets/splash.html')
+}
+
+function createSplash(version: string): BrowserWindow {
+  const splash = new BrowserWindow({
+    width: 520,
+    height: 380,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    // macOS: plain window (traffic lights would overlap the art).
+    // Win/Linux: frameless for the same centered-card look.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden' as const }
+      : { frame: false }),
+    backgroundColor: '#0f172a',
+    center: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  splash.once('ready-to-show', () => splash.show())
+  void splash.loadFile(splashAssetPath(), { hash: `v=${version}` })
+  return splash
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 960,
     minHeight: 640,
+    // Hidden until the splash lifecycle releases it (dev skips the splash).
+    show: false,
     // macOS: borderless w/ traffic lights; Win/Linux fall back to native frame.
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, vibrancy: 'under-window' as const }
@@ -118,14 +155,19 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-function showWindow(): void {
+function ensureWindow(): BrowserWindow {
   if (!mainWindow) {
     mainWindow = createWindow()
   } else if (mainWindow.isMinimized()) {
     mainWindow.restore()
   }
-  mainWindow.show()
-  mainWindow.focus()
+  return mainWindow
+}
+
+function showWindow(): void {
+  const window = ensureWindow()
+  window.show()
+  window.focus()
 }
 
 function registerIpc(): void {
@@ -206,7 +248,33 @@ function registerCaptureShortcut(): void {
 async function startup(): Promise<void> {
   ledger = new Ledger(path.join(app.getPath('userData'), 'ledger.db'))
   registerIpc()
-  showWindow()
+
+  if (config.isDev) {
+    // Dev loop stays fast: no splash, main window straight up.
+    showWindow()
+  } else {
+    // Cold start: brand splash for at least SPLASH_MIN_MS, then hand over
+    // to the main window once it has painted. The did-finish-load fallback
+    // covers renderers that never emit ready-to-show.
+    const shownAt = Date.now()
+    const splash = createSplash(app.getVersion())
+    const window = ensureWindow()
+    const release = () => {
+      if (splash.isDestroyed()) return
+      const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - shownAt))
+      setTimeout(() => {
+        if (!splash.isDestroyed()) splash.close()
+        if (!window.isDestroyed() && !window.isVisible()) {
+          window.show()
+        }
+      }, wait)
+    }
+    window.once('ready-to-show', () => {
+      window.show()
+      release()
+    })
+    window.webContents.once('did-finish-load', release)
+  }
 
   leaseTray = new LeaseTray({
     onShow: showWindow,
