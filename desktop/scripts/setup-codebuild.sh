@@ -18,30 +18,39 @@ set -euo pipefail
 
 PROJECT="${PROJECT_NAME:-iam-dynamic-desktop-windows}"
 REPO_URL="$(git config --get remote.origin.url)"
+# CodeBuild GitHub sources require an HTTPS clone URL; normalize SSH remotes.
+case "${REPO_URL}" in
+  git@github.com:*)
+    REPO_URL="https://github.com/${REPO_URL#git@github.com:}"
+    ;;
+esac
 BRANCH="${SOURCE_BRANCH:-main}"
 
 echo "Configuring CodeBuild project: ${PROJECT}"
 
-aws codebuild create-project \
-  --name "${PROJECT}" \
-  --source "type=GITHUB,location=${REPO_URL},buildspec=desktop/buildspec-windows.yml,gitCloneDepth=1" \
-  --source-version "${BRANCH}" \
-  --artifacts "type=S3,location=${BUCKET}/desktop,packaging=NONE,overrideArtifactName=false" \
-  --cache "type=S3,location=${BUCKET}/codebuild-cache/desktop-windows" \
-  --environment "type=WINDOWS_SERVER_2022_CONTAINER,computeType=BUILD_GENERAL1_MEDIUM,image=aws/codebuild/windows-base:2022-1.0,privilegedMode=false,environmentVariables=[{name=UPDATE_FEED_URL,value=${FEED_URL},type=PLAINTEXT}]" \
-  --service-role "${ROLE_ARN}" \
-  --timeout-in-minutes 30 \
-  --queued-timeout-in-minutes 60 \
-  >/dev/null && echo "Created ${PROJECT}." \
-  || aws codebuild update-project \
+if aws codebuild batch-get-projects --names "${PROJECT}" --query 'projects[0].name' --output text 2>/dev/null | grep -q "^${PROJECT}$"; then
+  aws codebuild update-project \
     --name "${PROJECT}" \
     --source "type=GITHUB,location=${REPO_URL},buildspec=desktop/buildspec-windows.yml,gitCloneDepth=1" \
-    --artifacts "type=S3,location=${BUCKET}/desktop,packaging=NONE,overrideArtifactName=false" \
+    --artifacts "type=S3,location=${BUCKET},path=desktop,packaging=NONE,overrideArtifactName=false" \
     --cache "type=S3,location=${BUCKET}/codebuild-cache/desktop-windows" \
     --environment "type=WINDOWS_SERVER_2022_CONTAINER,computeType=BUILD_GENERAL1_MEDIUM,image=aws/codebuild/windows-base:2022-1.0,privilegedMode=false,environmentVariables=[{name=UPDATE_FEED_URL,value=${FEED_URL},type=PLAINTEXT}]" \
     --service-role "${ROLE_ARN}" \
     --timeout-in-minutes 30 \
     --queued-timeout-in-minutes 60 \
   >/dev/null && echo "Updated ${PROJECT}."
+else
+  aws codebuild create-project \
+    --name "${PROJECT}" \
+    --source "type=GITHUB,location=${REPO_URL},buildspec=desktop/buildspec-windows.yml,gitCloneDepth=1" \
+    --source-version "${BRANCH}" \
+    --artifacts "type=S3,location=${BUCKET},path=desktop,packaging=NONE,overrideArtifactName=false" \
+    --cache "type=S3,location=${BUCKET}/codebuild-cache/desktop-windows" \
+    --environment "type=WINDOWS_SERVER_2022_CONTAINER,computeType=BUILD_GENERAL1_MEDIUM,image=aws/codebuild/windows-base:2022-1.0,privilegedMode=false,environmentVariables=[{name=UPDATE_FEED_URL,value=${FEED_URL},type=PLAINTEXT}]" \
+    --service-role "${ROLE_ARN}" \
+    --timeout-in-minutes 30 \
+    --queued-timeout-in-minutes 60 \
+  >/dev/null && echo "Created ${PROJECT}."
+fi
 
 echo "Start a build with: aws codebuild start-build --project-name ${PROJECT}"
