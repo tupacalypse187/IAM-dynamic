@@ -67,6 +67,7 @@ export async function generatePolicy(
     provider: input.provider,
     model: input.model,
     duration: durationHours,
+    profileId: input.profileId,
   })
 
   onProgress({ stage: 'audit', message: 'Checking compliance guardrails…' })

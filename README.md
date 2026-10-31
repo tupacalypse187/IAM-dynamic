@@ -110,7 +110,8 @@ graph LR
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
 -   **Modern React UI:** Multi-view app (submit → my requests → detail → credentials/denied) with responsive design and a draggable title bar (app name, version, signed-in user).
 -   **Review Workflow:** Requests and approvals are separate surfaces — users track live sessions, open requests, and their last 10 (clone / clone-and-edit); admins review the full queue with approve / deny / send-back-with-feedback.
--   **Two-Step Activation:** Approval never issues credentials by itself; the requester activates when ready.
+-   **Two-Step Activation:** Approval never issues credentials by itself; the requester activates when ready (assumes the task-matched base role when configured).
+-   **Your Own Keys:** Named LLM profiles with per-user API keys (encrypted at rest); admins curate the provider catalog.
 -   **Audit Trail:** Append-only JSONL log of every lifecycle event (actor roles included), browsable by admins in-app.
 -   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, or OpenRouter (one key, many vendors).
 -   **Notifications:** Audit logs and approval notifications delivered to Slack, Telegram, or both.
@@ -200,6 +201,7 @@ Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-U
 | `services/auth_service.py`    | **Auth Service**. JWT tokens and bcrypt password verification. |
 | `services/request_store.py` | **Request Store**. SQLite persistence for access requests + review state machine. |
 | `services/audit_log.py`     | **Audit Log**. Append-only JSONL trail of request lifecycle events. |
+| `services/profile_store.py` | **Profiles**. Encrypted per-user LLM keys + admin provider catalog. |
 | `services/turnstile_service.py`| **Turnstile Service**. Cloudflare CAPTCHA verification. |
 | `services/error_handler.py`   | **Error Handler**. Maps provider API errors to actionable user messages. |
 | `tests/`                      | **Test Suite**. Config, provider factory, catalog, and API endpoint tests (pytest). |
@@ -216,7 +218,9 @@ Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-U
 | `src/views/my-requests-view.tsx` | Live sessions, open requests, last 10 with clone / clone-and-edit. |
 | `src/views/request-detail-view.tsx` | Request + evaluated policy detail with role-aware actions. |
 | `src/views/review-dashboard-view.tsx` | Admin queue with status filters, detail review, audit trail tab. |
-| `src/views/settings-view.tsx` | Theme, tooltips, demo tour, AI provider defaults, help guides, about. |
+| `src/views/settings-view.tsx` | Theme, tooltips, demo tour, AI provider fallback, profiles, help guides, about. |
+| `src/components/profile-manager.tsx` | Named LLM profiles (write-only keys, activate/rename/rotate/delete). |
+| `src/components/catalog-manager.tsx` | Admin provider/model enable toggles. |
 | `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
 | `src/views/rejected-view.tsx` | Denial display with reviewer feedback + AI-generated guidance. |
 | `src/components/help-sections.tsx` | Guides, shortcuts, updates, local audit log export (rendered in Settings). |

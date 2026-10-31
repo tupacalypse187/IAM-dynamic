@@ -21,6 +21,9 @@ interface RequestViewProps {
   onDurationChange: (duration: number) => void
   selectedProvider: string
   selectedModel?: string
+  /** Active saved profile (its key evaluates); null = server defaults. */
+  activeProfileId: number | null
+  activeProfileName: string | null
   onSubmitted: (outcome: SubmitOutcome) => void
 }
 
@@ -33,6 +36,8 @@ export default function RequestView({
   onDurationChange,
   selectedProvider,
   selectedModel,
+  activeProfileId,
+  activeProfileName,
   onSubmitted,
 }: RequestViewProps) {
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +58,7 @@ export default function RequestView({
         model: selectedModel,
         durationHours: duration,
         answers: extraAnswers,
+        profileId: activeProfileId ?? undefined,
       }),
     onSuccess: (outcome) => {
       setError(null)
@@ -101,6 +107,13 @@ export default function RequestView({
           <CardDescription>
             Start with what you are trying to accomplish. If anything is ambiguous, you will be
             asked at most three short follow-up questions.
+            Evaluating with{' '}
+            {activeProfileName ? (
+              <span className="font-medium text-foreground">profile “{activeProfileName}”</span>
+            ) : (
+              <span className="font-medium text-foreground">server defaults</span>
+            )}
+            {' '}— change it in Settings.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

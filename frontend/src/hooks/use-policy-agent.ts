@@ -131,6 +131,7 @@ export function usePolicyAgent(): PolicyAgent {
         provider: input.provider,
         model: input.model,
         duration: input.durationHours,
+        profile_id: input.profileId,
       })
       return { kind: 'submitted', request, findings: [], summary: null }
     }
@@ -150,6 +151,7 @@ export function usePolicyAgent(): PolicyAgent {
       risk: result.result.risk,
       explanation: result.result.explanation,
       approver_note: result.result.approver_note,
+      profile_id: input.profileId,
     })
     if (isDesktop()) {
       desktop

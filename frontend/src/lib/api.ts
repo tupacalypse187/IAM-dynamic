@@ -1,7 +1,9 @@
 import type {
   AccessRequest,
   AuditEvent,
+  CatalogEntry,
   Credentials,
+  LlmProfile,
   PolicyResponse,
   ProvidersResponse,
   RequestStatus,
@@ -119,7 +121,7 @@ export const api = {
     }),
 
   // Access requests + review workflow
-  submitRequest: (data: { request_text: string; provider: string; model?: string; duration: number }) =>
+  submitRequest: (data: { request_text: string; provider: string; model?: string; duration: number; profile_id?: number }) =>
     request<AccessRequest>('/api/requests', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -134,10 +136,43 @@ export const api = {
     risk: string
     explanation: string
     approver_note: string
+    profile_id?: number
   }) =>
     request<AccessRequest>('/api/requests/record', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  // LLM profiles + provider catalog
+  listCatalog: () => request<CatalogEntry[]>('/api/providers/catalog'),
+
+  updateCatalog: (data: { provider: string; model: string; enabled: boolean }) =>
+    request<CatalogEntry>('/api/providers/catalog', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  listProfiles: () => request<LlmProfile[]>('/api/profiles'),
+
+  createProfile: (data: { name: string; provider: string; model: string; api_key: string }) =>
+    request<LlmProfile>('/api/profiles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateProfile: (id: number, data: { name?: string; api_key?: string }) =>
+    request<LlmProfile>(`/api/profiles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteProfile: (id: number) =>
+    request<void>(`/api/profiles/${id}`, { method: 'DELETE' }),
+
+  activateProfile: (id: number) =>
+    request<LlmProfile>(`/api/profiles/${id}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     }),
 
   listRequests: (params?: { status?: RequestStatus | 'all'; mine?: boolean }) => {

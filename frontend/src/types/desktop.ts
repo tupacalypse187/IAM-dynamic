@@ -34,6 +34,8 @@ export interface GenerateInput {
   model?: string
   durationHours: number
   answers?: Record<string, string>
+  /** Saved LLM profile — its key evaluates, its id attributes the record. */
+  profileId?: number
 }
 
 export interface DesktopPolicyResult {
