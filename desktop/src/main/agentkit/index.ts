@@ -112,19 +112,32 @@ export async function issueCredentials(
   input: IssueInput,
   onProgress: ProgressFn = () => undefined,
 ): Promise<LeaseCredentials> {
+  if (input.approved !== true) {
+    throw new Error('Refusing to issue credentials: the policy has not been approved.')
+  }
+  // Re-analyze the exact policy being issued: the renderer payload is
+  // untrusted and may differ from the reviewed policy. The guardrail can
+  // only raise risk, and the issued duration is clamped to its ceiling.
+  const { findings, risk: guardrailRisk } = analyzePolicy(input.policy)
+  const requestedDuration = input.durationHours || 1
+  const durationHours = Math.min(requestedDuration, maxDurationForRisk(guardrailRisk))
   onProgress({ stage: 'done', message: 'Issuing temporary credentials…' })
   const creds = await deps.backend.issueCredentials({
     policy: input.policy,
-    duration: input.durationHours,
-    approved: input.approved,
+    duration: durationHours,
+    approved: true,
   })
   lease.credentials = creds
   lease.issuedAt = new Date().toISOString()
-  deps.ledger.append('credentials_issued', `Temporary credentials issued (${input.durationHours}h)`, {
+  deps.ledger.append('credentials_issued', `Temporary credentials issued (${durationHours}h)`, {
     expiration: creds.expiration,
     region: creds.region,
-    approved: input.approved,
+    approved: true,
     changeCase: input.changeCase ?? null,
+    durationHours,
+    requestedDurationHours: requestedDuration,
+    guardrailRisk,
+    findingCount: findings.length,
   })
   return creds
 }

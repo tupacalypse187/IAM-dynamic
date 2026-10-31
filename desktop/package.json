@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/config.test.mjs",
+    "test": "npm run build && node --test test/config.test.mjs test/navigation.test.mjs test/agentkit.test.mjs",
     "dev": "npm run build && electron .",
     "postinstall": "electron-builder install-app-deps",
     "dist": "npm run build && electron-builder",
