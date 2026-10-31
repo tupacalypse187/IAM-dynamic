@@ -11,6 +11,7 @@ import path from 'node:path'
 import { app, BrowserWindow, globalShortcut, ipcMain, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { loadConfig } from './config'
+import { DEV_URL, isAllowedExternalUrl, isInternalNavigationUrl } from './navigation'
 import { Ledger, eventsToMarkdown } from './ledger'
 import { vault } from './vault'
 import { createBackendClient } from './agentkit/backend-client'
@@ -32,7 +33,6 @@ import {
 } from '../shared/ipc-contract'
 
 const CAPTURE_SHORTCUT = 'CommandOrControl+Shift+I'
-const DEV_URL = 'http://localhost:3000'
 
 const config = loadConfig(app.isPackaged)
 const lease: LeaseState = { credentials: null, issuedAt: null }
@@ -72,10 +72,24 @@ function createWindow(): BrowserWindow {
     void window.loadFile(path.join(__dirname, '../../frontend-dist/index.html'))
   }
 
-  // Keep navigation inside the app; external links open in the browser.
+  // Keep navigation inside the app; http(s) links open in the OS browser,
+  // everything else is denied outright (never handed to a file or protocol
+  // handler). The will-navigate guard below covers same-window navigation
+  // (e.g. a clicked Markdown link without target=_blank), which would
+  // otherwise load an external page inside the window with preload bridge
+  // (vault token) access.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url)
+    }
     return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isInternalNavigationUrl(url)) return
+    event.preventDefault()
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url)
+    }
   })
 
   // Never show a blank window silently: surface load failures in-window
