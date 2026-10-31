@@ -306,6 +306,10 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/...
 APPROVER_NAME=Admin
 ```
 
+### Setting up Slack notifications
+
+Create the app from the manifest, upload the icon, activate incoming webhooks, and paste the URL into `.env` as `SLACK_WEBHOOK_URL` — full runbook with manifest, icon spec, test command, and troubleshooting: [📣 Slack App Setup](docs/slack-setup.md).
+
 ### Setting up Telegram notifications
 
 1. **Create the bot** — message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts (name + a username ending in `bot`), and copy the **HTTP API token** it shows.
