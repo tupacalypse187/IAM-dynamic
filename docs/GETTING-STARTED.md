@@ -256,7 +256,7 @@ npm run dev
 6. **Activate** the approved request when you are ready — credentials appear only then
 7. Higher-risk requests wait for an admin in the **Review** tab (approve / deny / send back with feedback); track everything in **My Requests**, including live sessions and your last 10 (clone / clone-and-edit)
 
-> 💡 **Use your own key:** open **Settings → LLM profiles**, add a profile with your provider key, and activate it — new evaluations bill to your key instead of the server default. Admins curate the available providers under **Settings → Provider catalog**.
+> 💡 **Use your own key:** open **Settings → LLM profiles**, add a profile with your provider key, and activate it — new evaluations bill to your key instead of the server default. Admins curate the available providers under **Settings → Provider catalog**; disabling a provider/model blocks new evaluations with it (server defaults and profiles alike) until re-enabled.
 
 ---
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 🛡️ Fixes
+
+- **Review-sweep hardening**: disabling a provider catalog pair now blocks server-default evaluation with that pair (400, alias-normalized; unknown models still pass through); admin preview-as-user no longer exposes the provider-catalog toggles; submit/record omit the Settings fallback provider/model when a saved profile is active (the server resolves them from the profile); removed dead `generate`/`issue` hook methods, `api.resubmitRequest`, and the unreachable diff-vs-previous tab; base-role trust tightened to exactly `DeployerPrincipalArn` (removed the unused `sts.amazonaws.com` service statement, dev stack updated)
+
 ### ✨ New Features
 
 - **Request/approval separation**: users submit requests and track their own (live sessions, open requests, last 10 with clone / clone-and-edit); admins get a Review Dashboard queue (needs-review filter, pending-count badge) with full request + evaluated LLM response detail and approve / deny / send-back-with-feedback actions

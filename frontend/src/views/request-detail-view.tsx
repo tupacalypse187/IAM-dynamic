@@ -17,7 +17,7 @@ import { usePolicyAgent } from '@/hooks/use-policy-agent'
 import { api } from '@/lib/api'
 import { reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
 import type { AccessRequest, Credentials, ReviewDecision } from '@/types/api'
-import type { GuardrailFinding, PolicyDocument } from '@/types/desktop'
+import type { GuardrailFinding } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
 import { CopyButton } from '@/components/copy-button'
@@ -46,8 +46,6 @@ interface RequestDetailViewProps {
   findings?: GuardrailFinding[]
   /** Plain-language grant summary (desktop submit path; null otherwise). */
   summary?: string | null
-  /** Previous policy when revising — enables the before/after diff tab. */
-  baselinePolicy?: PolicyDocument | null
   onBack: () => void
   onChanged: (updated: AccessRequest) => void
   onCredentialsIssued: (credentials: Credentials) => void
@@ -76,9 +74,6 @@ const findingStyles = {
 
 const PolicyJsonViewer = lazy(() =>
   import('@/components/policy-editor').then((m) => ({ default: m.PolicyJsonViewer })),
-)
-const PolicyDiffViewer = lazy(() =>
-  import('@/components/policy-editor').then((m) => ({ default: m.PolicyDiffViewer })),
 )
 
 function EditorFallback() {
@@ -117,7 +112,6 @@ export default function RequestDetailView({
   isOwner,
   findings = [],
   summary = null,
-  baselinePolicy = null,
   onBack,
   onChanged,
   onCredentialsIssued,
@@ -130,10 +124,6 @@ export default function RequestDetailView({
   const agent = usePolicyAgent()
 
   const policyJson = useMemo(() => JSON.stringify(request.policy, null, 2), [request.policy])
-  const baselineJson = useMemo(
-    () => (baselinePolicy ? JSON.stringify(baselinePolicy, null, 2) : null),
-    [baselinePolicy],
-  )
   const riskyLines = useMemo(() => wildcardLineNumbers(policyJson), [policyJson])
 
   const risk = riskConfig[request.risk] ?? riskConfig.medium
@@ -351,7 +341,6 @@ export default function RequestDetailView({
           <Tabs defaultValue="json">
             <TabsList>
               <TabsTrigger value="json">JSON</TabsTrigger>
-              {baselineJson !== null && <TabsTrigger value="diff">Diff vs previous</TabsTrigger>}
               <TabsTrigger value="explanation">Explanation</TabsTrigger>
               {isAdmin && <TabsTrigger value="audit">Audit trail</TabsTrigger>}
             </TabsList>
@@ -367,13 +356,6 @@ export default function RequestDetailView({
                 />
               </div>
             </TabsContent>
-            {baselineJson !== null && (
-              <TabsContent value="diff" className="mt-4">
-                <Suspense fallback={<EditorFallback />}>
-                  <PolicyDiffViewer original={baselineJson} modified={policyJson} />
-                </Suspense>
-              </TabsContent>
-            )}
             <TabsContent value="explanation" className="mt-4 space-y-4">
               <div>
                 <h4 className="font-semibold">Explanation</h4>

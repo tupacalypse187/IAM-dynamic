@@ -33,7 +33,7 @@ import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 import { Separator } from './components/ui/separator'
 import type { AccessRequest, Credentials, PolicyResponse } from './types/api'
-import type { GuardrailFinding, PolicyDocument } from './types/desktop'
+import type { GuardrailFinding } from './types/desktop'
 import RequestView from './views/request-view'
 import MyRequestsView from './views/my-requests-view'
 import RequestDetailView from './views/request-detail-view'
@@ -59,7 +59,6 @@ function AppShell() {
   const [detailOrigin, setDetailOrigin] = useState<'mine' | 'dashboard'>('mine')
   const [findings, setFindings] = useState<GuardrailFinding[]>([])
   const [summary, setSummary] = useState<string | null>(null)
-  const [baselinePolicy, setBaselinePolicy] = useState<PolicyDocument | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [backendUrl, setBackendUrl] = useState<string | null>(null)
   const [appPlatform, setAppPlatform] = useState<string | null>(null)
@@ -200,7 +199,6 @@ function AppShell() {
     if (!keepContext) {
       setFindings([])
       setSummary(null)
-      setBaselinePolicy(null)
     }
     setView('detail')
   }
@@ -210,7 +208,6 @@ function AppShell() {
     setActiveRequest(outcome.request)
     setFindings(outcome.findings)
     setSummary(outcome.summary)
-    setBaselinePolicy(null)
     setDetailOrigin('mine')
     setView('detail')
   }
@@ -498,7 +495,6 @@ function AppShell() {
                   isOwner={username !== null && activeRequest.requester === username}
                   findings={findings}
                   summary={summary}
-                  baselinePolicy={baselinePolicy}
                   onBack={() => setView(detailOrigin === 'dashboard' && showAdminUI ? 'dashboard' : 'mine')}
                   onChanged={handleChanged}
                   onCredentialsIssued={handleCredentialsIssued}
@@ -523,7 +519,7 @@ function AppShell() {
                 <SettingsView
                   appVersion={appVersion}
                   backendUrl={backendUrl}
-                  isAdmin={isAdmin}
+                  isAdmin={showAdminUI}
                   diagnostics={{
                     bridge: desktop.isDesktop,
                     urlPlatform: queryPlat,

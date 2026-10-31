@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { desktop, isDesktop } from '@/lib/desktop'
-import type { AccessRequest, Credentials, PolicyResponse } from '@/types/api'
+import type { AccessRequest, Credentials } from '@/types/api'
 import type {
   AgentProgress,
   ClarifyQuestion,
-  DesktopPolicyResult,
   GenerateInput,
   GuardrailFinding,
-  RiskLevel,
 } from '@/types/desktop'
-
-export type PolicyOutcome =
-  | { kind: 'clarify'; questions: ClarifyQuestion[] }
-  | { kind: 'policy'; data: PolicyResponse; findings: GuardrailFinding[]; summary: string | null }
 
 /** A submitted (persisted) request plus transient local evaluation context. */
 export interface SubmitOutcome {
@@ -30,8 +24,6 @@ export type SubmitResult =
 
 export interface PolicyAgent {
   readonly inDesktop: boolean
-  generate: (input: GenerateInput) => Promise<PolicyOutcome>
-  issue: (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string; risk: string; autoApproved: boolean }) => Promise<Credentials>
   /** Evaluate (clarify-aware) and persist as a review-routed request. */
   submit: (input: GenerateInput) => Promise<SubmitResult>
   /** Issue credentials for an approved request when the owner is ready. */
@@ -43,17 +35,6 @@ export interface PolicyAgent {
    */
   track: (kind: string, summary: string, details?: Record<string, unknown>) => void
   subscribeProgress: (listener: (progress: AgentProgress) => void) => () => void
-}
-
-function toWebPolicy(result: DesktopPolicyResult): PolicyResponse {
-  return {
-    policy: result.policy,
-    risk: result.risk,
-    explanation: result.explanation,
-    approver_note: result.approver_note,
-    auto_approved: result.auto_approved,
-    max_duration: result.max_duration,
-  }
 }
 
 /**
@@ -76,60 +57,14 @@ export function usePolicyAgent(): PolicyAgent {
     }
   }, [])
 
-  const generate = useCallback(async (input: GenerateInput): Promise<PolicyOutcome> => {
-    if (isDesktop()) {
-      const result = await desktop.generatePolicy(input)
-      if (result.status === 'clarify') {
-        return { kind: 'clarify', questions: result.questions }
-      }
-      return {
-        kind: 'policy',
-        data: toWebPolicy(result.result),
-        findings: result.findings,
-        summary: result.summary,
-      }
-    }
-    const data = await api.generatePolicy({
-      request_text: composeWebText(input),
-      provider: input.provider,
-      model: input.model,
-      duration: input.durationHours,
-    })
-    return { kind: 'policy', data, findings: [], summary: null }
-  }, [])
-
-  const issue = useCallback(
-    async (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string; risk: string; autoApproved: boolean }) => {
-      if (isDesktop()) {
-        const creds = await desktop.issueCredentials({
-          policy: input.policy,
-          durationHours: input.duration,
-          approved: input.approved,
-          changeCase: input.changeCase,
-          // Reviewed risk label; the backend normalizes anything unexpected.
-          risk: input.risk as RiskLevel,
-          autoApproved: input.autoApproved,
-        })
-        return {
-          access_key_id: creds.access_key_id,
-          secret_access_key: creds.secret_access_key,
-          session_token: creds.session_token,
-          expiration: creds.expiration,
-          region: creds.region,
-        } satisfies Credentials
-      }
-      const { autoApproved, ...rest } = input
-      return api.issueCredentials({ ...rest, change_case: input.changeCase, risk: input.risk, auto_approved: autoApproved })
-    },
-    [],
-  )
-
   const submit = useCallback(async (input: GenerateInput): Promise<SubmitResult> => {
     if (!isDesktop()) {
       const request = await api.submitRequest({
         request_text: composeWebText(input),
-        provider: input.provider,
-        model: input.model,
+        // A saved profile resolves provider/model server-side; sending the
+        // unrelated Settings fallback alongside would only mislead.
+        provider: input.profileId ? undefined : input.provider,
+        model: input.profileId ? undefined : input.model,
         duration: input.durationHours,
         profile_id: input.profileId,
       })
@@ -144,8 +79,8 @@ export function usePolicyAgent(): PolicyAgent {
     }
     const request = await api.recordRequest({
       request_text: result.requestText,
-      provider: input.provider,
-      model: input.model,
+      provider: input.profileId ? undefined : input.provider,
+      model: input.profileId ? undefined : input.model,
       duration: result.result.max_duration,
       policy: result.result.policy,
       risk: result.result.risk,
@@ -184,7 +119,7 @@ export function usePolicyAgent(): PolicyAgent {
     desktop.logAudit(kind, summary, details).catch(() => undefined)
   }, [])
 
-  return { inDesktop: isDesktop(), generate, issue, submit, activate, track, subscribeProgress }
+  return { inDesktop: isDesktop(), submit, activate, track, subscribeProgress }
 }
 
 /** Browser path: fold guided fields + answers into one request string. */

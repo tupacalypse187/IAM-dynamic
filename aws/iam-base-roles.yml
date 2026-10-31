@@ -37,10 +37,6 @@ Resources:
             Principal:
               AWS: !Ref DeployerPrincipalArn
             Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
-            Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/ReadOnlyAccess
 
@@ -59,10 +55,6 @@ Resources:
             Principal:
               AWS: !Ref DeployerPrincipalArn
             Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
-            Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/SecurityAudit
 
@@ -80,10 +72,6 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !Ref DeployerPrincipalArn
-            Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: DeveloperBase
@@ -121,10 +109,6 @@ Resources:
             Principal:
               AWS: !Ref DeployerPrincipalArn
             Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
-            Action: sts:AssumeRole
       Policies:
         - PolicyName: SupportBase
           PolicyDocument:
@@ -158,10 +142,6 @@ Resources:
             Principal:
               AWS: !Ref DeployerPrincipalArn
             Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
-            Action: sts:AssumeRole
       Policies:
         - PolicyName: DataAnalystBase
           PolicyDocument:
@@ -192,10 +172,6 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !Ref DeployerPrincipalArn
-            Action: sts:AssumeRole
-          - Effect: Allow
-            Principal:
-              Service: sts.amazonaws.com
             Action: sts:AssumeRole
       Policies:
         - PolicyName: AdminBase
