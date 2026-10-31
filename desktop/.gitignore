@@ -3,5 +3,6 @@ dist/
 release/
 frontend-dist/
 build/icons/
+assets/app-icon.png
 *.log
 .DS_Store

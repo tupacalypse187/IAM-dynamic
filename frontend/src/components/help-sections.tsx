@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Download, Keyboard, History, RefreshCw, Play } from 'lucide-react'
+import { BookOpen, Download, Keyboard, History, RefreshCw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { desktop } from '@/lib/desktop'
 import { SHORTCUTS } from '@/lib/shortcuts'
-import { launchTour } from '@/lib/tour'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-interface HelpViewProps {
+interface HelpSectionsProps {
   appVersion: string | null
 }
 
@@ -39,7 +38,7 @@ const GUIDES = [
   },
 ] as const
 
-export default function HelpView({ appVersion }: HelpViewProps) {
+export default function HelpSections({ appVersion }: HelpSectionsProps) {
   const { toast } = useToast()
   const [events, setEvents] = useState<Array<{ id: number; ts: string; kind: string; summary: string }>>([])
   const [checking, setChecking] = useState(false)
@@ -75,30 +74,7 @@ export default function HelpView({ appVersion }: HelpViewProps) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Help & Guides</h2>
-        <p className="text-muted-foreground">
-          Learn the app, replay the tour, and inspect your local audit log.
-        </p>
-      </div>
-
-      {/* Tour */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Play className="h-5 w-5" aria-hidden="true" />
-            Guided tour
-          </CardTitle>
-          <CardDescription>
-            A 5-step walkthrough of requesting access, from the request box to review.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={launchTour}>Replay the tour</Button>
-        </CardContent>
-      </Card>
-
+    <>
       {/* Shortcuts */}
       <Card>
         <CardHeader>
@@ -106,7 +82,7 @@ export default function HelpView({ appVersion }: HelpViewProps) {
             <Keyboard className="h-5 w-5" aria-hidden="true" />
             Keyboard shortcuts
           </CardTitle>
-          <CardDescription>Press ? anywhere to return here.</CardDescription>
+          <CardDescription>Press ? anywhere to open Settings.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="divide-y">
@@ -218,6 +194,6 @@ export default function HelpView({ appVersion }: HelpViewProps) {
           </CardContent>
         </Card>
       )}
-    </div>
+    </>
   )
 }

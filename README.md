@@ -216,10 +216,13 @@ Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-U
 | `src/views/my-requests-view.tsx` | Live sessions, open requests, last 10 with clone / clone-and-edit. |
 | `src/views/request-detail-view.tsx` | Request + evaluated policy detail with role-aware actions. |
 | `src/views/review-dashboard-view.tsx` | Admin queue with status filters, detail review, audit trail tab. |
+| `src/views/settings-view.tsx` | Theme, tooltips, demo tour, AI provider defaults, help guides, about. |
 | `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
 | `src/views/rejected-view.tsx` | Denial display with reviewer feedback + AI-generated guidance. |
-| `src/views/help-view.tsx`     | Help, guides, shortcuts, update status, audit log export. |
+| `src/components/help-sections.tsx` | Guides, shortcuts, updates, local audit log export (rendered in Settings). |
+| `src/components/tip.tsx`     | Settings-gated hover tooltips + localStorage prefs provider. |
 | `src/lib/requests.ts`         | Status/risk presentation helpers (labels, reviewer display, live check). |
+| `src/lib/prefs.ts`            | Typed localStorage preferences (tooltips, tour autoplay, sidebar). |
 | `src/components/update-manager.tsx` | Auto-update toasts + restart banner (desktop only). |
 | `src/components/policy-editor.tsx` | Lazy-loaded Monaco JSON viewer + diff (code-split chunk). |
 | `src/lib/desktop.ts`          | Typed `window.desktopApi` bridge with browser fallbacks. |

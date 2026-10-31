@@ -106,7 +106,8 @@ thin shims. Desktop submits persist via `POST /api/requests/record`
 
 Electron app reusing the React frontend and the remote FastAPI backend (no Python bundling). Source of truth for IPC is [`desktop/src/shared/ipc-contract.ts`](desktop/src/shared/ipc-contract.ts); the renderer mirror lives in `frontend/src/types/desktop.ts`.
 
-- **`desktop/src/main/main.ts`** — window (macOS `hiddenInset` + vibrancy), typed IPC handlers, tray, `Cmd/Ctrl+Shift+I` global capture, single-instance
+- **`desktop/src/main/main.ts`** — window (macOS `hiddenInset` + vibrancy, `show: false` until the splash releases it), typed IPC handlers, tray, `Cmd/Ctrl+Shift+I` global capture, single-instance
+- **`desktop/assets/splash.html`** — static cold-start splash (icon art staged by `npm run stage-splash` from `build/icons/icon.png`, version via URL hash, reduced-motion aware); shown ≥3s, skipped when `config.isDev`
 - **`desktop/src/main/agentkit/`** — **Agent_Kit**: `router.ts` (intent extraction + ≤3 clarifying questions), `backend-client.ts` (remote API, incl. request activation), `audit-risk.ts` (deterministic guardrail — raises, never lowers, backend risk), `index.ts` (Router → Architect → Audit → Lifecycle orchestrator with progress events, plus `activateRequest` for approved-request issuance with lease/tray/ledger updates)
 - **`desktop/src/main/ledger.ts`** — SQLite audit ledger (`better-sqlite3`, WAL, versioned migrations, Markdown/JSON export)
 - **`desktop/src/main/vault.ts`** — OS credential store via lazy `keytar` (JWT only; temp AWS creds stay memory-only)
@@ -351,13 +352,15 @@ Risk-based duration limits:
 - GitHub-flavored markdown with syntax highlighting, styled tables, and per-code-block copy buttons
 - Revise request or start fresh buttons
 
-### Help View (`frontend/src/views/help-view.tsx`)
-- Guided tour replay, how-to guides, keyboard shortcut reference (rendered from `lib/shortcuts.ts`)
-- Update status + manual check, local audit log with Markdown/JSON export (desktop only)
+### Settings View (`frontend/src/views/settings-view.tsx`)
+- Demo & display (theme picker, hover-tooltip toggle, tour autoplay + replay), AI provider/model defaults, help & guides sections, about (version + backend URL)
+- Help content lives in `frontend/src/components/help-sections.tsx` (guides, shortcuts from `lib/shortcuts.ts`, updates, local audit log with Markdown/JSON export on desktop)
+- Preferences persist in localStorage (`frontend/src/lib/prefs.ts`, `iam-prefs-v1`); hover help via the `Tip` wrapper (`frontend/src/components/tip.tsx`, Radix Tooltip, zero DOM when disabled)
 
 ### App Shell (`frontend/src/App.tsx`)
 - Error boundary around view content (a render crash shows a recoverable fallback)
-- Two-row header: draggable title bar (`.app-drag`, app name + version + user/role, macOS traffic-light safe area) above a clickable toolbar (`.app-no-drag`, view nav + pending-count badge + help + logout)
+- Fixed two-row header outside the scroll container: opaque draggable title bar (`.app-drag`, app name + version + user/role, macOS traffic-light safe area) above a clickable toolbar (`.app-no-drag`, sidebar toggle + view nav + pending-count badge + temporary user-preview toggle + logout)
+- Collapsible sidebar rail (persisted pref); `?` shortcut opens Settings; TEMPORARY hackathon-only admin "view as user" preview (`components/preview-banner.tsx`, UI masking only — server roles unchanged, remove for production)
 - Role-aware nav: New Request / My Requests for everyone, Review dashboard only for admins (`is_admin` from `/api/auth/verify`)
 - Toast notifications (session expiry, copy failures) + `UpdateBanner` (desktop update downloaded/available)
 - First-run guided tour (`lib/tour.ts`, driver.js, `data-tour` anchors), `?` shortcut → Help
@@ -371,7 +374,7 @@ Full guides: [`docs/desktop-app.md`](docs/desktop-app.md) (run/build/sign/troubl
 - **Dev loop:** backend on :8000 → `frontend` dev server on :3000 → `desktop` (`npm run dev` loads the dev server; packaged builds use `frontend-dist/`)
 - **Config:** `IAM_DESKTOP_BACKEND_URL` (default `http://localhost:8000`), `IAM_DESKTOP_UPDATE_FEED_URL` (unset = updates off), `CSC_NAME` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` for sign/notarize
 - **Releases:** macOS arm64 `.dmg` locally; Windows x64 NSIS via on-demand CodeBuild (`desktop/scripts/setup-codebuild.sh` creates the project; builds start manually); Linux arm64 via Docker; publishing flags are CLI-only so local builds never phone home
-- **Conventions:** IPC contract is the source of truth (`desktop/src/shared/` ↔ `frontend/src/types/desktop.ts` mirror); shortcuts live in `lib/shortcuts.ts` (Help renders them); tour anchors use `data-tour` attributes; Monaco must stay lazy-loaded (`components/policy-editor.tsx`)
+- **Conventions:** IPC contract is the source of truth (`desktop/src/shared/` ↔ `frontend/src/types/desktop.ts` mirror); shortcuts live in `lib/shortcuts.ts` (Settings renders them); tour anchors use `data-tour` attributes; Monaco must stay lazy-loaded (`components/policy-editor.tsx`); macOS detection lives in `lib/desktop.ts` (`resolvePlatform` falls through empty `userAgentData.platform` — covered in `test/desktop-env.test.mjs`)
 
 ## 🔌 API Endpoints
 
