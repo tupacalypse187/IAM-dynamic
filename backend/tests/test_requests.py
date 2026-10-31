@@ -111,6 +111,55 @@ class TestSubmit:
         assert {"submitted", "queued_for_review"} <= kinds
 
 
+class TestCatalogEnforcement:
+    """An admin-disabled catalog pair must block server-default evaluation."""
+
+    def test_disabled_pair_blocked(self, _as_user, _stub_llm):
+        _as_user("alice")
+        main.get_profile_store().set_catalog_enabled(
+            "muse", "muse-spark-1.3-contributor", False
+        )
+        client = TestClient(main.app)
+        response = _submit(client, model="muse-spark-1.3-contributor")
+        assert response.status_code == 400
+
+    def test_disabled_pair_blocked_via_alias(self, _as_user, _stub_llm):
+        _as_user("alice")
+        main.get_profile_store().set_catalog_enabled(
+            "muse", "muse-spark-1.3-contributor", False
+        )
+        client = TestClient(main.app)
+        response = _submit(
+            client, provider="meta", model="muse-spark-1.3-contributor"
+        )
+        assert response.status_code == 400
+
+    def test_other_model_of_provider_still_allowed(self, _as_user, _stub_llm):
+        _as_user("alice")
+        main.get_profile_store().set_catalog_enabled(
+            "muse", "muse-spark-1.3-contributor", False
+        )
+        client = TestClient(main.app)
+        response = _submit(client, model="muse-wonder-1.0")
+        assert response.status_code == 201
+
+    def test_all_disabled_blocks_unset_model(self, _as_user, _stub_llm):
+        _as_user("alice")
+        store = main.get_profile_store()
+        for entry in store.list_catalog():
+            if entry["provider"] == "muse":
+                store.set_catalog_enabled("muse", entry["model"], False)
+        client = TestClient(main.app)
+        response = _submit(client)
+        assert response.status_code == 400
+
+    def test_unknown_model_id_passes_through(self, _as_user, _stub_llm):
+        _as_user("alice")
+        client = TestClient(main.app)
+        response = _submit(client, model="custom-future-model")
+        assert response.status_code == 201
+
+
 class TestRecord:
     def _record_body(self, **overrides):
         body = {

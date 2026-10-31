@@ -1114,6 +1114,7 @@ def _resolve_evaluation_config(
     applies. Returns (provider, model, api_key, audit_label).
     """
     if profile_id is None:
+        _enforce_catalog_enabled(body_provider, body_model)
         return body_provider, body_model, None, "server-default"
     store = _require_profile_store()
     try:
@@ -1129,6 +1130,42 @@ def _resolve_evaluation_config(
     public = store.get_profile_public(user, profile_id)
     label = f"profile:{public['name']}" if public else f"profile:{profile_id}"
     return creds["provider"], creds["model"], creds["api_key"], label
+
+
+def _enforce_catalog_enabled(
+    provider: Optional[str], model: Optional[str]
+) -> None:
+    """Block evaluation with an admin-disabled catalog pair.
+
+    Only an explicit admin disable blocks: unknown providers and unknown
+    model ids pass through (they cannot have been disabled), and the
+    model-unset server-default path is allowed while any catalog model
+    for the provider stays enabled. Aliases are normalized first so the
+    check cannot be dodged with an alternate provider spelling. When the
+    profile store itself is unavailable, evaluation falls back to legacy
+    server-default behavior.
+    """
+    if not provider:
+        return
+    store = get_profile_store()
+    if store is None:
+        return
+    norm = _PROVIDER_ALIASES.get(provider.lower(), provider.lower())
+    entries = [e for e in store.list_catalog() if e["provider"] == norm]
+    if not entries:
+        return
+    if model:
+        if any(e["model"] == model and not e["enabled"] for e in entries):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{provider}/{model} is not enabled. Ask an administrator.",
+            )
+        return
+    if all(not e["enabled"] for e in entries):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{provider} is not enabled. Ask an administrator.",
+        )
 
 
 def _evaluate_access_request(

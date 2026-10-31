@@ -2,8 +2,9 @@
  * Shared IPC contract between the Electron main process and the preload bridge.
  *
  * This file is the source of truth for channel names and payload shapes.
- * The renderer mirror lives in `frontend/src/lib/desktop.ts` — keep the two
- * in sync manually; the `DesktopApi` surface is intentionally small so drift
+ * The renderer mirror lives in `frontend/src/types/desktop.ts` (the bridge
+ * accessor is `frontend/src/lib/desktop.ts`) — keep the three in sync
+ * manually; the `DesktopApi` surface is intentionally small so drift
  * is easy to spot in review.
  */
 

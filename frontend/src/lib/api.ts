@@ -121,7 +121,7 @@ export const api = {
     }),
 
   // Access requests + review workflow
-  submitRequest: (data: { request_text: string; provider: string; model?: string; duration: number; profile_id?: number }) =>
+  submitRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; profile_id?: number }) =>
     request<AccessRequest>('/api/requests', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -129,7 +129,7 @@ export const api = {
 
   recordRequest: (data: {
     request_text: string
-    provider: string
+    provider?: string
     model?: string
     duration: number
     policy: Record<string, unknown>
@@ -187,12 +187,6 @@ export const api = {
 
   reviewRequest: (id: number, data: { decision: ReviewDecision; feedback?: string }) =>
     request<AccessRequest>(`/api/requests/${id}/review`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  resubmitRequest: (id: number, data: { request_text?: string; provider?: string; model?: string; duration?: number }) =>
-    request<AccessRequest>(`/api/requests/${id}/resubmit`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
