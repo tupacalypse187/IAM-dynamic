@@ -20,6 +20,55 @@ class STSAssumeRoleError(STSServiceError):
     pass
 
 
+# Action verbs that never mutate state. A policy is read-only only when
+# EVERY allowed action starts with one of these (trailing wildcards like
+# "s3:Get*" count: the verb stem still only reads).
+READ_ONLY_VERBS = (
+    "get", "list", "describe", "head", "batchget", "query", "scan",
+    "search", "lookup", "count",
+)
+
+
+def select_base_role_class(policy: Dict[str, Any]) -> str:
+    """Classify a session policy into a base-role class.
+
+    Returns "readonly" when every Allow action is read-only, else
+    "developer". Conservative by design: wildcards, NotAction, Deny-only
+    statements, and unparseable shapes all resolve to "developer" — the
+    session policy still scopes the final credentials downward, so a
+    misclassification only widens the *base*, never the grant.
+    """
+    try:
+        statements = policy.get("Statement", [])
+    except AttributeError:
+        return "developer"
+    if not isinstance(statements, list) or not statements:
+        return "developer"
+    allow_actions: list = []
+    for statement in statements:
+        if not isinstance(statement, dict):
+            return "developer"
+        if statement.get("Effect") != "Allow":
+            continue
+        actions = statement.get("Action", [])
+        if isinstance(actions, str):
+            actions = [actions]
+        if "NotAction" in statement:
+            return "developer"
+        if not isinstance(actions, list) or not actions:
+            return "developer"
+        allow_actions.extend(actions)
+    if not allow_actions:
+        return "developer"
+    for action in allow_actions:
+        if not isinstance(action, str):
+            return "developer"
+        verb = action.split(":")[-1].lower().rstrip("*")
+        if not verb or not verb.startswith(READ_ONLY_VERBS):
+            return "developer"
+    return "readonly"
+
+
 class STSService:
     """
     AWS STS service for issuing temporary credentials
@@ -43,7 +92,8 @@ class STSService:
         self,
         policy: Dict[str, Any],
         duration_hours: float,
-        session_name: str = "gemini-jit-session"
+        session_name: str = "gemini-jit-session",
+        role_arn: str = None
     ) -> Dict[str, Any]:
         """
         Assume role with session policy
@@ -52,6 +102,8 @@ class STSService:
             policy: IAM policy document as dict
             duration_hours: Session duration in hours (max 12)
             session_name: Identifier for the session
+            role_arn: Base role to assume (least-privilege match for the
+                task); defaults to the service's configured role.
 
         Returns:
             Dictionary with credentials and metadata including:
@@ -74,10 +126,11 @@ class STSService:
             if duration_seconds > 43200:
                 raise ValueError("Duration cannot exceed 12 hours (43200 seconds)")
 
-            logger.info(f"Assuming role {session_name} for {duration_hours} hours")
+            target_arn = role_arn or self.role_arn
+            logger.info(f"Assuming role {target_arn} with session policy")
 
             response = self.client.assume_role(
-                RoleArn=self.role_arn,
+                RoleArn=target_arn,
                 RoleSessionName=session_name,
                 DurationSeconds=duration_seconds,
                 Policy=json.dumps(policy)

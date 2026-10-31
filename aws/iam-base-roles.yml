@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM-Dynamic session base roles. The backend assumes ONE of these per
+  request (matched to the task class) and intersects it with the
+  AI-generated session policy, so credentials are the intersection of a
+  least-privilege base and a least-privilege refinement. REVIEW ONLY —
+  do not apply without owner approval (see aws/base-roles.md).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Name prefix segment (roles become iam-dynamic-<env>-<Class>).
+  DeployerPrincipalArn:
+    Type: String
+    Description: >-
+      IAM user/role ARN the backend runs as (the identity calling
+      sts:AssumeRole). Trust is restricted to exactly this principal.
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # -- ReadOnly: every Get/List/Describe across the account ----------------
+  ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-ReadOnly"
+      Path: /iam-dynamic/
+      Description: Least-privilege base for read-only tasks (auditor-friendly).
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+
+  # -- Auditor: security-audit managed set + CloudTrail log reads ----------
+  AuditorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-Auditor"
+      Path: /iam-dynamic/
+      Description: Security-audit base (no data-plane reads beyond metadata).
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+
+  # -- Developer: broad builder set, no identity/admin surfaces ------------
+  DeveloperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-Developer"
+      Path: /iam-dynamic/
+      Description: Builder base (no IAM, Organizations, or account surfaces).
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DeveloperBase
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - ec2:*
+                  - lambda:*
+                  - dynamodb:*
+                  - rds:*
+                  - cloudwatch:*
+                  - logs:*
+                  - secretsmanager:Get* # read-only secret access
+                  - secretsmanager:List*
+                  - secretsmanager:Describe*
+                  - cloudformation:Describe*
+                  - cloudformation:List*
+                Resource: "*"
+
+  # -- Support: incident triage (logs, metrics, safe EC2 control) ----------
+  SupportRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-Support"
+      Path: /iam-dynamic/
+      Description: Incident-triage base (observe + reboot, no data export).
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SupportBase
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:*
+                  - logs:*
+                  - ec2:Describe*
+                  - ec2:Get*
+                  - ec2:RebootInstances
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - s3:Get*
+                  - s3:List*
+                Resource: "*"
+
+  # -- DataAnalyst: analytics reads only -----------------------------------
+  DataAnalystRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-DataAnalyst"
+      Path: /iam-dynamic/
+      Description: Analytics read base (S3/Athena/Glue reads, no writes).
+      MaxSessionDuration: 43200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DataAnalystBase
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                  - s3:List*
+                  - athena:*
+                  - glue:Get*
+                  - glue:List*
+                  - glue:SearchTables
+                  - glue:BatchGetPartition
+                Resource: "*"
+
+  # -- Admin: break-glass, mirrors the current POC role --------------------
+  AdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "iam-dynamic-${Environment}-Admin"
+      Path: /iam-dynamic/
+      Description: Break-glass admin base. Never auto-selected; manual review only.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeployerPrincipalArn
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: sts.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AdminBase
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - ec2:*
+                  - lambda:*
+                  - dynamodb:*
+                  - rds:*
+                  - cloudwatch:*
+                  - logs:*
+                  - secretsmanager:*
+                Resource: "*"
+
+Outputs:
+  ReadOnlyRoleArn:
+    Value: !GetAtt ReadOnlyRole.Arn
+  AuditorRoleArn:
+    Value: !GetAtt AuditorRole.Arn
+  DeveloperRoleArn:
+    Value: !GetAtt DeveloperRole.Arn
+  SupportRoleArn:
+    Value: !GetAtt SupportRole.Arn
+  DataAnalystRoleArn:
+    Value: !GetAtt DataAnalystRole.Arn
+  AdminRoleArn:
+    Value: !GetAtt AdminRole.Arn

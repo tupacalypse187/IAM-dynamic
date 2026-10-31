@@ -32,6 +32,15 @@ class AWSConfig(BaseModel):
     """AWS configuration"""
     account_id: str = Field(..., env="AWS_ACCOUNT_ID")
     role_name: str = Field(default="AgentPOCSessionRole", env="AWS_ROLE_NAME")
+    # Least-privilege base roles (see aws/iam-base-roles.yml). When set,
+    # activation assumes the task-matched base instead of role_name.
+    # Unset (default) keeps today's single-role behavior unchanged.
+    base_role_readonly: str = Field(default="")
+    base_role_developer: str = Field(default="")
+    base_role_support: str = Field(default="")
+    base_role_analyst: str = Field(default="")
+    base_role_auditor: str = Field(default="")
+    base_role_admin: str = Field(default="")
 
     @property
     def role_arn(self) -> str:
@@ -139,6 +148,11 @@ class AppConfig(BaseModel):
     requests_db_path: str = Field(default="requests.db")
     # Append-only JSONL audit trail (metadata only, never credentials).
     audit_log_path: str = Field(default="data/audit.jsonl")
+    # Per-user LLM profiles + provider catalog (SQLite, gitignored).
+    profiles_db_path: str = Field(default="profiles.db")
+    # Fernet secret for profile API keys at rest. Falls back to JWT_SECRET;
+    # set explicitly in production so key rotation is independent.
+    profile_encryption_key: str = Field(default="")
 
     class Config:
         env_nested_delimiter = "__"
@@ -155,7 +169,13 @@ def load_config() -> AppConfig:
         # Extract environment variables for each config section
         aws_config = AWSConfig(
             account_id=os.getenv("AWS_ACCOUNT_ID"),
-            role_name=os.getenv("AWS_ROLE_NAME", "AgentPOCSessionRole")
+            role_name=os.getenv("AWS_ROLE_NAME", "AgentPOCSessionRole"),
+            base_role_readonly=os.getenv("AWS_BASE_ROLE_READONLY", ""),
+            base_role_developer=os.getenv("AWS_BASE_ROLE_DEVELOPER", ""),
+            base_role_support=os.getenv("AWS_BASE_ROLE_SUPPORT", ""),
+            base_role_analyst=os.getenv("AWS_BASE_ROLE_ANALYST", ""),
+            base_role_auditor=os.getenv("AWS_BASE_ROLE_AUDITOR", ""),
+            base_role_admin=os.getenv("AWS_BASE_ROLE_ADMIN", ""),
         )
 
         llm_config = LLMConfig(
@@ -203,6 +223,8 @@ def load_config() -> AppConfig:
             approver_name=os.getenv("APPROVER_NAME", "Admin"),
             requests_db_path=os.getenv("AUTH_REQUESTS_DB", "requests.db"),
             audit_log_path=os.getenv("AUDIT_LOG_PATH", "data/audit.jsonl"),
+            profiles_db_path=os.getenv("AUTH_PROFILES_DB", "profiles.db"),
+            profile_encryption_key=os.getenv("PROFILE_ENCRYPTION_KEY", ""),
         )
 
         logger.info(f"Configuration loaded successfully. LLM Provider: {config.llm.provider}")

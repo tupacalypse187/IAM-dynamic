@@ -88,7 +88,7 @@ class TestRejectionGuidanceModelTier:
     def test_without_model_uses_fast_tier(self, monkeypatch):
         captured = {}
 
-        def fake_get_llm_provider(provider_type=None, model=None):
+        def fake_get_llm_provider(provider_type=None, model=None, api_key=None):
             captured["provider"] = provider_type
             captured["model"] = model
             return _StubGuidanceProvider()
@@ -105,7 +105,7 @@ class TestRejectionGuidanceModelTier:
     def test_explicit_model_passes_through(self, monkeypatch):
         captured = {}
 
-        def fake_get_llm_provider(provider_type=None, model=None):
+        def fake_get_llm_provider(provider_type=None, model=None, api_key=None):
             captured["provider"] = provider_type
             captured["model"] = model
             return _StubGuidanceProvider()

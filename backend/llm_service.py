@@ -275,14 +275,15 @@ class GeminiProvider(LLMProvider):
     Source: https://ai.google.dev/gemini-api/docs/models
     """
 
-    def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY")
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        # Explicit overrides (per-user profiles) win; environment is fallback.
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
             logger.warning("GOOGLE_API_KEY not found. GeminiProvider may fail.")
 
         # Gemini 4 Argon (released October 2026)
         # Model code: gemini-4-argon
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-4-argon")
+        self.model_name = model or os.getenv("GEMINI_MODEL", "gemini-4-argon")
 
         # Initialize client based on API version.
         # genai.Client raises on api_key=None, so only build it when present;
@@ -421,9 +422,10 @@ class OpenAICompatibleProvider(LLMProvider):
         "and restart the backend."
     )
 
-    def __init__(self):
-        self.api_key = os.getenv(self.api_key_env)
-        self.model_name = os.getenv(self.model_env, self.default_model)
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        # Explicit overrides (per-user profiles) win; environment is fallback.
+        self.api_key = api_key or os.getenv(self.api_key_env)
+        self.model_name = model or os.getenv(self.model_env, self.default_model)
         if not self.api_key:
             logger.warning(f"{self.api_key_env} not found. {self.display_name} provider may fail.")
             self.client = None
@@ -525,9 +527,10 @@ class AnthropicProvider(LLMProvider):
     Source: https://platform.claude.com/docs/en/docs/about-claude/models/overview
     """
 
-    def __init__(self):
-        self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+    def __init__(self, api_key: str | None = None, model: str | None = None):
+        # Explicit overrides (per-user profiles) win; environment is fallback.
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.model_name = model or os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
             self.client = None
@@ -679,7 +682,9 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     )
 
 
-def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvider:
+def get_llm_provider(
+    provider_type: str = None, model: str = None, api_key: str = None
+) -> LLMProvider:
     """
     Get the configured LLM provider instance
 
@@ -694,6 +699,8 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
     Args:
         provider_type: Optional provider type to override environment variable
         model: Optional model name to override provider default
+        api_key: Optional API key (per-user profiles); environment is fallback.
+            Callers must never log this value.
 
     Returns:
         LLMProvider instance
@@ -704,23 +711,24 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
         provider_type = provider_type.lower()
 
     if provider_type == "openai":
-        provider = OpenAIProvider()
+        provider = OpenAIProvider(api_key=api_key, model=model)
     elif provider_type in ("anthropic", "claude"):
-        provider = AnthropicProvider()
+        provider = AnthropicProvider(api_key=api_key, model=model)
     elif provider_type in ("zhipu", "glm"):
-        provider = ZhipuProvider()
+        provider = ZhipuProvider(api_key=api_key, model=model)
     elif provider_type in ("muse", "meta"):
-        provider = MuseProvider()
+        provider = MuseProvider(api_key=api_key, model=model)
     elif provider_type == "openrouter":
-        provider = OpenRouterProvider()
+        provider = OpenRouterProvider(api_key=api_key, model=model)
     elif provider_type == "gemini":
-        provider = GeminiProvider()
+        provider = GeminiProvider(api_key=api_key, model=model)
     else:
         logger.warning(f"Unknown provider '{provider_type}', defaulting to Gemini")
-        provider = GeminiProvider()
+        provider = GeminiProvider(api_key=api_key, model=model)
 
-    # Override model if specified
-    if model:
+    # Legacy model override path (kept for callers that pin a model without
+    # a key). Constructor overrides above already applied when given.
+    if model and provider.model_name != model:
         provider.model_name = model
         logger.info(f"Using model override: {model}")
 
