@@ -9,6 +9,7 @@ from llm_service import (
     ZhipuProvider,
     MuseProvider,
     OpenRouterProvider,
+    PolicyResponse,
     FALLBACK_GUIDANCE,
 )
 from services.error_handler import UserFacingError
@@ -93,3 +94,23 @@ class TestMissingKeyBehavior:
             "read all of s3", {"Statement": []}, "high"
         )
         assert result == FALLBACK_GUIDANCE
+
+
+class TestRiskNormalization:
+    """PolicyResponse normalizes raw model risk strings to a valid level."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("low", "low"),
+        (" Low ", "low"),
+        ("HIGH", "high"),
+        ("Critical", "critical"),
+        ("medium", "medium"),
+    ])
+    def test_known_risks_normalize(self, raw, expected):
+        resp = PolicyResponse({}, raw, "expl", "note")
+        assert resp.risk == expected
+
+    @pytest.mark.parametrize("raw", ["bogus", "moderate", "", None])
+    def test_unknown_risks_fall_back_to_medium(self, raw):
+        resp = PolicyResponse({}, raw, "expl", "note")
+        assert resp.risk == "medium"
