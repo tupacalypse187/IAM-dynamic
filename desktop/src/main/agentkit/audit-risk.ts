@@ -58,6 +58,8 @@ interface Statement {
   effect: string
   actions: string[]
   resources: string[]
+  notActions: string[]
+  notResources: string[]
 }
 
 function asArray(value: unknown): string[] {
@@ -76,6 +78,8 @@ function statementsOf(policy: PolicyDocument): Statement[] {
       effect: typeof s['Effect'] === 'string' ? (s['Effect'] as string) : 'Allow',
       actions: asArray(s['Action']),
       resources: asArray(s['Resource']),
+      notActions: asArray(s['NotAction']),
+      notResources: asArray(s['NotResource']),
     }))
 }
 
@@ -117,6 +121,34 @@ export function analyzePolicy(policy: PolicyDocument): { findings: GuardrailFind
   for (const stmt of statements) {
     const where = `Statement[${stmt.index}]`
     if (stmt.effect.toLowerCase() === 'deny') continue
+
+    if (stmt.notActions.length > 0) {
+      findings.push({
+        severity: 'high',
+        location: `${where}.NotAction`,
+        message: `NotAction (${stmt.notActions.join(', ')}) inverts scope — it allows every action except those listed.`,
+        suggestion: 'Replace NotAction with the explicit Action list needed for the task.',
+      })
+      raise('high')
+    }
+    if (stmt.notResources.length > 0) {
+      findings.push({
+        severity: 'high',
+        location: `${where}.NotResource`,
+        message: `NotResource (${stmt.notResources.join(', ')}) inverts scope — it allows every resource except those listed.`,
+        suggestion: 'Replace NotResource with the explicit Resource ARNs from the request.',
+      })
+      raise('high')
+    }
+    if (stmt.actions.length === 0 && stmt.notActions.length === 0) {
+      findings.push({
+        severity: 'medium',
+        location: where,
+        message: 'Statement has no Action (and no NotAction); its grant cannot be verified as least-privilege.',
+        suggestion: 'Add the explicit actions this task requires, or remove the statement.',
+      })
+      raise('medium')
+    }
 
     for (const action of stmt.actions) {
       if (action === '*') {
@@ -191,8 +223,8 @@ export function combineRisk(backendRisk: RiskLevel, guardrailRisk: RiskLevel): R
 /** One-sentence plain-language summary for users who don't read JSON. */
 export function summarizePlainLanguage(policy: PolicyDocument, durationHours: number): string {
   const statements = statementsOf(policy)
-  const actions = [...new Set(statements.flatMap((s) => s.actions))].slice(0, 6)
-  const resources = [...new Set(statements.flatMap((s) => s.resources))].slice(0, 4)
+  const actions = [...new Set(statements.flatMap((s) => [...s.actions, ...s.notActions.map((a) => `not ${a}`)]))].slice(0, 6)
+  const resources = [...new Set(statements.flatMap((s) => [...s.resources, ...s.notResources.map((r) => `not ${r}`)]))].slice(0, 4)
   const actionPart = actions.length > 0 ? actions.join(', ') : 'no actions'
   const resourcePart = resources.length > 0 ? resources.join(', ') : 'no resources'
   return `This grants ${actionPart} on ${resourcePart} for ${durationHours} hour${durationHours === 1 ? '' : 's'}.`
