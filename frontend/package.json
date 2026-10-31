@@ -10,6 +10,9 @@
     "lint": "eslint .",
     "test": "node --experimental-strip-types --test test/net-error.test.mjs test/error-detail.test.mjs"
   },
+  "overrides": {
+    "dompurify": "^3.4.17"
+  },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "monaco-editor": "^0.57.0",
