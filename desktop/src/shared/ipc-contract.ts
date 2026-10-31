@@ -12,8 +12,10 @@ export const IpcChannels = {
   agentGenerate: 'agentkit:generate-policy',
   agentProgress: 'agentkit:progress',
   agentIssue: 'agentkit:issue-credentials',
+  agentActivate: 'agentkit:activate-request',
   agentRevoke: 'agentkit:revoke-credentials',
   leaseStatus: 'lease:status',
+  ledgerAppend: 'ledger:append',
   ledgerRecent: 'ledger:recent',
   ledgerExport: 'ledger:export',
   vaultSetToken: 'vault:set-token',
@@ -80,6 +82,8 @@ export type GenerateResult =
       /** Plain-language grant summary for users who don't read JSON. */
       summary: string
       auditId: number
+      /** Exact evaluated text (intent + answers) — persisted verbatim on submit. */
+      requestText: string
     }
 
 export interface AgentProgress {
@@ -116,6 +120,9 @@ export type AuditKind =
   | 'credentials_issued'
   | 'revocation'
   | 'update_installed'
+  | 'request_submitted'
+  | 'request_reviewed'
+  | 'request_activated'
 
 export interface AuditEvent {
   id: number

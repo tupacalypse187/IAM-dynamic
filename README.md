@@ -37,7 +37,7 @@
 
 ## 🏗️ Architecture
 
-The portal is a three-tier app — React frontend, Caddy TLS proxy, FastAPI backend — wrapped around a policy pipeline: an LLM drafts a least-privilege policy, a risk gate decides between auto-approval and human sign-off, and only then does the STS service mint short-lived credentials.
+The portal is a three-tier app — React frontend, Caddy TLS proxy, FastAPI backend — wrapped around a policy pipeline: an LLM drafts a least-privilege policy, a risk gate decides between auto-approval and human sign-off, and only when the requester activates the approved request does the STS service mint short-lived credentials. Requests and approvals live on separate surfaces: users track their own in My Requests, admins review everything in the Review Dashboard, and every state change lands in an append-only JSONL audit trail.
 
 ```mermaid
 flowchart TD
@@ -82,20 +82,24 @@ graph LR
     Agent -->|Evaluate| Risk[Risk Score]
     end
     
-    Risk -->|Low Risk| Auto[Auto-Approve]
-    Risk -->|High Risk| Manual[Manual Approval]
+    Risk -->|Low Risk| Auto[Auto-Approved]
+    Risk -->|High Risk| Manual[Admin Review]
     
-    Auto --> STS[AWS STS]
-    Manual -->|Justification| STS
+    Auto --> Activate[Owner Activates When Ready]
+    Manual -->|Approve| Activate
+    
+    Activate --> STS[AWS STS]
     
     STS -->|Credentials| API
     API -->|JSON Response| UI
 ```
 
 1.  **Request:** User types a request or clicks a template in the React UI.
-2.  **Analysis:** AI provider (Gemini/OpenAI/Claude/GLM) analyzes intent and drafts IAM policy.
+2.  **Analysis:** AI provider (Gemini/OpenAI/Claude/GLM/Muse) analyzes intent and drafts IAM policy.
 3.  **Risk Check:** The system flags wildcards or sensitive services.
-4.  **Issuance:** If approved, `boto3` calls `sts:AssumeRole` to mint credentials.
+4.  **Review:** Low-risk requests are auto-approved; everything else waits in the admin Review Dashboard (approve / deny / send back with feedback).
+5.  **Activation:** Approval alone issues nothing — the requester activates when ready, and `boto3` calls `sts:AssumeRole` to mint credentials.
+6.  **Audit:** Every step is appended to the JSONL audit trail with requester and reviewer identities.
 
 ---
 
@@ -104,7 +108,10 @@ graph LR
 ### Core Functionality
 -   **Natural Language Input:** "I need read-only access to the production S3 bucket."
 -   **Quick Templates:** One-click prompts for common tasks (S3 Read, EC2 Observer, Lambda Invoker, CloudWatch Logs, DynamoDB Reader, Secrets Manager).
--   **Modern React UI:** Multi-view state machine (request → review → credentials/rejected) with responsive design.
+-   **Modern React UI:** Multi-view app (submit → my requests → detail → credentials/denied) with responsive design and a draggable title bar (app name, version, signed-in user).
+-   **Review Workflow:** Requests and approvals are separate surfaces — users track live sessions, open requests, and their last 10 (clone / clone-and-edit); admins review the full queue with approve / deny / send-back-with-feedback.
+-   **Two-Step Activation:** Approval never issues credentials by itself; the requester activates when ready.
+-   **Audit Trail:** Append-only JSONL log of every lifecycle event (actor roles included), browsable by admins in-app.
 -   **Multi-Provider LLM Support:** Runtime switching between Gemini (default), OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, or OpenRouter (one key, many vendors).
 -   **Notifications:** Audit logs and approval notifications delivered to Slack, Telegram, or both.
 
@@ -153,7 +160,7 @@ The **IAM-Dynamic Desktop Security Studio** ([`desktop/`](desktop/)) wraps the R
 | ---------- | ------ |
 | Agent_Kit | Typed main-process pipeline (Router → Policy Architect → Audit → Lifecycle) over the existing `/api/*` endpoints, with a local SQLite audit ledger |
 | Guardrail | Deterministic wildcard/escalation checks that raise — never lower — backend risk; findings render with one-click remediation |
-| UX | Task-first requests, ≤3 clarifying questions, Monaco JSON review with diff, plain-language summaries, tray lease countdown |
+| UX | Task-first requests, ≤3 clarifying questions, Monaco JSON review with diff, plain-language summaries, activate-when-ready credentials, tray lease countdown |
 | Updates | Background download, user-triggered restart (toast + banner); feed docs in [`docs/auto-update.md`](docs/auto-update.md) |
 | Onboarding | First-run tour, Help view (`?`), shortcut cheatsheet |
 | Packaging | macOS arm64 `.dmg` (signed + notarized), Windows x64 NSIS via on-demand CodeBuild, Linux arm64 AppImage/deb |
@@ -191,6 +198,8 @@ Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-U
 | `services/slack_service.py`   | **Slack Service**. Notification handling.        |
 | `services/telegram_service.py`| **Telegram Service**. Bot API notifications.     |
 | `services/auth_service.py`    | **Auth Service**. JWT tokens and bcrypt password verification. |
+| `services/request_store.py` | **Request Store**. SQLite persistence for access requests + review state machine. |
+| `services/audit_log.py`     | **Audit Log**. Append-only JSONL trail of request lifecycle events. |
 | `services/turnstile_service.py`| **Turnstile Service**. Cloudflare CAPTCHA verification. |
 | `services/error_handler.py`   | **Error Handler**. Maps provider API errors to actionable user messages. |
 | `tests/`                      | **Test Suite**. Config, provider factory, catalog, and API endpoint tests (pytest). |
@@ -204,10 +213,13 @@ Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-U
 | `src/components/auth-provider.tsx` | Auth context provider (JWT session management). |
 | `src/views/login-view.tsx`    | Login form with optional Turnstile CAPTCHA. |
 | `src/views/request-view.tsx`  | Request input form with templates and provider selector. |
-| `src/views/review-view.tsx`   | Policy review with risk assessment and approval. |
+| `src/views/my-requests-view.tsx` | Live sessions, open requests, last 10 with clone / clone-and-edit. |
+| `src/views/request-detail-view.tsx` | Request + evaluated policy detail with role-aware actions. |
+| `src/views/review-dashboard-view.tsx` | Admin queue with status filters, detail review, audit trail tab. |
 | `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
-| `src/views/rejected-view.tsx` | Rejection display with AI-generated guidance. |
+| `src/views/rejected-view.tsx` | Denial display with reviewer feedback + AI-generated guidance. |
 | `src/views/help-view.tsx`     | Help, guides, shortcuts, update status, audit log export. |
+| `src/lib/requests.ts`         | Status/risk presentation helpers (labels, reviewer display, live check). |
 | `src/components/update-manager.tsx` | Auto-update toasts + restart banner (desktop only). |
 | `src/components/policy-editor.tsx` | Lazy-loaded Monaco JSON viewer + diff (code-split chunk). |
 | `src/lib/desktop.ts`          | Typed `window.desktopApi` bridge with browser fallbacks. |

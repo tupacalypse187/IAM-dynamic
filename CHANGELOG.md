@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### ✨ New Features
 
+- **Request/approval separation**: users submit requests and track their own (live sessions, open requests, last 10 with clone / clone-and-edit); admins get a Review Dashboard queue (needs-review filter, pending-count badge) with full request + evaluated LLM response detail and approve / deny / send-back-with-feedback actions
+- **Two-step activation**: approval (human or low-risk auto-approval) creates no credentials — the requester activates when ready via `POST /api/requests/{id}/activate`, which re-checks the stored policy server-side before STS
+- **Server audit trail**: every lifecycle event lands in an append-only JSONL log (`backend/data/audit.jsonl`, metadata only, never secrets) with actor roles (`user` / `admin` / `automated`); admins browse it in-app per request and globally
+- **Title bar**: dedicated draggable top bar (app name, version, signed-in user + role) separated from the clickable toolbar, with a macOS traffic-light safe area
 - **New LLM providers**: Meta Muse (`MUSE_API_KEY`, default `muse-spark-1.3-contributor`, via the OpenAI-compatible Meta Model API) and OpenRouter gateway (`OPENROUTER_API_KEY`, `vendor/model` slugs, default `z-ai/glm-5.3`)
 - **Model catalog refresh (September 2026)**: GLM-5.3/GLM-5.3-Flash (new Z.AI defaults), GPT-5.6 family, Claude Opus/Sonnet 5, Gemini 3.8/3.7 Flash; removed shut-down `gemini-3.1-flash-lite-preview` and deprecated `o1-preview`
 - **UI/UX refresh**: Inter typography, refined light/dark palettes with success/warning tokens, toast notifications, error boundary, reject-action confirmation dialog, responsive layout with mobile navigation drawer, accessibility improvements (ARIA labels, live error regions)

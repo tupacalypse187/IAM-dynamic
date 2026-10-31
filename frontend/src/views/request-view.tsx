@@ -3,9 +3,8 @@ import { useMutation } from '@tanstack/react-query'
 import { Loader2, AlertCircle, Info, MessageCircleQuestion, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { usePolicyAgent } from '@/hooks/use-policy-agent'
-import type { PolicyResponse } from '@/types/api'
-import type { AgentProgress, ClarifyQuestion, GuardrailFinding } from '@/types/desktop'
+import { usePolicyAgent, type SubmitOutcome } from '@/hooks/use-policy-agent'
+import type { AgentProgress, ClarifyQuestion } from '@/types/desktop'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,7 +20,7 @@ interface RequestViewProps {
   onDurationChange: (duration: number) => void
   selectedProvider: string
   selectedModel?: string
-  onPolicyGenerated: (data: PolicyResponse, findings: GuardrailFinding[], summary: string | null) => void
+  onSubmitted: (outcome: SubmitOutcome) => void
 }
 
 const EMPTY_GUIDED = { task: '', resources: '', ticket: '' }
@@ -33,7 +32,7 @@ export default function RequestView({
   onDurationChange,
   selectedProvider,
   selectedModel,
-  onPolicyGenerated,
+  onSubmitted,
 }: RequestViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [guided, setGuided] = useState(EMPTY_GUIDED)
@@ -46,7 +45,7 @@ export default function RequestView({
 
   const generateMutation = useMutation({
     mutationFn: (extraAnswers: Record<string, string>) =>
-      agent.generate({
+      agent.submit({
         freeText: requestText,
         guided,
         provider: selectedProvider,
@@ -63,7 +62,7 @@ export default function RequestView({
         setQuestions(null)
         setAnswers({})
         setStage(null)
-        onPolicyGenerated(outcome.data, outcome.findings, outcome.summary)
+        onSubmitted(outcome)
       }
     },
     onError: (err: Error) => {
@@ -238,7 +237,7 @@ export default function RequestView({
                   {stage ?? 'Analyzing...'}
                 </>
               ) : (
-                'Analyze & Generate Policy'
+                'Submit Request'
               )}
             </Button>
           )}
@@ -257,7 +256,8 @@ export default function RequestView({
               <p className="mt-1 text-muted-foreground">
                 Our AI analyzes your request and generates a least-privilege IAM policy tailored
                 to your needs. Low-risk requests are auto-approved, while higher-risk requests
-                may require manual approval.
+                go to an administrator for review. Approval alone issues nothing — you activate
+                the credentials when you are ready to use them.
               </p>
             </div>
           </div>

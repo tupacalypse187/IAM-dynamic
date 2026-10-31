@@ -29,6 +29,10 @@ const desktopApi = {
 
   issueCredentials: (input: IssueInput): Promise<LeaseCredentials> =>
     ipcRenderer.invoke(IpcChannels.agentIssue, input),
+  activateRequest: (requestId: number): Promise<LeaseCredentials> =>
+    ipcRenderer.invoke(IpcChannels.agentActivate, requestId),
+  logAudit: (kind: string, summary: string, details?: Record<string, unknown>): Promise<number> =>
+    ipcRenderer.invoke(IpcChannels.ledgerAppend, kind, summary, details ?? {}),
   revokeCredentials: (): Promise<void> => ipcRenderer.invoke(IpcChannels.agentRevoke),
   getLeaseStatus: (): Promise<LeaseStatus> => ipcRenderer.invoke(IpcChannels.leaseStatus),
 

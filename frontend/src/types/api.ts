@@ -51,6 +51,51 @@ export interface Credentials {
   region: string
 }
 
+export type RequestStatus =
+  | 'pending_review'
+  | 'approved'
+  | 'denied'
+  | 'changes_requested'
+  | 'activated'
+  | 'discarded'
+
+/** A persisted access request with its evaluated LLM response + review state. */
+export interface AccessRequest {
+  id: number
+  requester: string
+  request_text: string
+  provider: string
+  model: string | null
+  duration: number
+  policy: Record<string, unknown>
+  risk: 'low' | 'medium' | 'high' | 'critical'
+  explanation: string
+  approver_note: string
+  auto_approved: boolean
+  status: RequestStatus
+  reviewer: string | null
+  feedback: string | null
+  revision: number
+  created_at: string
+  updated_at: string
+  decided_at: string | null
+  credentials_expires_at: string | null
+}
+
+export type ReviewDecision = 'approve' | 'deny' | 'changes_requested'
+
+/** One JSONL audit trail record. Extra keys carry event metadata. */
+export interface AuditEvent {
+  ts: string
+  event: string
+  request_id: number
+  actor: string
+  actor_role: string
+  from_status: string | null
+  to_status: string | null
+  [key: string]: unknown
+}
+
 export interface HealthResponse {
   status: string
   version: string

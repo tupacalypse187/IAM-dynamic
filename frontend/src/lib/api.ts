@@ -1,4 +1,12 @@
-import type { Credentials, PolicyResponse, ProvidersResponse } from '@/types/api'
+import type {
+  AccessRequest,
+  AuditEvent,
+  Credentials,
+  PolicyResponse,
+  ProvidersResponse,
+  RequestStatus,
+  ReviewDecision,
+} from '@/types/api'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const TOKEN_KEY = 'iam_token'
@@ -64,6 +72,7 @@ export interface AuthStatus {
   authenticated: boolean
   username: string | null
   auth_required: boolean
+  is_admin: boolean
 }
 
 export interface LoginResponse {
@@ -108,4 +117,70 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // Access requests + review workflow
+  submitRequest: (data: { request_text: string; provider: string; model?: string; duration: number }) =>
+    request<AccessRequest>('/api/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  recordRequest: (data: {
+    request_text: string
+    provider: string
+    model?: string
+    duration: number
+    policy: Record<string, unknown>
+    risk: string
+    explanation: string
+    approver_note: string
+  }) =>
+    request<AccessRequest>('/api/requests/record', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  listRequests: (params?: { status?: RequestStatus | 'all'; mine?: boolean }) => {
+    const search = new URLSearchParams()
+    if (params?.status && params.status !== 'all') search.set('status', params.status)
+    if (params?.mine) search.set('mine', 'true')
+    const query = search.toString()
+    return request<AccessRequest[]>(`/api/requests${query ? `?${query}` : ''}`)
+  },
+
+  getRequest: (id: number) => request<AccessRequest>(`/api/requests/${id}`),
+
+  reviewRequest: (id: number, data: { decision: ReviewDecision; feedback?: string }) =>
+    request<AccessRequest>(`/api/requests/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  resubmitRequest: (id: number, data: { request_text?: string; provider?: string; model?: string; duration?: number }) =>
+    request<AccessRequest>(`/api/requests/${id}/resubmit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  discardRequest: (id: number) =>
+    request<AccessRequest>(`/api/requests/${id}/discard`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  activateRequest: (id: number) =>
+    request<Credentials>(`/api/requests/${id}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  readAudit: (params?: { request_id?: number; actor?: string; event?: string; limit?: number }) => {
+    const search = new URLSearchParams()
+    if (params?.request_id !== undefined) search.set('request_id', String(params.request_id))
+    if (params?.actor) search.set('actor', params.actor)
+    if (params?.event) search.set('event', params.event)
+    if (params?.limit !== undefined) search.set('limit', String(params.limit))
+    const query = search.toString()
+    return request<AuditEvent[]>(`/api/audit${query ? `?${query}` : ''}`)
+  },
 }

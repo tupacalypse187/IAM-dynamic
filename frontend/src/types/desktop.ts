@@ -47,7 +47,15 @@ export interface DesktopPolicyResult {
 
 export type DesktopGenerateResult =
   | { status: 'clarify'; questions: ClarifyQuestion[] }
-  | { status: 'policy'; result: DesktopPolicyResult; findings: GuardrailFinding[]; summary: string; auditId: number }
+  | {
+      status: 'policy'
+      result: DesktopPolicyResult
+      findings: GuardrailFinding[]
+      summary: string
+      auditId: number
+      /** Exact evaluated text (intent + answers) — persisted verbatim on submit. */
+      requestText: string
+    }
 
 export interface AgentProgress {
   stage: 'router' | 'architect' | 'audit' | 'done'
@@ -88,6 +96,10 @@ export interface DesktopApi {
   generatePolicy: (input: GenerateInput) => Promise<DesktopGenerateResult>
   onAgentProgress: (listener: (progress: AgentProgress) => void) => () => void
   issueCredentials: (input: { policy: PolicyDocument; durationHours: number; approved: boolean; changeCase?: string; risk?: RiskLevel; autoApproved?: boolean }) => Promise<DesktopCredentials>
+  /** Activate an approved request: server issuance + local lease/tray/ledger. */
+  activateRequest: (requestId: number) => Promise<DesktopCredentials>
+  /** Mirror a server-side request event into the local audit ledger. */
+  logAudit: (kind: string, summary: string, details?: Record<string, unknown>) => Promise<number>
   revokeCredentials: () => Promise<void>
   getLeaseStatus: () => Promise<LeaseStatus>
   getRecentEvents: (limit?: number) => Promise<AuditEventView[]>
