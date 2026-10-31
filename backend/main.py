@@ -433,7 +433,7 @@ FAST_MODELS = {
     "openai": "gpt-6-luna",
     "claude": "claude-haiku-5-5",
     "zhipu": "glm-5.3-flash",
-    "muse": "muse-spark-1.1",
+    "muse": "muse-spark-1.3-contributor",
     "openrouter": "z-ai/glm-5.3-flash",
 }
 

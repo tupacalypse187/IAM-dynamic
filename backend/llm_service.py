@@ -634,7 +634,7 @@ class MuseProvider(OpenAICompatibleProvider):
     display_name = "Meta Muse (api.meta.ai)"
     api_key_env = "MUSE_API_KEY"
     model_env = "MUSE_MODEL"
-    default_model = "muse-spark-1.3-contributor"
+    default_model = "muse-wonder-1.0"
     base_url = "https://api.meta.ai/v1"
     # Meta's API accepts the OpenAI SDK surface, but response_format support is
     # not guaranteed across Muse tiers - rely on prompt + fence-stripping parse.

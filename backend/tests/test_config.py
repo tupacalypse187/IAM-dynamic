@@ -33,8 +33,8 @@ class TestModelDefaults:
     def test_gemini_default_is_4_argon(self):
         assert LLMConfig().gemini_model == "gemini-4-argon"
 
-    def test_muse_default_is_spark_1_3_contributor(self):
-        assert LLMConfig().muse_model == "muse-spark-1.3-contributor"
+    def test_muse_default_is_wonder_1_0(self):
+        assert LLMConfig().muse_model == "muse-wonder-1.0"
 
     def test_openrouter_default_is_glm_slug(self):
         assert LLMConfig().openrouter_model == "z-ai/glm-5.3"
