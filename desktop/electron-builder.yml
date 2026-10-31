@@ -2,8 +2,10 @@
 #
 # Build flow (see package.json scripts):
 #   1. `npm run build` compiles desktop/src -> dist/
-#   2. Build the renderer first: `npm run build --prefix ../frontend`
-#      (output is copied to frontend-dist/ by the `copy-renderer` step below)
+#   2. `npm run build:renderer` builds the frontend with VITE_API_BASE_URL
+#      baked in (defaults to http://localhost:8000; override per release —
+#      file:// has no same-origin fallback, so an unset URL breaks all API
+#      calls in the packaged app), then `copy-renderer` stages frontend-dist/
 #   3. `electron-builder --mac --arm64` (local) or `--win` (CodeBuild)
 #
 # Release channel: publishing is NOT configured here so local builds never

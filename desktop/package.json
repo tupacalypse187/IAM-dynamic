@@ -18,11 +18,12 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux",
     "copy-renderer": "rm -rf frontend-dist && mkdir -p frontend-dist && cp -R ../frontend/dist/. frontend-dist/",
+    "build:renderer": "node scripts/build-renderer.mjs",
     "icons": "python3 build/icon.py || ../backend/.venv/bin/python build/icon.py",
-    "predist": "npm run copy-renderer && npm run icons",
-    "predist:mac": "npm run copy-renderer && npm run icons",
-    "predist:win": "npm run copy-renderer && npm run icons",
-    "predist:linux": "npm run copy-renderer && npm run icons"
+    "predist": "npm run build:renderer && npm run copy-renderer && npm run icons",
+    "predist:mac": "npm run build:renderer && npm run copy-renderer && npm run icons",
+    "predist:win": "npm run build:renderer && npm run copy-renderer && npm run icons",
+    "predist:linux": "npm run build:renderer && npm run copy-renderer && npm run icons"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
