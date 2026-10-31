@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -55,9 +56,15 @@ class UserStore:
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
+        # One connection shared across FastAPI threadpool workers
+        # (check_same_thread=False), so writers serialize on this lock.
+        self._write_lock = threading.Lock()
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        # Let a second process's BEGIN IMMEDIATE wait for our commit
+        # instead of failing instantly with SQLITE_BUSY.
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._migrate()
 
     def _migrate(self) -> None:
@@ -94,16 +101,27 @@ class UserStore:
                 f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
             )
         password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        is_admin = 1 if self.count_users() == 0 else 0
-        try:
-            self._conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (username, password_hash, is_admin, _utcnow()),
-            )
-            self._conn.commit()
-        except sqlite3.IntegrityError:
-            raise RegistrationError("username_taken", "That username is already registered.")
+        # count+insert must be atomic: without the lock, concurrent first
+        # registrations on this shared connection can all observe zero
+        # users and each become admin. BEGIN IMMEDIATE additionally
+        # serializes writers in other processes (extra uvicorn workers).
+        with self._write_lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                is_admin = 1 if self.count_users() == 0 else 0
+                self._conn.execute(
+                    "INSERT INTO users (username, password_hash, is_admin, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (username, password_hash, is_admin, _utcnow()),
+                )
+            except sqlite3.IntegrityError:
+                self._conn.rollback()
+                raise RegistrationError("username_taken", "That username is already registered.")
+            except BaseException:
+                self._conn.rollback()
+                raise
+            else:
+                self._conn.commit()
         logger.info("Registered user %s (admin=%s)", username, bool(is_admin))
         return {"username": username, "is_admin": bool(is_admin)}
 

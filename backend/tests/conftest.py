@@ -8,12 +8,23 @@ root .env is picked up by load_dotenv — provider keys from it are stripped
 per test so the suite is hermetic and never fires real API calls.
 """
 import os
+import tempfile
 
 import pytest
 
 # Required by AWSConfig (Field(...)) — dummy value, never used against AWS
 os.environ.setdefault("AWS_ACCOUNT_ID", "123456789012")
 os.environ.setdefault("AWS_ROLE_NAME", "TestSessionRole")
+
+# main.get_user_store() lazily opens config.auth.users_db_path (default
+# backend/users.db). A developer's local registrations would then enable auth
+# mid-suite and break tests that assume the auth bypass — so point the default
+# at a throwaway file BEFORE any backend module is imported. main's
+# load_dotenv() never overrides an already-set variable, and the per-test
+# fixture below narrows this further to a fresh empty DB per test.
+os.environ.setdefault(
+    "AUTH_USERS_DB", os.path.join(tempfile.mkdtemp(prefix="iam-test-"), "users.db")
+)
 
 PROVIDER_KEY_VARS = [
     "GOOGLE_API_KEY",
@@ -28,6 +39,37 @@ PROVIDER_KEY_VARS = [
 # only bypassed when no password hash is configured, so force auth off for a
 # deterministic result even if a developer's .env enables it.
 AUTH_VARS = ["AUTH_PASSWORD_HASH", "JWT_SECRET"]
+
+
+@pytest.fixture(autouse=True)
+def _isolated_user_store(tmp_path, monkeypatch):
+    """Give every test a fresh empty users DB instead of backend/users.db.
+
+    main.user_store is a lazily-created singleton, so without this a store
+    built by one test (or a developer's real users.db) leaks into the next
+    and flips _auth_required(). Each test starts with user_store=None and
+    users_db_path pointing at its own tmp dir; the store built during the
+    test is closed afterwards. Tests that install their own store (e.g.
+    test_auth_users' `store` fixture) override this via monkeypatch and
+    close it in their own teardown — closing twice here is safe.
+    """
+    import main
+
+    existing = main.user_store
+    if existing is not None:
+        try:
+            existing.close()
+        except Exception:
+            pass
+    monkeypatch.setattr(main, "user_store", None)
+    monkeypatch.setattr(main.config.auth, "users_db_path", str(tmp_path / "users.db"))
+    yield
+    store = main.user_store
+    if store is not None:
+        try:
+            store.close()
+        except Exception:
+            pass
 
 
 @pytest.fixture(autouse=True)
