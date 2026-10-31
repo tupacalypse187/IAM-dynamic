@@ -97,7 +97,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  issueCredentials: (data: { policy: Record<string, unknown>; duration: number; approved: boolean; change_case?: string }) =>
+  issueCredentials: (data: { policy: Record<string, unknown>; duration: number; approved: boolean; change_case?: string; risk?: string; auto_approved?: boolean }) =>
     request<Credentials>('/api/issue-credentials', {
       method: 'POST',
       body: JSON.stringify(data),

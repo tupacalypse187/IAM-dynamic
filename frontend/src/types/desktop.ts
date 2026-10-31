@@ -87,7 +87,7 @@ export interface DesktopApi {
   getAppInfo: () => Promise<{ version: string; platform: string; backendUrl: string; updatesEnabled: boolean }>
   generatePolicy: (input: GenerateInput) => Promise<DesktopGenerateResult>
   onAgentProgress: (listener: (progress: AgentProgress) => void) => () => void
-  issueCredentials: (input: { policy: PolicyDocument; durationHours: number; approved: boolean; changeCase?: string }) => Promise<DesktopCredentials>
+  issueCredentials: (input: { policy: PolicyDocument; durationHours: number; approved: boolean; changeCase?: string; risk?: RiskLevel; autoApproved?: boolean }) => Promise<DesktopCredentials>
   revokeCredentials: () => Promise<void>
   getLeaseStatus: () => Promise<LeaseStatus>
   getRecentEvents: (limit?: number) => Promise<AuditEventView[]>

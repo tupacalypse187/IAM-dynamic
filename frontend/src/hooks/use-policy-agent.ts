@@ -8,6 +8,7 @@ import type {
   DesktopPolicyResult,
   GenerateInput,
   GuardrailFinding,
+  RiskLevel,
 } from '@/types/desktop'
 
 export type PolicyOutcome =
@@ -17,7 +18,7 @@ export type PolicyOutcome =
 export interface PolicyAgent {
   readonly inDesktop: boolean
   generate: (input: GenerateInput) => Promise<PolicyOutcome>
-  issue: (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string }) => Promise<Credentials>
+  issue: (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string; risk: string; autoApproved: boolean }) => Promise<Credentials>
   subscribeProgress: (listener: (progress: AgentProgress) => void) => () => void
 }
 
@@ -75,13 +76,16 @@ export function usePolicyAgent(): PolicyAgent {
   }, [])
 
   const issue = useCallback(
-    async (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string }) => {
+    async (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string; risk: string; autoApproved: boolean }) => {
       if (isDesktop()) {
         const creds = await desktop.issueCredentials({
           policy: input.policy,
           durationHours: input.duration,
           approved: input.approved,
           changeCase: input.changeCase,
+          // Reviewed risk label; the backend normalizes anything unexpected.
+          risk: input.risk as RiskLevel,
+          autoApproved: input.autoApproved,
         })
         return {
           access_key_id: creds.access_key_id,
@@ -91,7 +95,8 @@ export function usePolicyAgent(): PolicyAgent {
           region: creds.region,
         } satisfies Credentials
       }
-      return api.issueCredentials({ ...input, change_case: input.changeCase })
+      const { autoApproved, ...rest } = input
+      return api.issueCredentials({ ...rest, change_case: input.changeCase, risk: input.risk, auto_approved: autoApproved })
     },
     [],
   )

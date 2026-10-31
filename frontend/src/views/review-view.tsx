@@ -129,6 +129,8 @@ export default function ReviewView({
         duration: policyData.max_duration,
         approved: true,
         changeCase: changeCase || undefined,
+        risk: policyData.risk,
+        autoApproved: policyData.auto_approved,
       }),
     onSuccess: (data) => {
       setError(null)

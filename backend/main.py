@@ -117,6 +117,10 @@ class IssueCredentialsRequest(BaseModel):
     approved: bool = Field(default=False)
     approver: Optional[str] = Field(default=None)
     change_case: Optional[str] = Field(default=None)
+    # Echo of the reviewed assessment from generate-policy: the notification
+    # must report the actual risk, not a hardcoded default.
+    risk: str = Field(default="medium")
+    auto_approved: bool = Field(default=False)
 
 
 class CredentialsResponse(BaseModel):
@@ -717,11 +721,15 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
         # Generate credentials
         creds = sts_service.assume_role_with_policy(request.policy, request.duration)
 
-        # Send notification
+        # Send notification with the reviewed assessment. Normalize unknown
+        # risk labels to "medium" so the channel formatting never breaks.
+        risk = request.risk.lower()
+        if risk not in ("low", "medium", "high", "critical"):
+            risk = "medium"
         send_audit_notification(
-            auto_approved=True,  # If we got here, it was approved
+            auto_approved=request.auto_approved,
             req="Policy-based credential issuance",
-            risk="medium",  # Default notification risk
+            risk=risk,
             duration=request.duration,
             approver=request.approver
         )
