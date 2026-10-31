@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Loader2, AlertCircle, Info } from 'lucide-react'
+import { Loader2, AlertCircle, Info, MessageCircleQuestion, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { api } from '@/lib/api'
+import { usePolicyAgent } from '@/hooks/use-policy-agent'
 import type { PolicyResponse } from '@/types/api'
+import type { AgentProgress, ClarifyQuestion, GuardrailFinding } from '@/types/desktop'
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 
@@ -18,8 +21,10 @@ interface RequestViewProps {
   onDurationChange: (duration: number) => void
   selectedProvider: string
   selectedModel?: string
-  onPolicyGenerated: (data: PolicyResponse) => void
+  onPolicyGenerated: (data: PolicyResponse, findings: GuardrailFinding[], summary: string | null) => void
 }
+
+const EMPTY_GUIDED = { task: '', resources: '', ticket: '' }
 
 export default function RequestView({
   requestText,
@@ -31,37 +36,62 @@ export default function RequestView({
   onPolicyGenerated,
 }: RequestViewProps) {
   const [error, setError] = useState<string | null>(null)
+  const [guided, setGuided] = useState(EMPTY_GUIDED)
+  const [questions, setQuestions] = useState<ClarifyQuestion[] | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [stage, setStage] = useState<string | null>(null)
+  const agent = usePolicyAgent()
+
+  useEffect(() => agent.subscribeProgress((p: AgentProgress) => setStage(p.message)), [agent])
 
   const generateMutation = useMutation({
-    mutationFn: api.generatePolicy,
-    onSuccess: (data) => {
+    mutationFn: (extraAnswers: Record<string, string>) =>
+      agent.generate({
+        freeText: requestText,
+        guided,
+        provider: selectedProvider,
+        model: selectedModel,
+        durationHours: duration,
+        answers: extraAnswers,
+      }),
+    onSuccess: (outcome) => {
       setError(null)
-      onPolicyGenerated(data)
+      if (outcome.kind === 'clarify') {
+        setQuestions(outcome.questions)
+        setStage(null)
+      } else {
+        setQuestions(null)
+        setAnswers({})
+        setStage(null)
+        onPolicyGenerated(outcome.data, outcome.findings, outcome.summary)
+      }
     },
     onError: (err: Error) => {
       setError(err.message)
+      setStage(null)
     },
   })
 
   const handleSubmit = () => {
-    if (!requestText.trim()) {
-      setError('Please describe your access needs')
+    if (!requestText.trim() && !guided.task.trim()) {
+      setError('Describe what you are trying to do — a sentence or the guided fields below.')
       return
     }
-    generateMutation.mutate({
-      request_text: requestText,
-      provider: selectedProvider,
-      model: selectedModel,
-      duration,
-    })
+    generateMutation.mutate({})
   }
+
+  const handleAnswerSubmit = () => {
+    generateMutation.mutate(answers)
+  }
+
+  const pending = generateMutation.isPending
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">New Request</h2>
         <p className="text-muted-foreground">
-          Describe your AWS access needs and AI will generate a least-privilege IAM policy.
+          Describe the job you need to do — not the permissions. AI figures out the least-privilege policy.
         </p>
       </div>
 
@@ -69,26 +99,62 @@ export default function RequestView({
         <CardHeader>
           <CardTitle>Access Request</CardTitle>
           <CardDescription>
-            Be specific about the resources and actions you need. The more detailed your request,
-            the more accurate the generated policy will be.
+            Start with what you are trying to accomplish. If anything is ambiguous, you will be
+            asked at most three short follow-up questions.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Request Text */}
-          <div className="space-y-2">
-            <Label htmlFor="request">Describe your access needs</Label>
+          {/* Free text */}
+          <div className="space-y-2" data-tour="request-input">
+            <Label htmlFor="request-textarea">What are you trying to do?</Label>
             <Textarea
-              id="request"
-              placeholder="e.g. I need read-only access to the 'production-logs' S3 bucket to debug an issue."
+              id="request-textarea"
+              placeholder="e.g. Investigate incident 501 in the orders table and billing bucket for 30 minutes."
               value={requestText}
               onChange={(e) => onRequestTextChange(e.target.value)}
-              rows={5}
+              rows={4}
               className="resize-none"
             />
           </div>
 
+          {/* Guided scaffold */}
+          <div className="space-y-4 rounded-md border p-4" data-tour="guided-fields">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
+              Help me describe it
+              <span className="font-normal text-muted-foreground">(optional — fills in the blanks)</span>
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="guided-task">The task</Label>
+              <Input
+                id="guided-task"
+                placeholder="e.g. Debug failed checkout webhooks"
+                value={guided.task}
+                onChange={(e) => setGuided({ ...guided, task: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="guided-resources">Where (resources, if known)</Label>
+              <Input
+                id="guided-resources"
+                placeholder='e.g. "checkout-events" SQS queue, production logs bucket'
+                value={guided.resources}
+                onChange={(e) => setGuided({ ...guided, resources: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="guided-ticket">Why (ticket or incident)</Label>
+              <Input
+                id="guided-ticket"
+                placeholder="e.g. incident 501, CHG-1234"
+                value={guided.ticket}
+                onChange={(e) => setGuided({ ...guided, ticket: e.target.value })}
+              />
+            </div>
+          </div>
+
           {/* Duration */}
-          <div className="space-y-4">
+          <div className="space-y-4" data-tour="request-duration">
             <div className="flex items-center justify-between">
               <Label htmlFor="session-duration">Session Duration</Label>
               <span className="text-sm font-medium tabular-nums">{duration} hours</span>
@@ -108,6 +174,37 @@ export default function RequestView({
             </p>
           </div>
 
+          {/* Clarifying questions */}
+          {questions && questions.length > 0 && (
+            <div className="space-y-4 rounded-md border border-primary/30 bg-primary/5 p-4" role="form" aria-label="Clarifying questions">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <MessageCircleQuestion className="h-4 w-4 text-primary" aria-hidden="true" />
+                A few quick questions so the policy isn&apos;t broader than it needs to be
+              </p>
+              {questions.map((q) => (
+                <div key={q.field} className="space-y-2">
+                  <Label htmlFor={`clarify-${q.field}`}>{q.prompt}</Label>
+                  <Input
+                    id={`clarify-${q.field}`}
+                    placeholder={q.placeholder}
+                    value={answers[q.field] ?? ''}
+                    onChange={(e) => setAnswers({ ...answers, [q.field]: e.target.value })}
+                  />
+                </div>
+              ))}
+              <Button onClick={handleAnswerSubmit} disabled={pending} className="w-full">
+                {pending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {stage ?? 'Analyzing...'}
+                  </>
+                ) : (
+                  'Continue with these answers'
+                )}
+              </Button>
+            </div>
+          )}
+
           {/* Error */}
           {error && (
             <div
@@ -126,22 +223,25 @@ export default function RequestView({
             </div>
           )}
 
-          {/* Submit Button */}
-          <Button
-            onClick={handleSubmit}
-            disabled={generateMutation.isPending || !requestText.trim()}
-            className="w-full"
-            size="lg"
-          >
-            {generateMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              'Analyze & Generate Policy'
-            )}
-          </Button>
+          {/* Submit */}
+          {!questions && (
+            <Button
+              onClick={handleSubmit}
+              disabled={pending || (!requestText.trim() && !guided.task.trim())}
+              className="w-full"
+              size="lg"
+              data-tour="request-submit"
+            >
+              {pending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {stage ?? 'Analyzing...'}
+                </>
+              ) : (
+                'Analyze & Generate Policy'
+              )}
+            </Button>
+          )}
         </CardContent>
       </Card>
 

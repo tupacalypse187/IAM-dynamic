@@ -1,0 +1,7 @@
+node_modules/
+dist/
+release/
+frontend-dist/
+build/icons/
+*.log
+.DS_Store

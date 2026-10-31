@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, setToken } from '@/lib/api'
+import { desktop } from '@/lib/desktop'
 import { AuthContext, type AuthState } from '@/hooks/use-auth'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -10,12 +11,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     setToken(null)
+    if (desktop.isDesktop) {
+      // Vault failures must never break logout — localStorage is already cleared.
+      desktop.clearToken().catch(() => undefined)
+    }
     setIsAuthenticated(false)
     setUsername(null)
   }, [])
 
   const login = useCallback((token: string, user: string) => {
     setToken(token)
+    if (desktop.isDesktop) {
+      // Best-effort: persist the session in the OS credential store.
+      desktop.setToken(token).catch(() => undefined)
+    }
     setIsAuthenticated(true)
     setUsername(user)
   }, [])

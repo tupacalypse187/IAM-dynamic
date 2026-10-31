@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [⚙️ Configuration](#-configuration)
 - [🛡️ Security Guardrails](#-security-guardrails)
 - [🖥️ Frontend Views](#-frontend-views)
+- [🖥️ Desktop App (Electron)](#-desktop-app-electron)
 - [🔌 API Endpoints](#-api-endpoints)
 - [📚 Zread Wiki (`.zread/`)](#-zread-wiki-zread)
 - [🗺️ Roadmap (See GEMINI.md)](#-roadmap-see-geminimd)
@@ -83,12 +84,30 @@ Display + Slack audit log
 1. **Frontend**: `frontend/src/App.tsx`
    - Main React application with view routing
    - Auth gate: shows LoginView when auth is required and user is not authenticated
-   - Views: login, request, review, credentials, rejected
+   - Views: login, request, review, credentials, rejected, help
+2. **Desktop**: `desktop/src/main/main.ts`
+   - Electron entry: window, IPC, tray lease manager, global capture shortcut, auto-updater
+   - Loads Vite dev server in dev, `frontend-dist/` in packaged builds
 
 2. **Backend**: `backend/main.py`
    - FastAPI application with API endpoints
    - Health check, auth (login/verify), provider config, policy generation, credential issuance, rejection guidance
    - `get_current_user` dependency protects all endpoints except health and auth
+
+### Desktop Shell (`desktop/`)
+
+Electron app reusing the React frontend and the remote FastAPI backend (no Python bundling). Source of truth for IPC is [`desktop/src/shared/ipc-contract.ts`](desktop/src/shared/ipc-contract.ts); the renderer mirror lives in `frontend/src/types/desktop.ts`.
+
+- **`desktop/src/main/main.ts`** — window (macOS `hiddenInset` + vibrancy), typed IPC handlers, tray, `Cmd/Ctrl+Shift+I` global capture, single-instance
+- **`desktop/src/main/agentkit/`** — **Agent_Kit**: `router.ts` (intent extraction + ≤3 clarifying questions), `backend-client.ts` (remote API), `audit-risk.ts` (deterministic guardrail — raises, never lowers, backend risk), `index.ts` (Router → Architect → Audit → Lifecycle orchestrator with progress events)
+- **`desktop/src/main/ledger.ts`** — SQLite audit ledger (`better-sqlite3`, WAL, versioned migrations, Markdown/JSON export)
+- **`desktop/src/main/vault.ts`** — OS credential store via lazy `keytar` (JWT only; temp AWS creds stay memory-only)
+- **`desktop/src/main/updater.ts`** — `electron-updater` (generic provider): background download, install on user restart only
+- **`desktop/src/main/tray-manager.ts`** — lease countdown title, 5-minute warning, revoke-on-expiry
+- **`desktop/src/preload/preload.ts`** — `contextBridge` allowlist; the only renderer↔main surface
+- **Packaging** — `electron-builder.yml` (arm64 dmg / x64 NSIS / arm64 AppImage+deb), `build/icon.py` (generates icons), `buildspec-windows.yml` + `scripts/setup-codebuild.sh` (on-demand Windows builds), `scripts/notarize.js` (skips without Apple creds)
+
+Guides: [`docs/desktop-app.md`](docs/desktop-app.md), [`docs/auto-update.md`](docs/auto-update.md), [`desktop/README.md`](desktop/README.md)
 
 ### Backend Services
 
@@ -125,6 +144,11 @@ npm run dev
 **Development script:**
 ```bash
 ./start-dev.sh  # Starts both backend and frontend
+```
+
+**Desktop shell (third terminal, after backend + frontend are up):**
+```bash
+cd desktop && npm install && npm run dev
 ```
 
 **Access URLs:**
@@ -186,7 +210,7 @@ Key files:
 ## 🔄 CI/CD
 
 ### `.github/workflows/ci.yml` — PR Checks
-Triggers on `pull_request` to `main`. Jobs: `frontend-checks` (lint, typecheck, build), `backend-checks` (ruff, pytest), `docker-build` (build all 3 images, no push).
+Triggers on `pull_request` to `main`. Jobs: `frontend-checks` (lint, typecheck, build), `backend-checks` (ruff, pytest), `desktop-checks` (typecheck with `--ignore-scripts`), `docker-build` (build all 3 images, no push).
 
 ### `.github/workflows/deploy.yml` — Main Branch Deployment
 Triggers on `push` to `main`. Jobs: `security` → `test` → `build-images` (push to GHCR + Trivy scan for frontend/backend/caddy) → `deploy` (SSH) → `cleanup`. A `publish-dockerhub` job mirrors all three images to Docker Hub when configured.
@@ -262,6 +286,8 @@ APPROVER_NAME=Admin
 
 **Authentication behavior:** When `AUTH_PASSWORD_HASH` is empty/unset, authentication is completely disabled — all endpoints are open and the login page is not shown. This preserves the local dev workflow.
 
+**Desktop shell env vars** (shell environment, not `.env`): `IAM_DESKTOP_BACKEND_URL` (default `http://localhost:8000`), `IAM_DESKTOP_UPDATE_FEED_URL` (unset disables updates), `CSC_NAME` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` (signing + notarization).
+
 ## 🛡️ Security Guardrails
 
 The LLM system instruction enforces:
@@ -284,15 +310,16 @@ Risk-based duration limits:
 - Stores JWT in localStorage, uses AuthProvider context
 
 ### Request View (`frontend/src/views/request-view.tsx`)
-- Natural language input for access request
-- Duration slider (1-12 hours)
-- LLM provider selector
-- Template buttons for common patterns
+- Task-first input ("what are you trying to do") + guided fields (task/resources/ticket) + free text
+- Desktop Agent_Kit path via `usePolicyAgent` (IPC with progress stages); browser path calls the REST API directly
+- Clarifying-question loop (≤3) when intent is underspecified; duration slider (1-12 hours)
+- LLM provider selector; template buttons for common patterns
 
 ### Review View (`frontend/src/views/review-view.tsx`)
-- Display generated policy (JSON) with a one-click copy button
-- Risk assessment badge (token-based, WCAG-compliant colors)
-- Approver note and explanation
+- Monaco read-only JSON editor (lazy-loaded chunk) with wildcard line highlighting + copy button
+- Before/after diff tab when revising a previous policy; plain-language grant summary (desktop path)
+- Local guardrail findings with severity badges and one-click "Revise with this fix"
+- Risk assessment badge (token-based, WCAG-compliant colors); approver note and explanation
 - Issue credentials, or reject via a confirmation dialog
 
 ### Credentials View (`frontend/src/views/credentials-view.tsx`)
@@ -307,10 +334,25 @@ Risk-based duration limits:
 - GitHub-flavored markdown with syntax highlighting, styled tables, and per-code-block copy buttons
 - Revise request or start fresh buttons
 
+### Help View (`frontend/src/views/help-view.tsx`)
+- Guided tour replay, how-to guides, keyboard shortcut reference (rendered from `lib/shortcuts.ts`)
+- Update status + manual check, local audit log with Markdown/JSON export (desktop only)
+
 ### App Shell (`frontend/src/App.tsx`)
 - Error boundary around view content (a render crash shows a recoverable fallback)
-- Toast notifications (session expiry, copy failures)
+- Toast notifications (session expiry, copy failures) + `UpdateBanner` (desktop update downloaded/available)
+- First-run guided tour (`lib/tour.ts`, driver.js, `data-tour` anchors), `?` shortcut → Help
+- Desktop capture shortcut focuses the request box; vault-backed JWT via `desktop.setToken`
 - Responsive layout: desktop sidebar rail + mobile navigation drawer
+
+## 🖥️ Desktop App (Electron)
+
+Full guides: [`docs/desktop-app.md`](docs/desktop-app.md) (run/build/sign/troubleshoot), [`docs/auto-update.md`](docs/auto-update.md) (feed, CodeBuild Windows releases), [`desktop/README.md`](desktop/README.md) (command reference).
+
+- **Dev loop:** backend on :8000 → `frontend` dev server on :3000 → `desktop` (`npm run dev` loads the dev server; packaged builds use `frontend-dist/`)
+- **Config:** `IAM_DESKTOP_BACKEND_URL` (default `http://localhost:8000`), `IAM_DESKTOP_UPDATE_FEED_URL` (unset = updates off), `CSC_NAME` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` for sign/notarize
+- **Releases:** macOS arm64 `.dmg` locally; Windows x64 NSIS via on-demand CodeBuild (`desktop/scripts/setup-codebuild.sh` creates the project; builds start manually); Linux arm64 via Docker; publishing flags are CLI-only so local builds never phone home
+- **Conventions:** IPC contract is the source of truth (`desktop/src/shared/` ↔ `frontend/src/types/desktop.ts` mirror); shortcuts live in `lib/shortcuts.ts` (Help renders them); tour anchors use `data-tour` attributes; Monaco must stay lazy-loaded (`components/policy-editor.tsx`)
 
 ## 🔌 API Endpoints
 

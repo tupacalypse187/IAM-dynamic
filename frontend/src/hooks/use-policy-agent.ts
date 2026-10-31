@@ -1,0 +1,114 @@
+import { useCallback, useEffect, useRef } from 'react'
+import { api } from '@/lib/api'
+import { desktop, isDesktop } from '@/lib/desktop'
+import type { Credentials, PolicyResponse } from '@/types/api'
+import type {
+  AgentProgress,
+  ClarifyQuestion,
+  DesktopPolicyResult,
+  GenerateInput,
+  GuardrailFinding,
+} from '@/types/desktop'
+
+export type PolicyOutcome =
+  | { kind: 'clarify'; questions: ClarifyQuestion[] }
+  | { kind: 'policy'; data: PolicyResponse; findings: GuardrailFinding[]; summary: string | null }
+
+export interface PolicyAgent {
+  readonly inDesktop: boolean
+  generate: (input: GenerateInput) => Promise<PolicyOutcome>
+  issue: (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string }) => Promise<Credentials>
+  subscribeProgress: (listener: (progress: AgentProgress) => void) => () => void
+}
+
+function toWebPolicy(result: DesktopPolicyResult): PolicyResponse {
+  return {
+    policy: result.policy,
+    risk: result.risk,
+    explanation: result.explanation,
+    approver_note: result.approver_note,
+    auto_approved: result.auto_approved,
+    max_duration: result.max_duration,
+  }
+}
+
+/**
+ * Unified policy pipeline. In the desktop shell every call is routed
+ * through the main-process Agent_Kit over IPC (with ledger + guardrail);
+ * in a browser it uses the backend REST API directly with identical UI.
+ */
+export function usePolicyAgent(): PolicyAgent {
+  const progressRef = useRef<((p: AgentProgress) => void) | null>(null)
+
+  useEffect(() => {
+    if (!isDesktop()) return
+    return desktop.onAgentProgress((p) => progressRef.current?.(p))
+  }, [])
+
+  const subscribeProgress = useCallback((listener: (progress: AgentProgress) => void) => {
+    progressRef.current = listener
+    return () => {
+      progressRef.current = null
+    }
+  }, [])
+
+  const generate = useCallback(async (input: GenerateInput): Promise<PolicyOutcome> => {
+    if (isDesktop()) {
+      const result = await desktop.generatePolicy(input)
+      if (result.status === 'clarify') {
+        return { kind: 'clarify', questions: result.questions }
+      }
+      return {
+        kind: 'policy',
+        data: toWebPolicy(result.result),
+        findings: result.findings,
+        summary: result.summary,
+      }
+    }
+    const data = await api.generatePolicy({
+      request_text: composeWebText(input),
+      provider: input.provider,
+      model: input.model,
+      duration: input.durationHours,
+    })
+    return { kind: 'policy', data, findings: [], summary: null }
+  }, [])
+
+  const issue = useCallback(
+    async (input: { policy: Record<string, unknown>; duration: number; approved: boolean; changeCase?: string }) => {
+      if (isDesktop()) {
+        const creds = await desktop.issueCredentials({
+          policy: input.policy,
+          durationHours: input.duration,
+          approved: input.approved,
+          changeCase: input.changeCase,
+        })
+        return {
+          access_key_id: creds.access_key_id,
+          secret_access_key: creds.secret_access_key,
+          session_token: creds.session_token,
+          expiration: creds.expiration,
+          region: creds.region,
+        } satisfies Credentials
+      }
+      return api.issueCredentials({ ...input, change_case: input.changeCase })
+    },
+    [],
+  )
+
+  return { inDesktop: isDesktop(), generate, issue, subscribeProgress }
+}
+
+/** Browser path: fold guided fields + answers into one request string. */
+function composeWebText(input: GenerateInput): string {
+  const parts = [input.freeText]
+  if (input.guided.task) parts.push(`Task: ${input.guided.task}`)
+  if (input.guided.resources) parts.push(`Resources: ${input.guided.resources}`)
+  if (input.guided.ticket) parts.push(`Ticket/justification: ${input.guided.ticket}`)
+  if (input.answers) {
+    for (const [field, value] of Object.entries(input.answers)) {
+      if (value.trim()) parts.push(`${field}: ${value.trim()}`)
+    }
+  }
+  return parts.filter(Boolean).join('\n')
+}

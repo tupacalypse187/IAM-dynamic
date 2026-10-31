@@ -250,3 +250,13 @@
     @apply text-foreground;
   }
 }
+
+/* Monaco IAM risk decorations — whole-line wash + gutter marker */
+.iam-risk-line {
+  background: hsl(var(--destructive) / 0.12);
+}
+.iam-risk-glyph {
+  background: hsl(var(--destructive));
+  width: 4px !important;
+  margin-left: 8px;
+}

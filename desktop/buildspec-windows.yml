@@ -1,0 +1,56 @@
+# CodeBuild buildspec — Windows NSIS packaging for IAM-Dynamic Desktop.
+#
+# Runs ONLY on demand (manual start or tag builds), never per-push, to keep
+# build minutes and cost down. The CodeBuild project (image, role, S3 cache
+# bucket) is created by desktop/scripts/setup-codebuild.sh; this file only
+# describes the build itself.
+#
+# Expected environment variables (set on the CodeBuild project):
+#   UPDATE_FEED_URL - public URL serving the release artifacts + latest.yml
+#                     (usually the S3 artifacts bucket behind CloudFront).
+#   IAM_DESKTOP_BACKEND_URL - backend base URL baked into the app (optional).
+
+version: 0.2
+
+env:
+  variables:
+    npm_config_cache: 'C:\ci\npm-cache'
+    ELECTRON_CACHE: 'C:\ci\electron-cache'
+    ELECTRON_BUILDER_CACHE: 'C:\ci\electron-builder-cache'
+
+phases:
+  install:
+    commands:
+      - node --version
+      - npm --version
+      - cd frontend
+      - npm ci --no-audit --no-fund --prefer-offline
+      - cd ..\desktop
+      - npm ci --no-audit --no-fund --prefer-offline
+  pre_build:
+    commands:
+      - cd ..\frontend
+      - npm run build
+      - cd ..\desktop
+      - npm run copy-renderer
+      # App icons (best-effort on CI: packaging proceeds with the stock
+      # Electron icon rather than failing the build if Python/Pillow
+      # is unavailable on the image).
+      - pip install pillow
+      - python build/icon.py || echo "icon generation skipped"
+  build:
+    commands:
+      # Publish config is CLI-only so local builds never phone home;
+      # UPDATE_FEED_URL comes from the CodeBuild project environment.
+      - npx electron-builder --win -p always -c.publish.provider=generic -c.publish.url="$env:UPDATE_FEED_URL"
+artifacts:
+  files:
+    - 'desktop/release/*.exe'
+    - 'desktop/release/latest.yml'
+    - 'desktop/release/*.blockmap'
+  discard-paths: yes
+cache:
+  paths:
+    - 'C:\ci\npm-cache/**/*'
+    - 'C:\ci\electron-cache/**/*'
+    - 'C:\ci\electron-builder-cache/**/*'

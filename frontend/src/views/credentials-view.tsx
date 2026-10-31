@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Download, RotateCcw, ShieldAlert } from 'lucide-react'
+import { Download, RotateCcw, ShieldAlert, Ban } from 'lucide-react'
 import type { Credentials } from '@/types/api'
+import { desktop } from '@/lib/desktop'
+import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -17,6 +19,21 @@ type ScriptFormat = 'bash' | 'powershell' | 'aws-cli'
 
 export default function CredentialsView({ credentials, duration, onNewRequest }: CredentialsViewProps) {
   const [timeRemaining, setTimeRemaining] = useState('')
+  const { toast } = useToast()
+
+  const handleRevoke = async () => {
+    try {
+      await desktop.revokeCredentials()
+      toast({ title: 'Credentials revoked', description: 'Local credentials were discarded.' })
+    } catch (err) {
+      toast({
+        title: 'Revoke failed',
+        description: err instanceof Error ? err.message : 'Could not revoke credentials.',
+        variant: 'destructive',
+      })
+    }
+    onNewRequest()
+  }
 
   useEffect(() => {
     const updateTimer = () => {
@@ -147,6 +164,12 @@ aws configure set aws_session_token ${credentials.session_token} --profile iam-s
           <Download className="mr-2 h-4 w-4" />
           Download Script
         </Button>
+        {desktop.isDesktop && (
+          <Button onClick={() => void handleRevoke()} variant="destructive" className="flex-1">
+            <Ban className="mr-2 h-4 w-4" />
+            Revoke Now
+          </Button>
+        )}
         <Button onClick={onNewRequest} className="flex-1">
           <RotateCcw className="mr-2 h-4 w-4" />
           Start New Request

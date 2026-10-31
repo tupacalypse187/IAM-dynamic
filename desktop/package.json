@@ -1,0 +1,40 @@
+{
+  "name": "iam-dynamic-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IAM-Dynamic Desktop Security Studio — Electron shell for Just-In-Time IAM access",
+  "author": "NeuralSec Advisory LLC",
+  "license": "MIT",
+  "main": "dist/main/main.js",
+  "files": ["dist", "package.json"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/config.test.mjs",
+    "dev": "npm run build && electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac --arm64",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "copy-renderer": "rm -rf frontend-dist && mkdir -p frontend-dist && cp -R ../frontend/dist/. frontend-dist/",
+    "icons": "python3 build/icon.py || ../backend/.venv/bin/python build/icon.py",
+    "predist": "npm run copy-renderer && npm run icons",
+    "predist:mac": "npm run copy-renderer && npm run icons",
+    "predist:win": "npm run copy-renderer && npm run icons",
+    "predist:linux": "npm run copy-renderer && npm run icons"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.11",
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^3.1.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^24.0.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "typescript": "^5.9.2"
+  }
+}
