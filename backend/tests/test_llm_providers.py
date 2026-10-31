@@ -57,7 +57,7 @@ class TestGatewayDefaults:
 
 class TestParameterCompatibility:
     """
-    GPT-5 reasoning models reject temperature != 1 with a 400, and the
+    GPT-6 reasoning models reject temperature != 1 with a 400, and the
     OpenRouter gateway routes to vendors with mixed parameter support.
     """
 

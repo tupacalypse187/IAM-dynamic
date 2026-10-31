@@ -4,7 +4,7 @@
 
 [![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Gemini 3](https://img.shields.io/badge/AI-Gemini%203-4285F4?logo=google)](https://ai.google.dev/api/models)
+[![Gemini 4](https://img.shields.io/badge/AI-Gemini%204-4285F4?logo=google)](https://ai.google.dev/api/models)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
@@ -27,7 +27,7 @@
 **IAM-Dynamic** is a secure, user-friendly portal that leverages multiple AI providers (Google Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, and OpenRouter) to generate least-privilege AWS IAM policies from natural language. It features a modern React frontend with FastAPI backend that assesses risk, validates requests, and issues temporary credentials via AWS STS.
 
 **Key Capabilities:**
--   **♊ Gemini First:** Powered by Gemini 3 Pro for high-reasoning policy generation.
+-   **♊ Gemini First:** Powered by Gemini 4 Argon for high-reasoning policy generation.
 -   **🛡️ Guardrails:** System-level instructions prevent over-privileged access (e.g., blocking `*:*`).
 -   **🚦 Risk Scoring:** Automatic assessment (Low, Medium, High, Critical).
 -   **⚡ Auto-Approval:** Low-risk requests are approved instantly; others require manual sign-off.
@@ -252,35 +252,35 @@ Create a `.env` file in the root directory (see `.env.example` for template):
 # Choose: gemini, openai, anthropic/claude, zhipu/glm, muse/meta, or openrouter
 LLM_PROVIDER=gemini
 
-# Gemini 3.1 Pro Preview
+# Gemini 4 Argon
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3.1-pro-preview
-# Alternatives: gemini-3.8-flash, gemini-3.7-flash, gemini-3.5-flash-lite
+GEMINI_MODEL=gemini-4-argon
+# Alternatives: gemini-3.8-flash, gemini-3.6-flash, gemini-3.5-flash-lite
 
-# OpenAI GPT-5.6
+# OpenAI GPT-6 Astra
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.6
-# Alternatives: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.4, gpt-5-mini-2025-08-07
+# OPENAI_MODEL=gpt-6-astra
+# Alternatives: gpt-6.1-sol, gpt-6.1-terra, gpt-6-luna
 
-# Anthropic Claude Opus 5
+# Anthropic Claude Opus 5.5
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-5
-# Alternatives: claude-sonnet-5, claude-opus-4-6, claude-haiku-4-5
+# ANTHROPIC_MODEL=claude-opus-5-5
+# Alternatives: claude-fable-5-1, claude-sonnet-5-5, claude-haiku-5-5
 
 # Z.AI GLM-5.3 (Global platform via api.z.ai)
 # ZAI_API_KEY=...
 # ZAI_MODEL=glm-5.3
-# Alternatives: glm-5.3-flash, glm-5.1, glm-5, glm-4.7
+# Alternatives: glm-5.3-flash, glm-5.2, glm-5.1, glm-5, glm-4.7
 
 # Meta Muse (Meta Model API via api.meta.ai)
 # MUSE_API_KEY=...
 # MUSE_MODEL=muse-spark-1.3-contributor
-# Alternatives: muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
+# Alternatives: muse-wonder-1.0, muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
 
 # OpenRouter (gateway — one key for many vendors' models)
 # OPENROUTER_API_KEY=sk-or-...
 # OPENROUTER_MODEL=z-ai/glm-5.3
-# Alternatives: openai/gpt-5.6, anthropic/claude-opus-5, google/gemini-3.1-pro, meta/muse-spark-1.3
+# Alternatives: openai/gpt-6-astra, anthropic/claude-opus-5.5, google/gemini-4-argon, meta/muse-spark-1.3
 
 # --- AWS Configuration ---
 AWS_ACCOUNT_ID=123456789012

@@ -49,13 +49,13 @@ The application uses a modern frontend/backend separation pattern:
 The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_service.py)) to support multiple AI providers:
 
 - **`LLMProvider`** (ABC): Abstract base class defining `generate_policy(request_text: str) -> PolicyResponse`
-- **`GeminiProvider`**: Default engine using `google.genai` with Gemini 3.1 Pro Preview
+- **`GeminiProvider`**: Default engine using `google.genai` with Gemini 4 Argon
 - **`OpenAICompatibleProvider`**: Shared base for OpenAI-compatible Chat Completions APIs — subclasses declare env vars, base URL, default model, and parameter capabilities (`supports_json_response_format`, `supports_temperature`)
-  - **`OpenAIProvider`**: OpenAI GPT-5.6 family
+  - **`OpenAIProvider`**: OpenAI GPT-6 family
   - **`ZhipuProvider`**: Z.AI GLM-5.3 (global platform via api.z.ai coding endpoint)
   - **`MuseProvider`**: Meta Muse Spark 1.3 (Meta Model API via api.meta.ai)
   - **`OpenRouterProvider`**: OpenRouter gateway using `vendor/model` slugs (e.g. `z-ai/glm-5.3`)
-- **`AnthropicProvider`**: Anthropic Claude Opus 5
+- **`AnthropicProvider`**: Anthropic Claude Opus 5.5
 
 The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `anthropic`/`claude`, `zhipu`/`glm`, `muse`/`meta`, or `openrouter`) and can be switched per-request from the UI. The model catalog served to the frontend lives in `PROVIDER_MODELS` in `backend/main.py`.
 
@@ -232,16 +232,16 @@ LLM_PROVIDER=gemini
 
 # --- Gemini Configuration (Google) ---
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3.1-pro-preview
+GEMINI_MODEL=gemini-4-argon
 # Alternative: gemini-3.8-flash
 
 # --- OpenAI Configuration ---
 # OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-5.6
+# OPENAI_MODEL=gpt-6-astra
 
 # --- Anthropic Claude Configuration ---
 # ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_MODEL=claude-opus-5
+# ANTHROPIC_MODEL=claude-opus-5-5
 
 # --- Z.AI GLM Configuration ---
 # ZAI_API_KEY=...

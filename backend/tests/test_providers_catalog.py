@@ -29,29 +29,46 @@ class TestCurrentModels:
         ids = [m["id"] for m in PROVIDER_MODELS["zhipu"]]
         assert "glm-5.3" in ids
         assert "glm-5.3-flash" in ids
+        assert "glm-5.2" in ids
+        assert "glm-4.7-flash" not in ids, "two generations back; fast tier is glm-5.3-flash"
 
-    def test_openai_has_gpt_5_6_family(self):
+    def test_openai_has_gpt_6_family(self):
         ids = [m["id"] for m in PROVIDER_MODELS["openai"]]
-        assert "gpt-5.6" in ids
+        assert "gpt-6-astra" in ids
+        assert "gpt-6.1-sol" in ids
+        assert "gpt-6.1-terra" in ids
+        assert "gpt-6-luna" in ids
+        assert "gpt-5.6" not in ids, "GPT-5.6 superseded by GPT-6 line"
         assert "o1-preview" not in ids, "o1-preview is deprecated (removed Dec 2026)"
 
-    def test_gemini_has_current_flash_models(self):
+    def test_gemini_has_current_models(self):
         ids = [m["id"] for m in PROVIDER_MODELS["gemini"]]
-        assert "gemini-3.1-pro-preview" in ids
+        assert "gemini-4-argon" in ids
         assert "gemini-3.8-flash" in ids
+        assert "gemini-3.1-pro-preview" not in ids, "superseded flagship; use gemini-4-argon"
         assert "gemini-3.1-flash-lite-preview" not in ids, "model was shut down"
 
-    def test_claude_has_generation_5(self):
+    def test_claude_has_current_lineup(self):
         ids = [m["id"] for m in PROVIDER_MODELS["claude"]]
-        assert "claude-opus-5" in ids
-        assert "claude-sonnet-5" in ids
+        assert "claude-fable-5-1" in ids
+        assert "claude-opus-5-5" in ids
+        assert "claude-sonnet-5-5" in ids
+        assert "claude-haiku-5-5" in ids
+        assert "claude-opus-5" not in ids, "legacy; superseded by claude-opus-5-5"
+        assert "claude-opus-4-6" not in ids, "legacy; two generations back"
 
-    def test_claude_5_5_family_leads_catalog(self):
+    def test_claude_current_lineup_leads_catalog(self):
         ids = [m["id"] for m in PROVIDER_MODELS["claude"]]
-        assert ids[:3] == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+        assert ids[:4] == [
+            "claude-fable-5-1",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+        ]
 
-    def test_muse_has_contributor_and_standard(self):
+    def test_muse_has_wonder_and_spark(self):
         ids = [m["id"] for m in PROVIDER_MODELS["muse"]]
+        assert "muse-wonder-1.0" in ids
         assert "muse-spark-1.3-contributor" in ids
         assert "muse-spark-1.3" in ids
 

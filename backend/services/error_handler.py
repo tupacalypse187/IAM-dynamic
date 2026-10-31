@@ -66,9 +66,9 @@ def handle_llm_error(error: Exception, provider: str) -> UserFacingError:
                     "🤖 **Model Not Found**\n\n"
                     "The requested model is not available. Please check the model name and try again.\n\n"
                     "Available models:\n"
-                    "• `gemini-3.1-pro-preview` (recommended)\n"
+                    "• `gemini-4-argon` (recommended)\n"
                     "• `gemini-3.8-flash`\n"
-                    "• `gemini-3.7-flash`",
+                    "• `gemini-3.6-flash`",
                     log_message=f"Gemini model not found: {error}"
                 )
 
@@ -98,10 +98,10 @@ def handle_llm_error(error: Exception, provider: str) -> UserFacingError:
                 "🤖 **Model Not Found**\n\n"
                 "The requested model is not available. Please check the model name and try again.\n\n"
                 "Available models:\n"
-                "• `gpt-5.6` (recommended)\n"
-                "• `gpt-5.6-sol`\n"
-                "• `gpt-5.6-terra`\n"
-                "• `gpt-5-mini-2025-08-07`",
+                "• `gpt-6-astra` (recommended)\n"
+                "• `gpt-6.1-sol`\n"
+                "• `gpt-6.1-terra`\n"
+                "• `gpt-6-luna`",
                 log_message=f"OpenAI model not found: {error}"
             )
 
@@ -209,8 +209,8 @@ def handle_llm_error(error: Exception, provider: str) -> UserFacingError:
                 "The requested OpenRouter slug is not available. Model IDs use the "
                 "`vendor/model` format, e.g.:\n"
                 "• `z-ai/glm-5.3` (recommended)\n"
-                "• `openai/gpt-5.6`\n"
-                "• `anthropic/claude-opus-5`\n\n"
+                "• `openai/gpt-6-astra`\n"
+                "• `anthropic/claude-opus-5.5`\n\n"
                 "Browse all models at [openrouter.ai/models](https://openrouter.ai/models)",
                 log_message=f"OpenRouter model not found: {error}"
             )
