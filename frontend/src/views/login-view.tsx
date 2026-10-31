@@ -69,6 +69,7 @@ function loadTurnstileScript(): Promise<void> {
 export default function LoginView() {
   const { login } = useAuth()
   const { theme } = useTheme()
+  const [mode, setMode] = useState<'signin' | 'register'>('signin')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -118,11 +119,13 @@ export default function LoginView() {
     setIsLoading(true)
 
     try {
-      const res = await api.login({
+      const credentials = {
         username,
         password,
         turnstile_token: turnstileToken || undefined,
-      })
+      }
+      const res =
+        mode === 'register' ? await api.register(credentials) : await api.login(credentials)
       login(res.token, res.username)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
@@ -205,13 +208,46 @@ export default function LoginView() {
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
+                  {mode === 'register' ? 'Creating account...' : 'Signing in...'}
                 </>
+              ) : mode === 'register' ? (
+                'Create account'
               ) : (
                 'Sign in'
               )}
             </Button>
           </form>
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            {mode === 'register' ? (
+              <>
+                The first account becomes the administrator.{' '}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setMode('signin')
+                    setError(null)
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </>
+            ) : (
+              <>
+                No account yet?{' '}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setMode('register')
+                    setError(null)
+                  }}
+                >
+                  Create one
+                </button>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

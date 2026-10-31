@@ -115,6 +115,7 @@ Guides: [`docs/desktop-app.md`](docs/desktop-app.md), [`docs/auto-update.md`](do
 - **`backend/services/slack_service.py`**: Slack Block Kit webhook notifications for audit trail
 - **`backend/services/telegram_service.py`**: Telegram Bot API notifications (HTML messages, @BotFather credentials)
 - **`backend/services/auth_service.py`**: JWT creation/verification, bcrypt password checking
+- **`backend/services/user_store.py`**: SQLite user accounts (first registered user is admin); `POST /api/auth/register`, `GET /api/auth/users` (admin-only). Legacy `AUTH_USERNAME`/`AUTH_PASSWORD_HASH` login still works alongside. Disable open registration with `AUTH_ALLOW_REGISTRATION=false`
 - **`backend/services/turnstile_service.py`**: Cloudflare Turnstile CAPTCHA verification
 - **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
 - **`backend/tests/`**: pytest suite (config validation, provider factory, catalog integrity, API endpoints) — run with `pytest` from `backend/`
@@ -284,7 +285,7 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/...
 APPROVER_NAME=Admin
 ```
 
-**Authentication behavior:** When `AUTH_PASSWORD_HASH` is empty/unset, authentication is completely disabled — all endpoints are open and the login page is not shown. This preserves the local dev workflow.
+**Authentication behavior:** When `AUTH_PASSWORD_HASH` is empty/unset, authentication is completely disabled — all endpoints are open and the login page is not shown. This preserves the local dev workflow. With no legacy hash, in-app registration (`POST /api/auth/register`, first user becomes admin) activates auth from the login page; set `AUTH_ALLOW_REGISTRATION=false` for invite-only deployments.
 
 **Desktop shell env vars** (shell environment, not `.env`): `IAM_DESKTOP_BACKEND_URL` (default `http://localhost:8000`), `IAM_DESKTOP_UPDATE_FEED_URL` (unset disables updates), `CSC_NAME` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` (signing + notarization).
 
@@ -305,8 +306,8 @@ Risk-based duration limits:
 ## 🖥️ Frontend Views
 
 ### Login View (`frontend/src/views/login-view.tsx`)
-- Username/password form with optional Cloudflare Turnstile CAPTCHA
-- Only shown when auth is required (`AUTH_PASSWORD_HASH` is set)
+- Username/password form with optional Cloudflare Turnstile CAPTCHA, plus self-registration mode (first account becomes admin)
+- Only shown when auth is required (`AUTH_PASSWORD_HASH` is set or users exist)
 - Stores JWT in localStorage, uses AuthProvider context
 
 ### Request View (`frontend/src/views/request-view.tsx`)

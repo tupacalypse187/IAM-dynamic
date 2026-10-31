@@ -88,6 +88,12 @@ class AuthConfig(BaseModel):
     jwt_secret: str = Field(default="")
     jwt_expiry_hours: int = Field(default=8)
     turnstile_secret_key: Optional[str] = Field(default=None)
+    # SQLite user database for in-app registration (first user becomes admin).
+    # Relative paths resolve against the backend package directory.
+    users_db_path: str = Field(default="users.db")
+    # Open self-registration (hackathon-friendly). Set false to require
+    # provisioning via setup-auth.sh / AUTH_PASSWORD_HASH instead.
+    allow_registration: bool = Field(default=True)
 
     @property
     def enabled(self) -> bool:
@@ -178,6 +184,9 @@ def load_config() -> AppConfig:
             jwt_secret=os.getenv("JWT_SECRET", ""),
             jwt_expiry_hours=int(os.getenv("JWT_EXPIRY_HOURS", "8")),
             turnstile_secret_key=os.getenv("TURNSTILE_SECRET_KEY"),
+            users_db_path=os.getenv("AUTH_USERS_DB", "users.db"),
+            allow_registration=os.getenv("AUTH_ALLOW_REGISTRATION", "true").lower()
+            not in ("0", "false", "no"),
         )
 
         config = AppConfig(

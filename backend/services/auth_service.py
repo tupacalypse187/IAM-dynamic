@@ -22,6 +22,32 @@ class TokenResult:
     expires_at: datetime
 
 
+def create_jwt(username: str, jwt_secret: str, jwt_expiry_hours: int = 8) -> TokenResult:
+    """Create a signed JWT for any username (single-user or user-store)."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=jwt_expiry_hours)
+    payload = {
+        "sub": username,
+        "iat": now,
+        "exp": expires_at,
+    }
+    token = jwt.encode(payload, jwt_secret, algorithm="HS256")
+    return TokenResult(token=token, expires_at=expires_at)
+
+
+def verify_jwt(token: str, jwt_secret: str) -> Optional[str]:
+    """Verify a JWT and return the username, or None if invalid/expired."""
+    try:
+        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"])
+        return payload.get("sub")
+    except jwt.ExpiredSignatureError:
+        logger.debug("Token expired")
+        return None
+    except jwt.InvalidTokenError:
+        logger.debug("Invalid token")
+        return None
+
+
 class AuthService:
     def __init__(
         self,
@@ -59,24 +85,8 @@ class AuthService:
 
     def create_token(self, username: str) -> TokenResult:
         """Create a signed JWT for the given username."""
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(hours=self.jwt_expiry_hours)
-        payload = {
-            "sub": username,
-            "iat": now,
-            "exp": expires_at,
-        }
-        token = jwt.encode(payload, self.jwt_secret, algorithm="HS256")
-        return TokenResult(token=token, expires_at=expires_at)
+        return create_jwt(username, self.jwt_secret, self.jwt_expiry_hours)
 
     def verify_token(self, token: str) -> Optional[str]:
         """Verify a JWT and return the username, or None if invalid/expired."""
-        try:
-            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
-            return payload.get("sub")
-        except jwt.ExpiredSignatureError:
-            logger.debug("Token expired")
-            return None
-        except jwt.InvalidTokenError:
-            logger.debug("Invalid token")
-            return None
+        return verify_jwt(token, self.jwt_secret)
