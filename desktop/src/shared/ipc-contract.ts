@@ -71,6 +71,8 @@ export interface GenerateInput {
   durationHours: number
   /** Answers keyed by ClarifyQuestion.field from a previous clarify round. */
   answers?: Record<string, string>
+  /** Saved LLM profile — its key evaluates, its id attributes the record. */
+  profileId?: number
 }
 
 export type GenerateResult =

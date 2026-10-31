@@ -84,6 +84,28 @@ export interface AccessRequest {
 
 export type ReviewDecision = 'approve' | 'deny' | 'changes_requested'
 
+/** A user's saved LLM profile — key material is never serialized. */
+export interface LlmProfile {
+  id: number
+  username: string
+  name: string
+  provider: string
+  model: string
+  has_key: boolean
+  key_hint: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** One admin-managed provider/model pair. */
+export interface CatalogEntry {
+  provider: string
+  model: string
+  display_name: string
+  enabled: boolean
+}
+
 /** One JSONL audit trail record. Extra keys carry event metadata. */
 export interface AuditEvent {
   ts: string
