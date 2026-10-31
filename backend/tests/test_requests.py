@@ -300,6 +300,17 @@ class TestBaseRoleSelection:
         }
 
     def _activate_with_capture(self, monkeypatch, arns):
+        # Pin every base-role ARN first: a developer's real .env must never
+        # leak into these tests (hermetic-test rule).
+        for key in (
+            "base_role_readonly",
+            "base_role_developer",
+            "base_role_support",
+            "base_role_analyst",
+            "base_role_auditor",
+            "base_role_admin",
+        ):
+            monkeypatch.setattr(main.config.aws, key, "")
         for key, value in arns.items():
             monkeypatch.setattr(main.config.aws, key, value)
         calls = []
