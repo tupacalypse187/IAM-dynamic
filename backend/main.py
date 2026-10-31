@@ -320,6 +320,35 @@ PROVIDER_MODELS = {
 }
 
 
+def _is_full_admin_policy(policy: dict) -> bool:
+    """Return True if any Allow statement grants Action "*" or "*:*".
+
+    Deterministic server-side guardrail so an authenticated caller cannot
+    POST an arbitrary full-admin session policy and mint STS credentials
+    with it. Checks both string and list Action shapes; a statement that
+    is not a dict, has no Action, or is not an Allow is skipped.
+    """
+    statements = policy.get("Statement", []) if isinstance(policy, dict) else []
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return False
+    for statement in statements:
+        if not isinstance(statement, dict):
+            continue
+        if str(statement.get("Effect", "")) != "Allow":
+            continue
+        actions = statement.get("Action", [])
+        if isinstance(actions, str):
+            actions = [actions]
+        if not isinstance(actions, list):
+            continue
+        for action in actions:
+            if isinstance(action, str) and action.strip() in ("*", "*:*"):
+                return True
+    return False
+
+
 def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
     """
     Send audit notification to every configured channel (Slack, Telegram).
@@ -565,6 +594,16 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
 
     Requires policy to be approved (manually or auto-approved for low risk).
     """
+    if request.approved is not True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Request has not been approved. Credentials can only be issued for an approved policy.",
+        )
+    if _is_full_admin_policy(request.policy):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Policy rejected: Allow statement with full-admin Action (\"*\" or \"*:*\") is not permitted.",
+        )
     try:
         # Generate credentials
         creds = sts_service.assume_role_with_policy(request.policy, request.duration)
