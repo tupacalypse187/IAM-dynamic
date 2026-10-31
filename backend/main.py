@@ -6,7 +6,9 @@ Generates least-privilege IAM policies using LLM and issues temporary credential
 """
 import os
 import logging
+import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -27,8 +29,9 @@ logger = logging.getLogger(__name__)
 from services.sts_service import STSService, STSAssumeRoleError
 from services.slack_service import SlackService
 from services.telegram_service import TelegramService
-from services.auth_service import AuthService
+from services.auth_service import AuthService, create_jwt, verify_jwt
 from services.turnstile_service import TurnstileService
+from services.user_store import UserStore, RegistrationError
 from services.error_handler import UserFacingError
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
@@ -48,6 +51,12 @@ telegram_service = TelegramService(
 auth_service: Optional[AuthService] = None
 turnstile_service = TurnstileService(config.auth.turnstile_secret_key)
 
+if not config.auth.jwt_secret:
+    # Dev convenience: sessions work without JWT_SECRET but don't survive
+    # restarts. Production sets JWT_SECRET explicitly.
+    config.auth.jwt_secret = secrets.token_hex(32)
+    logger.warning("JWT_SECRET not set — using an ephemeral signing key")
+
 if config.auth.enabled:
     auth_service = AuthService(
         username=config.auth.admin_username,
@@ -58,6 +67,26 @@ if config.auth.enabled:
     logger.info("Authentication enabled")
 else:
     logger.info("Authentication disabled (no AUTH_PASSWORD_HASH configured)")
+
+# Multi-user store for in-app registration (first user becomes admin).
+# Built lazily so a bad AUTH_USERS_DB path degrades to legacy-only auth
+# instead of killing startup.
+user_store: Optional[UserStore] = None
+
+
+def get_user_store() -> Optional[UserStore]:
+    """Return the singleton user store, creating it on first use."""
+    global user_store
+    if user_store is None:
+        db_path = config.auth.users_db_path
+        if not os.path.isabs(db_path):
+            db_path = str(Path(__file__).parent / db_path)
+        try:
+            user_store = UserStore(db_path)
+        except Exception:
+            logger.exception("User database unavailable at %s", db_path)
+            user_store = None
+    return user_store
 
 
 # --- Pydantic Models ---
@@ -127,7 +156,45 @@ class AuthStatusResponse(BaseModel):
     auth_required: bool
 
 
+class RegisterRequest(BaseModel):
+    """Request model for self-registration"""
+    username: str
+    password: str
+    turnstile_token: Optional[str] = None
+
+
+class RegisterResponse(LoginResponse):
+    """Registration response — same session as login, plus admin flag"""
+    is_admin: bool = False
+
+
+class UserListResponse(BaseModel):
+    """Admin user listing"""
+    users: list
+
+
 # --- Auth Helpers ---
+
+def _auth_required() -> bool:
+    """Auth is required with a legacy hash OR any registered users.
+
+    A fresh install (no hash, no users) stays open so the first admin
+    account can be created via registration.
+    """
+    if auth_service is not None:
+        return True
+    store = get_user_store()
+    return store is not None and store.count_users() > 0
+
+
+def _is_admin(username: Optional[str]) -> bool:
+    """Legacy admin username or a store-flagged administrator."""
+    if not username:
+        return False
+    if auth_service is not None and username == config.auth.admin_username:
+        return True
+    store = get_user_store()
+    return store is not None and store.is_admin(username)
 
 def _extract_token(request: Request) -> Optional[str]:
     """Extract JWT from Authorization header or session cookie."""
@@ -141,17 +208,17 @@ async def get_current_user(request: Request) -> str:
     """
     Dependency that extracts and validates the current user.
 
-    When auth is disabled (no AUTH_PASSWORD_HASH), returns "admin" to
-    preserve the existing local dev workflow.
+    When auth is fully disabled (no AUTH_PASSWORD_HASH and no registered
+    users), returns "admin" to preserve the existing local dev workflow.
     """
-    if auth_service is None:
+    if not _auth_required():
         return "admin"
 
     token = _extract_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    username = auth_service.verify_token(token)
+    username = verify_jwt(token, config.auth.jwt_secret)
     if not username:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -299,7 +366,7 @@ async def health_check():
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(request: Request, body: LoginRequest):
     """Authenticate and return a JWT token."""
-    if auth_service is None:
+    if not _auth_required():
         raise HTTPException(status_code=404, detail="Authentication is not enabled")
 
     # Verify Turnstile CAPTCHA
@@ -307,7 +374,15 @@ async def login(request: Request, body: LoginRequest):
     if not await turnstile_service.verify(body.turnstile_token, remote_ip):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
-    result = auth_service.authenticate(body.username, body.password)
+    store = get_user_store()
+    if store is not None and store.verify(body.username, body.password):
+        result = create_jwt(
+            body.username, config.auth.jwt_secret, config.auth.jwt_expiry_hours
+        )
+    elif auth_service is not None:
+        result = auth_service.authenticate(body.username, body.password)
+    else:
+        result = None
     if not result:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -318,17 +393,64 @@ async def login(request: Request, body: LoginRequest):
     )
 
 
+@app.post("/api/auth/register", response_model=RegisterResponse, status_code=201)
+async def register(request: Request, body: RegisterRequest):
+    """Self-register a new account (first user becomes administrator).
+
+    Disabled with AUTH_ALLOW_REGISTRATION=false for invite-only deployments.
+    """
+    if not config.auth.allow_registration:
+        raise HTTPException(
+            status_code=403,
+            detail="Self-registration is disabled. Ask an administrator for an account.",
+        )
+
+    # Verify Turnstile CAPTCHA
+    remote_ip = request.headers.get("x-real-ip", request.client.host if request.client else None)
+    if not await turnstile_service.verify(body.turnstile_token, remote_ip):
+        raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
+
+    store = get_user_store()
+    if store is None:
+        raise HTTPException(status_code=500, detail="User database is unavailable")
+
+    try:
+        user = store.register(body.username, body.password)
+    except RegistrationError as e:
+        status_code = 409 if e.code == "username_taken" else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+
+    result = create_jwt(
+        user["username"], config.auth.jwt_secret, config.auth.jwt_expiry_hours
+    )
+    return RegisterResponse(
+        token=result.token,
+        expires_at=result.expires_at.isoformat(),
+        username=user["username"],
+        is_admin=user["is_admin"],
+    )
+
+
+@app.get("/api/auth/users", response_model=UserListResponse)
+async def list_users(user: str = Depends(get_current_user)):
+    """List registered users (administrators only)."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    store = get_user_store()
+    return UserListResponse(users=store.list_users() if store else [])
+
+
 @app.get("/api/auth/verify", response_model=AuthStatusResponse)
 async def verify_auth(request: Request):
     """Check if the current session is valid."""
-    auth_required = auth_service is not None
+    auth_required = _auth_required()
 
     if not auth_required:
         return AuthStatusResponse(authenticated=True, username="admin", auth_required=False)
 
     token = _extract_token(request)
     if token:
-        username = auth_service.verify_token(token)
+        username = verify_jwt(token, config.auth.jwt_secret)
         if username:
             return AuthStatusResponse(authenticated=True, username=username, auth_required=True)
 

@@ -119,7 +119,7 @@ graph LR
 -   **🛡️ Comprehensive Error Handling:** Structured logging and CORS configuration
 
 ### New in v3.1
--   **🔒 Authentication Portal:** Login page with JWT-based session management (bcrypt password hashing)
+-   **🔒 Authentication Portal:** Login page with JWT-based session management (bcrypt password hashing) and self-registration — first account becomes admin (`AUTH_ALLOW_REGISTRATION=false` for invite-only)
 -   **🤖 Cloudflare Turnstile:** Optional CAPTCHA on login form to prevent brute-force attacks
 -   **🔐 HTTPS via Caddy:** Automatic TLS certificates via Let's Encrypt with Cloudflare DNS challenge
 -   **🛡️ Rate Limiting:** nginx rate limits on login endpoint (5 requests/minute)

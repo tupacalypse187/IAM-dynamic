@@ -64,6 +64,12 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  register: (data: { username: string; password: string; turnstile_token?: string }) =>
+    request<LoginResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Providers
   getProviders: () => request<ProvidersResponse>('/config/providers'),
 
