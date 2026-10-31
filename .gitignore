@@ -68,6 +68,10 @@ db.sqlite3-journal
 # IAM-Dynamic local user database (SQLite, created at runtime):
 backend/users.db
 backend/users.db-journal
+# Access-request database + JSONL audit trail (created at runtime):
+backend/requests.db
+backend/requests.db-journal
+backend/data/audit.jsonl
 
 # Flask stuff:
 instance/

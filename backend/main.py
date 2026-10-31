@@ -32,6 +32,13 @@ from services.telegram_service import TelegramService
 from services.auth_service import AuthService, create_jwt, verify_jwt
 from services.turnstile_service import TurnstileService
 from services.user_store import UserStore, RegistrationError
+from services.request_store import (
+    RequestStore,
+    RequestStoreError,
+    STATUS_PENDING,
+    STATUS_APPROVED,
+)
+from services.audit_log import AuditLog
 from services.error_handler import UserFacingError
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
@@ -87,6 +94,89 @@ def get_user_store() -> Optional[UserStore]:
             logger.exception("User database unavailable at %s", db_path)
             user_store = None
     return user_store
+
+
+# Access-request store and JSONL audit log for the review workflow.
+# Built lazily like the user store so a bad path degrades to a 500 on
+# the review endpoints instead of killing startup.
+request_store: Optional[RequestStore] = None
+audit_log: Optional[AuditLog] = None
+
+
+def _resolve_data_path(configured: str) -> str:
+    if os.path.isabs(configured):
+        return configured
+    return str(Path(__file__).parent / configured)
+
+
+def get_request_store() -> Optional[RequestStore]:
+    """Return the singleton request store, creating it on first use."""
+    global request_store
+    if request_store is None:
+        db_path = _resolve_data_path(config.requests_db_path)
+        try:
+            request_store = RequestStore(db_path)
+        except Exception:
+            logger.exception("Request database unavailable at %s", db_path)
+            request_store = None
+    return request_store
+
+
+def get_audit_log() -> Optional[AuditLog]:
+    """Return the singleton JSONL audit log, creating it on first use."""
+    global audit_log
+    if audit_log is None:
+        try:
+            audit_log = AuditLog(_resolve_data_path(config.audit_log_path))
+        except Exception:
+            logger.exception("Audit log unavailable")
+            audit_log = None
+    return audit_log
+
+
+def _require_request_store() -> RequestStore:
+    store = get_request_store()
+    if store is None:
+        raise HTTPException(status_code=500, detail="Request database is unavailable")
+    return store
+
+
+def _actor_role(username: str) -> str:
+    return "admin" if _is_admin(username) else "user"
+
+
+def _audit(
+    event: str,
+    *,
+    request_id: int,
+    actor: str,
+    actor_role: Optional[str] = None,
+    from_status: Optional[str] = None,
+    to_status: Optional[str] = None,
+    **extra,
+) -> None:
+    """Append an audit event; failures are logged, never fatal.
+
+    Automated decisions (low-risk auto-approval) pass actor="system" with
+    actor_role="automated" so requesters can tell a human reviewer apart
+    from the system in the audit trail.
+    """
+    log = get_audit_log()
+    if log is None:
+        logger.error("Audit log unavailable — event %s not recorded", event)
+        return
+    try:
+        log.append(
+            event,
+            request_id=request_id,
+            actor=actor,
+            actor_role=actor_role or _actor_role(actor),
+            from_status=from_status,
+            to_status=to_status,
+            **extra,
+        )
+    except Exception:
+        logger.exception("Failed to append audit event %s", event)
 
 
 # --- Pydantic Models ---
@@ -158,6 +248,7 @@ class AuthStatusResponse(BaseModel):
     authenticated: bool
     username: Optional[str] = None
     auth_required: bool
+    is_admin: bool = False
 
 
 class RegisterRequest(BaseModel):
@@ -175,6 +266,66 @@ class RegisterResponse(LoginResponse):
 class UserListResponse(BaseModel):
     """Admin user listing"""
     users: list
+
+
+class SubmitAccessRequest(BaseModel):
+    """Submit a new access request for LLM evaluation + review routing"""
+    request_text: str = Field(..., description="Natural language description of access needed", min_length=10)
+    provider: Optional[str] = Field(default="gemini", description="LLM provider to use")
+    model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
+    duration: int = Field(default=2, description="Requested session duration in hours", ge=1, le=12)
+    change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
+
+
+class AccessRequestModel(BaseModel):
+    """A persisted access request with its evaluated LLM response + review state"""
+    id: int
+    requester: str
+    request_text: str
+    provider: str
+    model: Optional[str] = None
+    duration: int
+    policy: dict
+    risk: str
+    explanation: str
+    approver_note: str
+    auto_approved: bool
+    status: str
+    reviewer: Optional[str] = None
+    feedback: Optional[str] = None
+    revision: int = 1
+    created_at: str
+    updated_at: str
+    decided_at: Optional[str] = None
+    credentials_expires_at: Optional[str] = None
+
+
+class ReviewAccessRequest(BaseModel):
+    """Reviewer decision on a pending request"""
+    decision: str = Field(..., description="One of: approve, deny, changes_requested")
+    feedback: Optional[str] = Field(default=None, description="Required for deny and changes_requested")
+
+
+class ResubmitAccessRequest(BaseModel):
+    """Owner resubmission of a sent-back request (optionally edited)"""
+    request_text: Optional[str] = Field(default=None, description="Edited request text (defaults to stored text)", min_length=10)
+    provider: Optional[str] = Field(default=None, description="LLM provider to use (defaults to stored)")
+    model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
+    duration: Optional[int] = Field(default=None, description="Requested session duration in hours", ge=1, le=12)
+
+
+class AuditEventModel(BaseModel):
+    """One JSONL audit trail record"""
+    ts: str
+    event: str
+    request_id: int
+    actor: str
+    actor_role: str
+    from_status: Optional[str] = None
+    to_status: Optional[str] = None
+
+    class Config:
+        extra = "allow"
 
 
 # --- Auth Helpers ---
@@ -584,13 +735,20 @@ async def verify_auth(request: Request):
     auth_required = _auth_required()
 
     if not auth_required:
-        return AuthStatusResponse(authenticated=True, username="admin", auth_required=False)
+        return AuthStatusResponse(
+            authenticated=True, username="admin", auth_required=False, is_admin=True
+        )
 
     token = _extract_token(request)
     if token:
         username = verify_jwt(token, config.auth.jwt_secret)
         if username:
-            return AuthStatusResponse(authenticated=True, username=username, auth_required=True)
+            return AuthStatusResponse(
+                authenticated=True,
+                username=username,
+                auth_required=True,
+                is_admin=_is_admin(username),
+            )
 
     return AuthStatusResponse(authenticated=False, auth_required=True)
 
@@ -819,6 +977,448 @@ async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to generate guidance. Please review your request and try again."
         )
+
+
+# --- Access Request + Review Workflow ---
+#
+# Requests (what a user asked for + the evaluated LLM response) are
+# persisted separately from approvals (what a reviewer decided). Low-risk
+# requests are marked approved automatically but issue NO credentials
+# until the requester activates them when ready.
+
+def _evaluate_access_request(
+    provider_id: Optional[str], model: Optional[str], request_text: str, duration: int
+):
+    """Run the LLM evaluation shared by submit and resubmit.
+
+    Returns (PolicyResponse, clamped duration, auto_approved).
+    """
+    provider = get_llm_provider(provider_id, model)
+    response: PolicyResponse = provider.generate_policy(request_text)
+    max_duration = get_max_duration(response.risk)
+    actual_duration = min(duration, max_duration)
+    auto_approved = response.risk.lower() == "low"
+    return response, actual_duration, auto_approved
+
+
+def _get_stored_request(request_id: int) -> dict:
+    store = _require_request_store()
+    stored = store.get(request_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f"Request {request_id} not found.")
+    return stored
+
+
+def _require_owner_or_admin(stored: dict, user: str) -> None:
+    if stored["requester"] != user and not _is_admin(user):
+        raise HTTPException(
+            status_code=403, detail="You can only view your own requests."
+        )
+
+
+@app.post("/api/requests", response_model=AccessRequestModel, status_code=201)
+async def submit_access_request(
+    body: SubmitAccessRequest, user: str = Depends(get_current_user)
+):
+    """Evaluate a request with the LLM, persist it, and route for review.
+
+    Low-risk requests are marked approved (actor "system" in the audit
+    trail) but still require POST /api/requests/{id}/activate before any
+    credentials exist. Everything else waits in pending_review.
+    """
+    try:
+        response, actual_duration, auto_approved = _evaluate_access_request(
+            body.provider, body.model, body.request_text, body.duration
+        )
+    except UserFacingError as e:
+        logger.error(f"Access request evaluation failed (user-facing): {e.log_message}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
+    except Exception:
+        logger.error("Access request evaluation failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again.",
+        )
+
+    request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
+    store = _require_request_store()
+    try:
+        stored = store.create(
+            requester=user,
+            request_text=body.request_text,
+            provider=body.provider or "gemini",
+            model=body.model,
+            duration=actual_duration,
+            policy=response.policy,
+            risk=response.risk,
+            explanation=response.explanation,
+            approver_note=response.approver_note,
+            auto_approved=auto_approved,
+            status=request_status,
+        )
+    except RequestStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    _audit(
+        "submitted",
+        request_id=stored["id"],
+        actor=user,
+        to_status=request_status,
+        risk=response.risk,
+        provider=stored["provider"],
+        duration_hours=actual_duration,
+        revision=stored["revision"],
+    )
+    if auto_approved:
+        _audit(
+            "auto_approved",
+            request_id=stored["id"],
+            actor="system",
+            actor_role="automated",
+            to_status=request_status,
+            risk=response.risk,
+        )
+    else:
+        _audit(
+            "queued_for_review",
+            request_id=stored["id"],
+            actor="system",
+            actor_role="automated",
+            to_status=request_status,
+            risk=response.risk,
+        )
+    return stored
+
+
+class RecordAccessRequest(BaseModel):
+    """Persist an already-evaluated request without re-running the LLM.
+
+    Used by the desktop shell: its Agent_Kit evaluates through this same
+    backend's /api/generate-policy seconds earlier, so re-running the model
+    would double LLM spend for an identical result. Trust is equivalent to
+    /api/requests — the policy is re-checked by the server guardrail, the
+    risk label is normalized (never trusted blindly), and the duration is
+    clamped to the risk ceiling.
+    """
+    request_text: str = Field(..., min_length=10)
+    provider: Optional[str] = Field(default="gemini")
+    model: Optional[str] = Field(default=None)
+    duration: int = Field(default=2, ge=1, le=12)
+    policy: dict
+    risk: str = Field(default="medium")
+    explanation: str = Field(default="")
+    approver_note: str = Field(default="")
+
+
+@app.post("/api/requests/record", response_model=AccessRequestModel, status_code=201)
+async def record_access_request(
+    body: RecordAccessRequest, user: str = Depends(get_current_user)
+):
+    """Store a freshly evaluated policy as a review-routed request."""
+    violation = find_overly_broad_policy_violation(body.policy)
+    if violation is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    risk = (body.risk or "").strip().lower()
+    if risk not in ("low", "medium", "high", "critical"):
+        risk = "medium"
+    actual_duration = min(body.duration, get_max_duration(risk))
+    auto_approved = risk == "low"
+    request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
+    store = _require_request_store()
+    try:
+        stored = store.create(
+            requester=user,
+            request_text=body.request_text,
+            provider=body.provider or "gemini",
+            model=body.model,
+            duration=actual_duration,
+            policy=body.policy,
+            risk=risk,
+            explanation=body.explanation,
+            approver_note=body.approver_note,
+            auto_approved=auto_approved,
+            status=request_status,
+        )
+    except RequestStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _audit(
+        "submitted",
+        request_id=stored["id"],
+        actor=user,
+        to_status=request_status,
+        risk=risk,
+        provider=stored["provider"],
+        duration_hours=actual_duration,
+        revision=stored["revision"],
+    )
+    _audit(
+        "auto_approved" if auto_approved else "queued_for_review",
+        request_id=stored["id"],
+        actor="system",
+        actor_role="automated",
+        to_status=request_status,
+        risk=risk,
+    )
+    return stored
+
+
+@app.get("/api/requests", response_model=list[AccessRequestModel])
+async def list_access_requests(
+    status: Optional[str] = None,
+    mine: bool = False,
+    user: str = Depends(get_current_user),
+):
+    """List requests — your own, or all when you are an admin.
+
+    Admins pass mine=true for the "my requests" view; regular users always
+    see only their own rows regardless of flags.
+    """
+    store = _require_request_store()
+    try:
+        if _is_admin(user) and not mine:
+            return store.list(status=status)
+        return store.list(requester=user, status=status)
+    except RequestStoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/requests/{request_id}", response_model=AccessRequestModel)
+async def get_access_request(request_id: int, user: str = Depends(get_current_user)):
+    """Request detail: original text plus the evaluated LLM response."""
+    stored = _get_stored_request(request_id)
+    _require_owner_or_admin(stored, user)
+    return stored
+
+
+@app.post("/api/requests/{request_id}/review", response_model=AccessRequestModel)
+async def review_access_request(
+    request_id: int, body: ReviewAccessRequest, user: str = Depends(get_current_user)
+):
+    """Approve, deny, or send back a pending request (administrators only)."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    decisions = {
+        "approve": ("approved", "approved"),
+        "deny": ("denied", "denied"),
+        "changes_requested": ("changes_requested", "changes_requested"),
+    }
+    if body.decision not in decisions:
+        raise HTTPException(
+            status_code=400,
+            detail="Decision must be one of: approve, deny, changes_requested.",
+        )
+    if body.decision in ("deny", "changes_requested") and not (body.feedback or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Feedback is required when denying or sending a request back.",
+        )
+    stored = _get_stored_request(request_id)
+    if stored["status"] != STATUS_PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only pending requests can be reviewed (request {request_id} is {stored['status']}).",
+        )
+    store = _require_request_store()
+    try:
+        event, to_status = decisions[body.decision]
+        updated = store.set_status(
+            request_id, to_status, reviewer=user, feedback=(body.feedback or None)
+        )
+    except RequestStoreError as e:
+        code = 404 if e.code == "not_found" else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    _audit(
+        event,
+        request_id=request_id,
+        actor=user,
+        from_status=stored["status"],
+        to_status=to_status,
+        risk=stored["risk"],
+        feedback=body.feedback,
+    )
+    return updated
+
+
+@app.post("/api/requests/{request_id}/resubmit", response_model=AccessRequestModel)
+async def resubmit_access_request(
+    request_id: int, body: ResubmitAccessRequest, user: str = Depends(get_current_user)
+):
+    """Re-evaluate a sent-back request as a new revision (owner only)."""
+    stored = _get_stored_request(request_id)
+    if stored["requester"] != user:
+        raise HTTPException(
+            status_code=403, detail="Only the requester can resubmit this request."
+        )
+    request_text = body.request_text or stored["request_text"]
+    provider = body.provider or stored["provider"]
+    duration = body.duration if body.duration is not None else stored["duration"]
+    try:
+        response, actual_duration, auto_approved = _evaluate_access_request(
+            provider, body.model, request_text, duration
+        )
+    except UserFacingError as e:
+        logger.error(f"Access request re-evaluation failed (user-facing): {e.log_message}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
+    except Exception:
+        logger.error("Access request re-evaluation failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again.",
+        )
+    request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
+    store = _require_request_store()
+    try:
+        updated = store.resubmit(
+            request_id,
+            request_text=request_text,
+            provider=provider,
+            model=body.model,
+            duration=actual_duration,
+            policy=response.policy,
+            risk=response.risk,
+            explanation=response.explanation,
+            approver_note=response.approver_note,
+            auto_approved=auto_approved,
+            status=request_status,
+        )
+    except RequestStoreError as e:
+        code = 404 if e.code == "not_found" else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    _audit(
+        "resubmitted",
+        request_id=request_id,
+        actor=user,
+        from_status=stored["status"],
+        to_status=request_status,
+        risk=response.risk,
+        revision=updated["revision"],
+    )
+    return updated
+
+
+@app.post("/api/requests/{request_id}/discard", response_model=AccessRequestModel)
+async def discard_access_request(
+    request_id: int, user: str = Depends(get_current_user)
+):
+    """Withdraw an open request (owner, or any admin)."""
+    stored = _get_stored_request(request_id)
+    if stored["requester"] != user and not _is_admin(user):
+        raise HTTPException(
+            status_code=403, detail="Only the requester or an administrator can discard this request."
+        )
+    store = _require_request_store()
+    try:
+        updated = store.set_status(request_id, "discarded", reviewer=user)
+    except RequestStoreError as e:
+        code = 404 if e.code == "not_found" else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    _audit(
+        "discarded",
+        request_id=request_id,
+        actor=user,
+        from_status=stored["status"],
+        to_status="discarded",
+    )
+    return updated
+
+
+@app.post("/api/requests/{request_id}/activate", response_model=CredentialsResponse)
+async def activate_access_request(
+    request_id: int, user: str = Depends(get_current_user)
+):
+    """Issue STS credentials for an approved request, when the requester is ready.
+
+    Approval alone creates no credentials — not even for auto-approved
+    low-risk requests. The owner calls this when they are ready to use the
+    access; the stored (reviewed) policy is re-checked by the server
+    guardrail before STS is ever called.
+    """
+    stored = _get_stored_request(request_id)
+    if stored["requester"] != user:
+        raise HTTPException(
+            status_code=403, detail="Only the requester can activate this request."
+        )
+    if stored["status"] != STATUS_APPROVED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only approved requests can be activated (request {request_id} is {stored['status']}).",
+        )
+    violation = find_overly_broad_policy_violation(stored["policy"])
+    if violation is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    try:
+        creds = sts_service.assume_role_with_policy(stored["policy"], stored["duration"])
+    except STSAssumeRoleError as e:
+        logger.error(f"STS AssumeRole failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to issue credentials. Please try again.",
+        )
+    except Exception:
+        logger.error("Credential activation failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to issue credentials. Please try again.",
+        )
+    expiration = creds["Expiration"].isoformat()
+    store = _require_request_store()
+    try:
+        store.mark_activated(request_id, credentials_expires_at=expiration)
+    except RequestStoreError as e:
+        # Credentials were already issued; the activation record failed.
+        # Surface loudly instead of letting the request be activated twice.
+        logger.error("Activation record failed for request %s: %s", request_id, e)
+        raise HTTPException(status_code=500, detail="Credentials issued but activation was not recorded. Contact an administrator.")
+    reviewer = stored["reviewer"] or "system (auto-approved)"
+    _audit(
+        "activated",
+        request_id=request_id,
+        actor=user,
+        from_status=STATUS_APPROVED,
+        to_status="activated",
+        risk=stored["risk"],
+        reviewer=reviewer,
+        duration_hours=stored["duration"],
+    )
+    risk = stored["risk"].lower()
+    if risk not in ("low", "medium", "high", "critical"):
+        risk = "medium"
+    send_audit_notification(
+        auto_approved=stored["auto_approved"],
+        req=stored["request_text"],
+        risk=risk,
+        duration=stored["duration"],
+        approver=reviewer,
+    )
+    return CredentialsResponse(
+        access_key_id=creds["AccessKeyId"],
+        secret_access_key=creds["SecretAccessKey"],
+        session_token=creds["SessionToken"],
+        expiration=expiration,
+        region="us-east-1",
+    )
+
+
+@app.get("/api/audit", response_model=list[AuditEventModel])
+async def read_audit_trail(
+    request_id: Optional[int] = None,
+    actor: Optional[str] = None,
+    event: Optional[str] = None,
+    limit: int = 100,
+    user: str = Depends(get_current_user),
+):
+    """Browse the JSONL audit trail (administrators only)."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    log = get_audit_log()
+    if log is None:
+        raise HTTPException(status_code=500, detail="Audit log is unavailable")
+    return log.read(
+        limit=min(max(limit, 1), 500),
+        request_id=request_id,
+        actor=actor,
+        event=event,
+    )
 
 
 @app.get("/")

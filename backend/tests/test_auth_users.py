@@ -90,7 +90,12 @@ class TestUserLogin:
         client = _client()
         client.post("/api/auth/register", json={"username": "alice", "password": "correct-horse-8"})
         body = client.get("/api/auth/verify").json()
-        assert body == {"authenticated": False, "username": None, "auth_required": True}
+        assert body == {
+            "authenticated": False,
+            "username": None,
+            "auth_required": True,
+            "is_admin": False,
+        }
 
     def test_legacy_single_user_still_works(self, tmp_path, monkeypatch):
         """A configured AUTH_PASSWORD_HASH keeps working alongside the store."""
