@@ -108,6 +108,35 @@ def _isolated_request_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_profile_store(tmp_path, monkeypatch):
+    """Give every test a fresh profiles DB + deterministic encryption secret.
+
+    Mirrors _isolated_user_store: main.profile_store is a lazily-created
+    singleton, so reset it per test and point the path at a tmp dir. The
+    secret is fixed so Fernet round-trips are deterministic and never touch
+    a developer's real profiles.db.
+    """
+    import main
+
+    existing = getattr(main, "profile_store", None)
+    if existing is not None:
+        try:
+            existing.close()
+        except Exception:
+            pass
+    monkeypatch.setattr(main, "profile_store", None)
+    monkeypatch.setattr(main.config, "profiles_db_path", str(tmp_path / "profiles.db"))
+    monkeypatch.setattr(main.config, "profile_encryption_key", "test-encryption-secret")
+    yield
+    store = main.profile_store
+    if store is not None:
+        try:
+            store.close()
+        except Exception:
+            pass
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_provider_keys(monkeypatch):
     """Remove real provider credentials and auth config for every test.
 

@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import services
-from services.sts_service import STSService, STSAssumeRoleError
+from services.sts_service import STSService, STSAssumeRoleError, select_base_role_class
 from services.slack_service import SlackService
 from services.telegram_service import TelegramService
 from services.auth_service import AuthService, create_jwt, verify_jwt
@@ -39,6 +39,7 @@ from services.request_store import (
     STATUS_APPROVED,
 )
 from services.audit_log import AuditLog
+from services.profile_store import ProfileStore, ProfileStoreError
 from services.error_handler import UserFacingError
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
@@ -141,8 +142,73 @@ def _require_request_store() -> RequestStore:
     return store
 
 
+# Per-user LLM profiles + admin-managed provider catalog.
+profile_store: Optional[ProfileStore] = None
+
+
+def _catalog_seed_entries() -> list[dict]:
+    """Flatten PROVIDER_MODELS into catalog seed rows."""
+    entries: list[dict] = []
+    for provider_id, models in PROVIDER_MODELS.items():
+        for model in models:
+            entries.append({
+                "provider": provider_id,
+                "model": model["id"],
+                "display_name": f"{model['name']}",
+            })
+    return entries
+
+
+def get_profile_store() -> Optional[ProfileStore]:
+    """Return the singleton profile store, creating + seeding it on first use."""
+    global profile_store
+    if profile_store is None:
+        db_path = _resolve_data_path(config.profiles_db_path)
+        secret = config.profile_encryption_key or config.auth.jwt_secret
+        try:
+            profile_store = ProfileStore(db_path, secret)
+            profile_store.seed_catalog(_catalog_seed_entries())
+        except Exception:
+            logger.exception("Profile database unavailable at %s", db_path)
+            profile_store = None
+    return profile_store
+
+
+def _require_profile_store() -> ProfileStore:
+    store = get_profile_store()
+    if store is None:
+        raise HTTPException(status_code=500, detail="Profile database is unavailable")
+    return store
+
+
 def _actor_role(username: str) -> str:
     return "admin" if _is_admin(username) else "user"
+
+
+def _select_base_role(policy: dict) -> tuple[Optional[str], str]:
+    """Pick the least-privilege base role for a stored policy.
+
+    Returns (role_arn_or_None, class_name). None means "no base roles
+    configured" — the caller falls back to the legacy single role, so
+    today's behavior is unchanged until ARNs are set (see aws/base-roles.md).
+    The admin class is never auto-selected.
+    """
+    role_class = select_base_role_class(policy)
+    arn = {
+        "readonly": config.aws.base_role_readonly,
+        "developer": config.aws.base_role_developer,
+    }.get(role_class, "")
+    if not arn:
+        # Fall across: a read-only policy with only the developer base set
+        # still gets a tighter base than the legacy role.
+        arn = config.aws.base_role_developer or config.aws.base_role_readonly
+        if arn:
+            role_class = (
+                "developer" if arn == config.aws.base_role_developer else "readonly"
+            )
+    if not arn:
+        return None, "legacy"
+    return arn, role_class
 
 
 def _audit(
@@ -188,6 +254,7 @@ class PolicyRequest(BaseModel):
     model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
     duration: int = Field(default=2, description="Requested session duration in hours", ge=1, le=12)
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
+    profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
 
 
 class PolicyResponseModel(BaseModel):
@@ -275,6 +342,7 @@ class SubmitAccessRequest(BaseModel):
     model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
     duration: int = Field(default=2, description="Requested session duration in hours", ge=1, le=12)
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
+    profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
 
 
 class AccessRequestModel(BaseModel):
@@ -312,6 +380,7 @@ class ResubmitAccessRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="LLM provider to use (defaults to stored)")
     model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
     duration: Optional[int] = Field(default=None, description="Requested session duration in hours", ge=1, le=12)
+    profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
 
 
 class AuditEventModel(BaseModel):
@@ -326,6 +395,49 @@ class AuditEventModel(BaseModel):
 
     class Config:
         extra = "allow"
+
+
+class CatalogEntryModel(BaseModel):
+    """One admin-managed provider/model pair"""
+    provider: str
+    model: str
+    display_name: str = ""
+    enabled: bool
+
+
+class CatalogUpdateBody(BaseModel):
+    """Enable or disable a catalog pair (administrators only)"""
+    provider: str
+    model: str
+    enabled: bool
+
+
+class ProfileCreateBody(BaseModel):
+    """Create a named LLM profile (key is encrypted at rest, never returned)"""
+    name: str = Field(..., min_length=1, max_length=64)
+    provider: str
+    model: str
+    api_key: str = Field(..., min_length=1)
+
+
+class ProfileUpdateBody(BaseModel):
+    """Rename a profile and/or replace its key"""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    api_key: Optional[str] = Field(default=None, min_length=1)
+
+
+class ProfileModel(BaseModel):
+    """A user's LLM profile — key material is never serialized"""
+    id: int
+    username: str
+    name: str
+    provider: str
+    model: str
+    has_key: bool
+    key_hint: str = ""
+    active: bool
+    created_at: str
+    updated_at: str
 
 
 # --- Auth Helpers ---
@@ -809,7 +921,7 @@ async def get_providers(_user: str = Depends(get_current_user)):
 
 
 @app.post("/api/generate-policy", response_model=PolicyResponseModel)
-async def generate_policy(request: PolicyRequest, _user: str = Depends(get_current_user)):
+async def generate_policy(request: PolicyRequest, user: str = Depends(get_current_user)):
     """
     Generate IAM policy from natural language request
 
@@ -817,8 +929,11 @@ async def generate_policy(request: PolicyRequest, _user: str = Depends(get_curre
     Returns policy with risk assessment and approval requirements.
     """
     try:
-        # Get LLM provider with optional model override
-        provider = get_llm_provider(request.provider, request.model)
+        # Saved profiles override provider/model/key; otherwise body/env apply.
+        provider_id, model, api_key, _ = _resolve_evaluation_config(
+            user, request.provider, request.model, request.profile_id
+        )
+        provider = get_llm_provider(provider_id, model, api_key)
 
         # Generate policy
         response: PolicyResponse = provider.generate_policy(request.request_text)
@@ -986,14 +1101,48 @@ async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: 
 # requests are marked approved automatically but issue NO credentials
 # until the requester activates them when ready.
 
+def _resolve_evaluation_config(
+    user: str,
+    body_provider: Optional[str],
+    body_model: Optional[str],
+    profile_id: Optional[int],
+) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+    """Resolve provider/model/key for an evaluation.
+
+    A profile id selects the user's own stored profile (decrypted
+    in-process, never logged); otherwise the request body (or server env)
+    applies. Returns (provider, model, api_key, audit_label).
+    """
+    if profile_id is None:
+        return body_provider, body_model, None, "server-default"
+    store = _require_profile_store()
+    try:
+        creds = store.get_credentials(user, profile_id)
+    except ProfileStoreError as e:
+        code = 404 if e.code == "not_found" else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    if not store.is_enabled(creds["provider"], creds["model"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{creds['provider']}/{creds['model']} is not enabled. Ask an administrator.",
+        )
+    public = store.get_profile_public(user, profile_id)
+    label = f"profile:{public['name']}" if public else f"profile:{profile_id}"
+    return creds["provider"], creds["model"], creds["api_key"], label
+
+
 def _evaluate_access_request(
-    provider_id: Optional[str], model: Optional[str], request_text: str, duration: int
+    provider_id: Optional[str],
+    model: Optional[str],
+    request_text: str,
+    duration: int,
+    api_key: Optional[str] = None,
 ):
     """Run the LLM evaluation shared by submit and resubmit.
 
     Returns (PolicyResponse, clamped duration, auto_approved).
     """
-    provider = get_llm_provider(provider_id, model)
+    provider = get_llm_provider(provider_id, model, api_key)
     response: PolicyResponse = provider.generate_policy(request_text)
     max_duration = get_max_duration(response.risk)
     actual_duration = min(duration, max_duration)
@@ -1026,9 +1175,12 @@ async def submit_access_request(
     trail) but still require POST /api/requests/{id}/activate before any
     credentials exist. Everything else waits in pending_review.
     """
+    provider_id, model, api_key, profile_label = _resolve_evaluation_config(
+        user, body.provider, body.model, body.profile_id
+    )
     try:
         response, actual_duration, auto_approved = _evaluate_access_request(
-            body.provider, body.model, body.request_text, body.duration
+            provider_id, model, body.request_text, body.duration, api_key
         )
     except UserFacingError as e:
         logger.error(f"Access request evaluation failed (user-facing): {e.log_message}")
@@ -1046,8 +1198,8 @@ async def submit_access_request(
         stored = store.create(
             requester=user,
             request_text=body.request_text,
-            provider=body.provider or "gemini",
-            model=body.model,
+            provider=provider_id or "gemini",
+            model=model,
             duration=actual_duration,
             policy=response.policy,
             risk=response.risk,
@@ -1066,6 +1218,7 @@ async def submit_access_request(
         to_status=request_status,
         risk=response.risk,
         provider=stored["provider"],
+        profile=profile_label,
         duration_hours=actual_duration,
         revision=stored["revision"],
     )
@@ -1108,6 +1261,7 @@ class RecordAccessRequest(BaseModel):
     risk: str = Field(default="medium")
     explanation: str = Field(default="")
     approver_note: str = Field(default="")
+    profile_id: Optional[int] = Field(default=None, description="Your saved profile (provider/model attribution only; no LLM call)")
 
 
 @app.post("/api/requests/record", response_model=AccessRequestModel, status_code=201)
@@ -1118,6 +1272,9 @@ async def record_access_request(
     violation = find_overly_broad_policy_violation(body.policy)
     if violation is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    provider_id, model, _, profile_label = _resolve_evaluation_config(
+        user, body.provider, body.model, body.profile_id
+    )
     risk = (body.risk or "").strip().lower()
     if risk not in ("low", "medium", "high", "critical"):
         risk = "medium"
@@ -1129,8 +1286,8 @@ async def record_access_request(
         stored = store.create(
             requester=user,
             request_text=body.request_text,
-            provider=body.provider or "gemini",
-            model=body.model,
+            provider=provider_id or "gemini",
+            model=model,
             duration=actual_duration,
             policy=body.policy,
             risk=risk,
@@ -1148,6 +1305,7 @@ async def record_access_request(
         to_status=request_status,
         risk=risk,
         provider=stored["provider"],
+        profile=profile_label,
         duration_hours=actual_duration,
         revision=stored["revision"],
     )
@@ -1250,11 +1408,13 @@ async def resubmit_access_request(
             status_code=403, detail="Only the requester can resubmit this request."
         )
     request_text = body.request_text or stored["request_text"]
-    provider = body.provider or stored["provider"]
     duration = body.duration if body.duration is not None else stored["duration"]
+    provider_id, model, api_key, profile_label = _resolve_evaluation_config(
+        user, body.provider or stored["provider"], body.model, body.profile_id
+    )
     try:
         response, actual_duration, auto_approved = _evaluate_access_request(
-            provider, body.model, request_text, duration
+            provider_id, model, request_text, duration, api_key
         )
     except UserFacingError as e:
         logger.error(f"Access request re-evaluation failed (user-facing): {e.log_message}")
@@ -1271,8 +1431,8 @@ async def resubmit_access_request(
         updated = store.resubmit(
             request_id,
             request_text=request_text,
-            provider=provider,
-            model=body.model,
+            provider=provider_id or "gemini",
+            model=model,
             duration=actual_duration,
             policy=response.policy,
             risk=response.risk,
@@ -1291,6 +1451,7 @@ async def resubmit_access_request(
         from_status=stored["status"],
         to_status=request_status,
         risk=response.risk,
+        profile=profile_label,
         revision=updated["revision"],
     )
     return updated
@@ -1346,8 +1507,11 @@ async def activate_access_request(
     violation = find_overly_broad_policy_violation(stored["policy"])
     if violation is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    base_role_arn, base_role_class = _select_base_role(stored["policy"])
     try:
-        creds = sts_service.assume_role_with_policy(stored["policy"], stored["duration"])
+        creds = sts_service.assume_role_with_policy(
+            stored["policy"], stored["duration"], role_arn=base_role_arn
+        )
     except STSAssumeRoleError as e:
         logger.error(f"STS AssumeRole failed: {e}")
         raise HTTPException(
@@ -1378,6 +1542,7 @@ async def activate_access_request(
         to_status="activated",
         risk=stored["risk"],
         reviewer=reviewer,
+        base_role=base_role_class,
         duration_hours=stored["duration"],
     )
     risk = stored["risk"].lower()
@@ -1419,6 +1584,94 @@ async def read_audit_trail(
         actor=actor,
         event=event,
     )
+
+
+# --- LLM Profiles + Provider Catalog ---
+#
+# Users own named profiles (provider + model + their own API key,
+# encrypted at rest). Key material is never logged, never audited, and
+# never serialized — read APIs expose has_key + a last-4 hint only.
+
+
+def _profile_error_to_http(e: ProfileStoreError) -> HTTPException:
+    code = 404 if e.code in ("not_found", "unknown_model") else 400
+    if e.code == "name_taken":
+        code = 409
+    return HTTPException(status_code=code, detail=str(e))
+
+
+@app.get("/api/providers/catalog", response_model=list[CatalogEntryModel])
+async def list_provider_catalog(user: str = Depends(get_current_user)):
+    """Provider/model pairs the administrator has made available."""
+    return _require_profile_store().list_catalog()
+
+
+@app.put("/api/providers/catalog", response_model=CatalogEntryModel)
+async def update_provider_catalog(
+    body: CatalogUpdateBody, user: str = Depends(get_current_user)
+):
+    """Enable or disable a provider/model pair (administrators only)."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    try:
+        return _require_profile_store().set_catalog_enabled(
+            body.provider, body.model, body.enabled
+        )
+    except ProfileStoreError as e:
+        raise _profile_error_to_http(e)
+
+
+@app.get("/api/profiles", response_model=list[ProfileModel])
+async def list_profiles(user: str = Depends(get_current_user)):
+    """Your saved LLM profiles (keys never included)."""
+    return _require_profile_store().list_profiles(user)
+
+
+@app.post("/api/profiles", response_model=ProfileModel, status_code=201)
+async def create_profile(body: ProfileCreateBody, user: str = Depends(get_current_user)):
+    """Save a named profile with your own provider key."""
+    try:
+        return _require_profile_store().create_profile(
+            username=user,
+            name=body.name,
+            provider=body.provider,
+            model=body.model,
+            api_key=body.api_key,
+        )
+    except ProfileStoreError as e:
+        raise _profile_error_to_http(e)
+
+
+@app.patch("/api/profiles/{profile_id}", response_model=ProfileModel)
+async def update_profile(
+    profile_id: int, body: ProfileUpdateBody, user: str = Depends(get_current_user)
+):
+    """Rename a profile and/or replace its key."""
+    try:
+        return _require_profile_store().update_profile(
+            user, profile_id, name=body.name, api_key=body.api_key
+        )
+    except ProfileStoreError as e:
+        raise _profile_error_to_http(e)
+
+
+@app.delete("/api/profiles/{profile_id}", status_code=204)
+async def delete_profile(profile_id: int, user: str = Depends(get_current_user)):
+    """Delete one of your profiles."""
+    try:
+        _require_profile_store().delete_profile(user, profile_id)
+    except ProfileStoreError as e:
+        raise _profile_error_to_http(e)
+    return None
+
+
+@app.post("/api/profiles/{profile_id}/activate", response_model=ProfileModel)
+async def activate_profile(profile_id: int, user: str = Depends(get_current_user)):
+    """Make a profile your default for new evaluations."""
+    try:
+        return _require_profile_store().set_active(user, profile_id)
+    except ProfileStoreError as e:
+        raise _profile_error_to_http(e)
 
 
 @app.get("/")

@@ -127,6 +127,8 @@ Guides: [`docs/desktop-app.md`](docs/desktop-app.md), [`docs/auto-update.md`](do
 - **`backend/services/user_store.py`**: SQLite user accounts (first registered user is admin); `POST /api/auth/register`, `GET /api/auth/users` (admin-only). Legacy `AUTH_USERNAME`/`AUTH_PASSWORD_HASH` login still works alongside. Disable open registration with `AUTH_ALLOW_REGISTRATION=false`
 - **`backend/services/request_store.py`**: SQLite access requests with the review status machine (`pending_review → approved | denied | changes_requested | discarded`, `changes_requested → pending_review`, `approved → activated | discarded`); `AUTH_REQUESTS_DB` path, gitignored
 - **`backend/services/audit_log.py`**: Append-only JSONL trail (`AUDIT_LOG_PATH`, default `backend/data/audit.jsonl`, gitignored) — metadata only, never credentials; actor roles `user` / `admin` / `automated`
+- **`backend/services/profile_store.py`**: Per-user LLM profiles (Fernet-encrypted keys, `PROFILE_ENCRYPTION_KEY` else `JWT_SECRET`) + admin provider catalog (`AUTH_PROFILES_DB`, gitignored); read APIs expose `has_key` + last-4 hint only
+- **`aws/`**: `iam-base-roles.yml` (CloudFormation: 6 session base roles, review-only until the owner approves creation) + `base-roles.md` (validate/preview/apply guide); `AWS_BASE_ROLE_*` env ARNs activate task-matched assumption in `activate` (unset = legacy single-role behavior)
 - **`backend/services/turnstile_service.py`**: Cloudflare Turnstile CAPTCHA verification
 - **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
 - **`backend/tests/`**: pytest suite (config validation, provider factory, catalog integrity, API endpoints) — run with `pytest` from `backend/`
@@ -353,7 +355,7 @@ Risk-based duration limits:
 - Revise request or start fresh buttons
 
 ### Settings View (`frontend/src/views/settings-view.tsx`)
-- Demo & display (theme picker, hover-tooltip toggle, tour autoplay + replay), AI provider/model defaults, help & guides sections, about (version + backend URL)
+- Demo & display (theme picker, hover-tooltip toggle, tour autoplay + replay), AI provider/model fallback, LLM profiles (`components/profile-manager.tsx`) + admin catalog (`components/catalog-manager.tsx`), help & guides sections, about (version + backend URL + window diagnostics)
 - Help content lives in `frontend/src/components/help-sections.tsx` (guides, shortcuts from `lib/shortcuts.ts`, updates, local audit log with Markdown/JSON export on desktop)
 - Preferences persist in localStorage (`frontend/src/lib/prefs.ts`, `iam-prefs-v1`); hover help via the `Tip` wrapper (`frontend/src/components/tip.tsx`, Radix Tooltip, zero DOM when disabled)
 
@@ -393,8 +395,10 @@ Full guides: [`docs/desktop-app.md`](docs/desktop-app.md) (run/build/sign/troubl
 - `POST /api/requests/{id}/review` - Approve / deny / send back with feedback (admin only; feedback required for deny/send-back)
 - `POST /api/requests/{id}/resubmit` - Re-evaluate a sent-back request as a new revision (owner only)
 - `POST /api/requests/{id}/discard` - Withdraw an open request (owner or admin)
-- `POST /api/requests/{id}/activate` - Issue STS credentials for an approved request when the owner is ready (re-checks the stored policy; approval alone issues nothing)
+- `POST /api/requests/{id}/activate` - Issue STS credentials for an approved request when the owner is ready (re-checks the stored policy; approval alone issues nothing; assumes the task-matched base role when `AWS_BASE_ROLE_*` ARNs are set)
 - `GET /api/audit` - Browse the JSONL audit trail (admin only; `?request_id=` / `?actor=` / `?event=`)
+- `GET /api/providers/catalog` + `PUT` (admin) - Admin-managed provider/model pairs
+- `GET/POST /api/profiles`, `PATCH/DELETE /api/profiles/{id}`, `POST /api/profiles/{id}/activate` - Your named LLM profiles (keys write-only); submit/resubmit/record/generate accept `profile_id`
 - `POST /api/generate-policy` - Legacy shim: stateless policy generation (no persistence)
 - `POST /api/issue-credentials` - Legacy shim: direct issuance with caller-asserted approval
 - `POST /api/generate-rejection-guidance` - Get AI guidance for rejected requests

@@ -55,7 +55,7 @@ def _stub_llm(monkeypatch):
     """Stub LLM evaluation with a controllable risk level."""
     state = {"risk": "medium"}
 
-    def fake_get_llm_provider(provider_type=None, model=None):
+    def fake_get_llm_provider(provider_type=None, model=None, api_key=None):
         return _StubPolicyProvider(risk=state["risk"])
 
     monkeypatch.setattr(main, "get_llm_provider", fake_get_llm_provider)
@@ -288,6 +288,134 @@ class TestActivate:
         _as_user("mallory")
         response = client.post(f"/api/requests/{request_id}/activate")
         assert response.status_code == 403
+
+
+class TestBaseRoleSelection:
+    def _creds(self, **kwargs):
+        return {
+            "AccessKeyId": "AKIAEXAMPLE",
+            "SecretAccessKey": "secret",
+            "SessionToken": "token",
+            "Expiration": datetime.now(timezone.utc),
+        }
+
+    def _activate_with_capture(self, monkeypatch, arns):
+        for key, value in arns.items():
+            monkeypatch.setattr(main.config.aws, key, value)
+        calls = []
+
+        def fake_assume(policy, duration, **kwargs):
+            calls.append(kwargs.get("role_arn"))
+            return self._creds()
+
+        monkeypatch.setattr(main.sts_service, "assume_role_with_policy", fake_assume)
+        monkeypatch.setattr(main, "send_audit_notification", lambda **kwargs: None)
+        return calls
+
+    def test_readonly_policy_uses_readonly_base(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        request_id = _submit(client).json()["id"]
+        calls = self._activate_with_capture(
+            monkeypatch,
+            {"base_role_readonly": "arn:aws:iam::123456789012:role/ro"},
+        )
+        assert client.post(f"/api/requests/{request_id}/activate").status_code == 200
+        assert calls == ["arn:aws:iam::123456789012:role/ro"]
+        events = main.get_audit_log().read(request_id=request_id)
+        activated = next(e for e in events if e["event"] == "activated")
+        assert activated["base_role"] == "readonly"
+
+    def test_unset_arns_keep_legacy_behavior(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        request_id = _submit(client).json()["id"]
+        calls = self._activate_with_capture(monkeypatch, {})
+        assert client.post(f"/api/requests/{request_id}/activate").status_code == 200
+        assert calls == [None]
+        events = main.get_audit_log().read(request_id=request_id)
+        activated = next(e for e in events if e["event"] == "activated")
+        assert activated["base_role"] == "legacy"
+
+    def test_write_policy_selects_developer_base(self, _as_user, monkeypatch):
+        _as_user("alice")
+
+        def fake_factory(provider_type=None, model=None, api_key=None):
+            stub = _StubPolicyProvider()
+            stub.policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {"Effect": "Allow", "Action": ["s3:PutObject"], "Resource": ["*"]}
+                ],
+            }
+            stub.risk = "medium"
+            return stub
+
+        monkeypatch.setattr(main, "get_llm_provider", fake_factory)
+        client = TestClient(main.app)
+        request_id = _submit(client).json()["id"]
+        _as_user("boss")
+        client.post(f"/api/requests/{request_id}/review", json={"decision": "approve"})
+        _as_user("alice")
+        calls = self._activate_with_capture(
+            monkeypatch,
+            {"base_role_developer": "arn:aws:iam::123456789012:role/dev"},
+        )
+        assert client.post(f"/api/requests/{request_id}/activate").status_code == 200
+        assert calls == ["arn:aws:iam::123456789012:role/dev"]
+
+
+class TestBaseRoleClassifier:
+    def test_readonly_actions(self):
+        from services.sts_service import select_base_role_class
+
+        policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": ["s3:GetObject", "s3:ListBucket", "ec2:Describe*"],
+                    "Resource": ["*"],
+                }
+            ],
+        }
+        assert select_base_role_class(policy) == "readonly"
+
+    def test_write_action_selects_developer(self):
+        from services.sts_service import select_base_role_class
+
+        for actions in (
+            ["s3:PutObject"],
+            ["s3:*"],
+            ["*"],
+            ["iam:CreateRole"],
+        ):
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [{"Effect": "Allow", "Action": actions, "Resource": ["*"]}],
+            }
+            assert select_base_role_class(policy) == "developer"
+
+    def test_unprovable_shapes_select_developer(self):
+        from services.sts_service import select_base_role_class
+
+        assert select_base_role_class({}) == "developer"
+        assert select_base_role_class({"Statement": []}) == "developer"
+        assert select_base_role_class("nope") == "developer"
+        deny_only = {
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Deny", "Action": ["s3:*"], "Resource": ["*"]}],
+        }
+        assert select_base_role_class(deny_only) == "developer"
+        not_action = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {"Effect": "Allow", "NotAction": ["s3:GetObject"], "Resource": ["*"]}
+            ],
+        }
+        assert select_base_role_class(not_action) == "developer"
 
 
 class TestVisibility:
