@@ -73,6 +73,41 @@ def _isolated_user_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_request_store(tmp_path, monkeypatch):
+    """Give every test a fresh requests DB and JSONL audit log.
+
+    Mirrors _isolated_user_store: main.request_store/main.audit_log are
+    lazily-created singletons, so reset them per test and point the paths
+    at tmp dirs. A developer's real requests.db and audit.jsonl are never
+    touched by the suite.
+    """
+    import main
+
+    for attr in ("request_store", "audit_log"):
+        existing = getattr(main, attr)
+        if existing is not None:
+            try:
+                existing.close()
+            except Exception:
+                pass
+        monkeypatch.setattr(main, attr, None)
+    monkeypatch.setattr(
+        main.config, "requests_db_path", str(tmp_path / "requests.db")
+    )
+    monkeypatch.setattr(
+        main.config, "audit_log_path", str(tmp_path / "audit.jsonl")
+    )
+    yield
+    for attr in ("request_store", "audit_log"):
+        store = getattr(main, attr)
+        if store is not None:
+            try:
+                store.close()
+            except Exception:
+                pass
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_provider_keys(monkeypatch):
     """Remove real provider credentials and auth config for every test.
 

@@ -134,6 +134,11 @@ class AppConfig(BaseModel):
     telegram: TelegramConfig
     auth: AuthConfig
     approver_name: str = Field(default="Admin", env="APPROVER_NAME")
+    # Access-request persistence for the review workflow.
+    # Relative paths resolve against the backend package directory.
+    requests_db_path: str = Field(default="requests.db")
+    # Append-only JSONL audit trail (metadata only, never credentials).
+    audit_log_path: str = Field(default="data/audit.jsonl")
 
     class Config:
         env_nested_delimiter = "__"
@@ -195,7 +200,9 @@ def load_config() -> AppConfig:
             slack=slack_config,
             telegram=telegram_config,
             auth=auth_config,
-            approver_name=os.getenv("APPROVER_NAME", "Admin")
+            approver_name=os.getenv("APPROVER_NAME", "Admin"),
+            requests_db_path=os.getenv("AUTH_REQUESTS_DB", "requests.db"),
+            audit_log_path=os.getenv("AUDIT_LOG_PATH", "data/audit.jsonl"),
         )
 
         logger.info(f"Configuration loaded successfully. LLM Provider: {config.llm.provider}")
