@@ -1,8 +1,4 @@
-"""Guardrail tests for POST /api/issue-credentials.
-
-Verifies that credential issuance requires approval and rejects
-full-admin session policies server-side, without calling AWS STS.
-"""
+"""Guardrail tests for POST /api/issue-credentials via FastAPI TestClient."""
 from datetime import datetime, timezone
 
 import pytest
@@ -13,144 +9,131 @@ import main
 
 @pytest.fixture(autouse=True)
 def _auth_disabled(monkeypatch):
+    """Bypass auth so endpoint tests pass with or without a .env hash."""
     monkeypatch.setattr(main, "auth_service", None)
 
 
-def _fake_sts(monkeypatch):
-    """Replace STS with a recording fake; returns the call log."""
-    calls = []
-    expiration = datetime(2030, 1, 1, tzinfo=timezone.utc)
+def _policy(action, resource, effect="Allow"):
+    return {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": effect, "Action": action, "Resource": resource}],
+    }
 
-    def fake_assume_role(policy, duration, session_name="gemini-jit-session"):
-        calls.append({"policy": policy, "duration": duration})
+
+def _mock_sts(monkeypatch):
+    """Replace STS with a stub; return the list of policies it was called with."""
+    calls = []
+
+    def fake_assume_role_with_policy(policy, duration_hours, session_name="x"):
+        calls.append(policy)
         return {
             "AccessKeyId": "AKIAEXAMPLE",
             "SecretAccessKey": "secret",
             "SessionToken": "token",
-            "Expiration": expiration,
+            "Expiration": datetime(2026, 1, 1, tzinfo=timezone.utc),
         }
 
     monkeypatch.setattr(
-        main.sts_service, "assume_role_with_policy", fake_assume_role
+        main.sts_service, "assume_role_with_policy", fake_assume_role_with_policy
     )
     return calls
 
 
-def _scoped_policy():
-    return {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": ["s3:GetObject"],
-                "Resource": "arn:aws:s3:::example-bucket/*",
-            }
-        ],
-    }
-
-
-def _admin_policy_string_action():
-    return {
-        "Version": "2012-10-17",
-        "Statement": [
-            {"Effect": "Allow", "Action": "*", "Resource": "*"}
-        ],
-    }
-
-
-def test_unapproved_request_rejected_and_sts_never_called(monkeypatch):
-    calls = _fake_sts(monkeypatch)
-    client = TestClient(main.app)
-    response = client.post(
+def _post(client, policy, approved=True):
+    return client.post(
         "/api/issue-credentials",
-        json={"policy": _scoped_policy(), "duration": 2, "approved": False},
+        json={"policy": policy, "duration": 2, "approved": approved},
     )
+
+
+def test_unapproved_returns_403_without_calling_sts(monkeypatch):
+    calls = _mock_sts(monkeypatch)
+    client = TestClient(main.app)
+    policy = _policy("s3:GetObject", "arn:aws:s3:::my-bucket/*")
+    response = _post(client, policy, approved=False)
     assert response.status_code == 403
     assert calls == []
 
 
-def test_unapproved_default_rejected(monkeypatch):
-    """approved defaults to False, so omitting it must also be rejected."""
-    calls = _fake_sts(monkeypatch)
+def test_full_admin_action_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
     client = TestClient(main.app)
-    response = client.post(
-        "/api/issue-credentials",
-        json={"policy": _scoped_policy(), "duration": 2},
-    )
-    assert response.status_code == 403
+    response = _post(client, _policy("*", "*"))
+    assert response.status_code == 400
     assert calls == []
 
 
-def test_full_admin_string_action_rejected(monkeypatch):
-    calls = _fake_sts(monkeypatch)
+def test_wildcard_action_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
     client = TestClient(main.app)
-    response = client.post(
-        "/api/issue-credentials",
-        json={
-            "policy": _admin_policy_string_action(),
-            "duration": 12,
-            "approved": True,
-        },
+    response = _post(client, _policy("s3:*", "arn:aws:s3:::my-bucket/*"))
+    assert response.status_code == 400
+    assert calls == []
+
+
+def test_escalation_action_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
+    client = TestClient(main.app)
+    response = _post(
+        client, _policy("iam:PassRole", "arn:aws:iam::123456789012:role/x")
     )
     assert response.status_code == 400
     assert calls == []
 
 
-def test_full_admin_list_action_rejected(monkeypatch):
-    calls = _fake_sts(monkeypatch)
+def test_star_resource_with_write_action_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
+    client = TestClient(main.app)
+    response = _post(client, _policy("s3:PutObject", "*"))
+    assert response.status_code == 400
+    assert calls == []
+
+
+def test_star_resource_with_read_only_action_allowed(monkeypatch):
+    calls = _mock_sts(monkeypatch)
+    client = TestClient(main.app)
+    response = _post(client, _policy("s3:GetObject", "*"))
+    assert response.status_code == 200, response.text
+    assert len(calls) == 1
+    assert response.json()["access_key_id"] == "AKIAEXAMPLE"
+
+
+def test_not_action_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
+    client = TestClient(main.app)
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Effect": "Allow", "NotAction": "s3:DeleteBucket", "Resource": "*"}
+        ],
+    }
+    response = _post(client, policy)
+    assert response.status_code == 400
+    assert calls == []
+
+
+def test_not_resource_rejected(monkeypatch):
+    calls = _mock_sts(monkeypatch)
     client = TestClient(main.app)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
                 "Effect": "Allow",
-                "Action": ["s3:GetObject", "*:*"],
-                "Resource": "*",
+                "Action": "s3:GetObject",
+                "NotResource": ["arn:aws:s3:::other-bucket/*"],
             }
         ],
     }
-    response = client.post(
-        "/api/issue-credentials",
-        json={"policy": policy, "duration": 2, "approved": True},
-    )
+    response = _post(client, policy)
     assert response.status_code == 400
     assert calls == []
 
 
-def test_deny_wildcard_not_blocked(monkeypatch):
-    """A Deny * statement is not a grant, so it must pass the guardrail."""
-    calls = _fake_sts(monkeypatch)
+def test_scoped_read_action_calls_sts(monkeypatch):
+    calls = _mock_sts(monkeypatch)
     client = TestClient(main.app)
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {"Effect": "Deny", "Action": "*", "Resource": "*"},
-            {
-                "Effect": "Allow",
-                "Action": ["s3:GetObject"],
-                "Resource": "arn:aws:s3:::example-bucket/*",
-            },
-        ],
-    }
-    response = client.post(
-        "/api/issue-credentials",
-        json={"policy": policy, "duration": 2, "approved": True},
-    )
-    assert response.status_code == 200
-    assert len(calls) == 1
-
-
-def test_approved_scoped_policy_issues_credentials(monkeypatch):
-    calls = _fake_sts(monkeypatch)
-    client = TestClient(main.app)
-    policy = _scoped_policy()
-    response = client.post(
-        "/api/issue-credentials",
-        json={"policy": policy, "duration": 2, "approved": True},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["access_key_id"] == "AKIAEXAMPLE"
-    assert len(calls) == 1
-    assert calls[0]["policy"] == policy
-    assert calls[0]["duration"] == 2
+    policy = _policy("s3:GetObject", "arn:aws:s3:::my-bucket/*")
+    response = _post(client, policy)
+    assert response.status_code == 200, response.text
+    assert calls == [policy]

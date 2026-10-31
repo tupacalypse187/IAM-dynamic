@@ -272,6 +272,113 @@ def get_max_duration(risk: str) -> int:
     return {"low": 12, "medium": 4, "high": 2, "critical": 1}.get(risk.lower(), 2)
 
 
+# Deterministic server-side guardrail for credential issuance.
+# Mirrors the desktop Agent_Kit lists in
+# desktop/src/main/agentkit/audit-risk.ts. Runs before STS so a
+# caller-asserted `approved` flag cannot self-approve a broad policy.
+_ESCALATION_ACTIONS = frozenset(a.lower() for a in [
+    "iam:PassRole",
+    "iam:CreatePolicyVersion",
+    "iam:SetDefaultPolicyVersion",
+    "iam:AttachUserPolicy",
+    "iam:AttachGroupPolicy",
+    "iam:AttachRolePolicy",
+    "iam:PutUserPolicy",
+    "iam:PutGroupPolicy",
+    "iam:PutRolePolicy",
+    "iam:CreateAccessKey",
+    "iam:CreateLoginProfile",
+    "iam:UpdateAssumeRolePolicy",
+    "sts:AssumeRole",
+    "sts:AssumeRoleWithSAML",
+    "glue:UpdateDevEndpoint",
+    "lambda:UpdateFunctionCode",
+])
+
+_READ_ONLY_PREFIXES = tuple(p.lower() for p in [
+    "s3:Get",
+    "s3:List",
+    "s3:Describe",
+    "dynamodb:GetItem",
+    "dynamodb:BatchGetItem",
+    "dynamodb:Query",
+    "dynamodb:Scan",
+    "dynamodb:Describe",
+    "ec2:Describe",
+    "rds:Describe",
+    "logs:Get",
+    "logs:Describe",
+    "logs:FilterLogEvents",
+    "cloudwatch:Get",
+    "cloudwatch:Describe",
+    "cloudwatch:List",
+])
+
+
+def _as_str_list(value) -> list:
+    """Normalize an IAM string-or-list field to a list of strings."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str)]
+    return []
+
+
+def _is_read_only_action(action: str) -> bool:
+    """Check an action against the read-only prefix allowlist."""
+    lowered = action.lower()
+    return any(lowered.startswith(prefix) for prefix in _READ_ONLY_PREFIXES)
+
+
+def find_overly_broad_policy_violation(policy: dict) -> Optional[str]:
+    """Return a rejection reason when an Allow statement is overly broad.
+
+    Missing Effect is treated as Allow. Deny statements are skipped.
+    Returns None when the policy passes the guardrail.
+    """
+    if not isinstance(policy, dict):
+        return "Policy must be an IAM policy document object."
+    raw_statements = policy.get("Statement", [])
+    statements = raw_statements if isinstance(raw_statements, list) else [raw_statements]
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            continue
+        effect = stmt.get("Effect", "Allow")
+        if not isinstance(effect, str):
+            effect = "Allow"
+        if effect.lower() == "deny":
+            continue
+        if any(v.strip() for v in _as_str_list(stmt.get("NotAction"))):
+            return (
+                "NotAction is not allowed for credential issuance; "
+                "request specific Action values instead."
+            )
+        if any(v.strip() for v in _as_str_list(stmt.get("NotResource"))):
+            return (
+                "NotResource is not allowed for credential issuance; "
+                "request specific Resource values instead."
+            )
+        actions = _as_str_list(stmt.get("Action"))
+        resources = _as_str_list(stmt.get("Resource"))
+        for action in actions:
+            if "*" in action:
+                return (
+                    f"Wildcard action '{action}' is not allowed for "
+                    "credential issuance; request specific actions."
+                )
+            if action.lower() in _ESCALATION_ACTIONS:
+                return (
+                    f"Action '{action}' can enable privilege escalation "
+                    "and is not allowed for credential issuance."
+                )
+        if "*" in resources and any(not _is_read_only_action(a) for a in actions):
+            return (
+                'Resource "*" is only allowed with read-only actions; '
+                "scope the resource down to a specific ARN."
+            )
+    return None
+
+
 # Available models per provider (updated September 2026)
 PROVIDER_MODELS = {
     "gemini": [
@@ -318,35 +425,6 @@ PROVIDER_MODELS = {
         {"id": "meta/muse-spark-1.3", "name": "Muse Spark 1.3 (Meta)"},
     ],
 }
-
-
-def _is_full_admin_policy(policy: dict) -> bool:
-    """Return True if any Allow statement grants Action "*" or "*:*".
-
-    Deterministic server-side guardrail so an authenticated caller cannot
-    POST an arbitrary full-admin session policy and mint STS credentials
-    with it. Checks both string and list Action shapes; a statement that
-    is not a dict, has no Action, or is not an Allow is skipped.
-    """
-    statements = policy.get("Statement", []) if isinstance(policy, dict) else []
-    if isinstance(statements, dict):
-        statements = [statements]
-    if not isinstance(statements, list):
-        return False
-    for statement in statements:
-        if not isinstance(statement, dict):
-            continue
-        if str(statement.get("Effect", "")) != "Allow":
-            continue
-        actions = statement.get("Action", [])
-        if isinstance(actions, str):
-            actions = [actions]
-        if not isinstance(actions, list):
-            continue
-        for action in actions:
-            if isinstance(action, str) and action.strip() in ("*", "*:*"):
-                return True
-    return False
 
 
 def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
@@ -593,16 +671,20 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
     Issue temporary AWS credentials via STS AssumeRole
 
     Requires policy to be approved (manually or auto-approved for low risk).
+
+    A caller-asserted `approved` flag alone is not enough: overly broad
+    policies are rejected before STS is ever called.
     """
     if request.approved is not True:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Request has not been approved. Credentials can only be issued for an approved policy.",
+            detail="Policy must be approved before credentials can be issued.",
         )
-    if _is_full_admin_policy(request.policy):
+    violation = find_overly_broad_policy_violation(request.policy)
+    if violation is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Policy rejected: Allow statement with full-admin Action (\"*\" or \"*:*\") is not permitted.",
+            detail=violation,
         )
     try:
         # Generate credentials
