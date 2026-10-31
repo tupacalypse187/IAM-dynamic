@@ -46,6 +46,10 @@ class TestCurrentModels:
         assert "claude-opus-5" in ids
         assert "claude-sonnet-5" in ids
 
+    def test_claude_5_5_family_leads_catalog(self):
+        ids = [m["id"] for m in PROVIDER_MODELS["claude"]]
+        assert ids[:3] == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+
     def test_muse_has_contributor_and_standard(self):
         ids = [m["id"] for m in PROVIDER_MODELS["muse"]]
         assert "muse-spark-1.3-contributor" in ids
@@ -54,3 +58,29 @@ class TestCurrentModels:
     def test_openrouter_slugs_are_vendor_slash_model(self):
         for model in PROVIDER_MODELS["openrouter"]:
             assert "/" in model["id"], f"OpenRouter slug missing vendor prefix: {model['id']}"
+
+
+class TestFastTier:
+    def test_fast_models_exist_in_catalog(self):
+        from main import FAST_MODELS
+
+        assert set(FAST_MODELS) == EXPECTED_PROVIDERS
+        for provider_id, model_id in FAST_MODELS.items():
+            ids = [m["id"] for m in PROVIDER_MODELS[provider_id]]
+            assert model_id in ids, f"{model_id} missing from {provider_id} catalog"
+
+    def test_fast_model_for_resolves_aliases(self):
+        from main import fast_model_for, FAST_MODELS
+
+        assert fast_model_for("anthropic") == FAST_MODELS["claude"]
+        assert fast_model_for("glm") == FAST_MODELS["zhipu"]
+        assert fast_model_for("meta") == FAST_MODELS["muse"]
+        assert fast_model_for("claude") == FAST_MODELS["claude"]
+        assert fast_model_for("openrouter") == FAST_MODELS["openrouter"]
+
+    def test_fast_model_for_unknown_returns_none(self):
+        from main import fast_model_for
+
+        assert fast_model_for("unknown-provider") is None
+        assert fast_model_for(None) is None
+        assert fast_model_for("") is None

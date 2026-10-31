@@ -34,7 +34,6 @@ interface RejectedViewProps {
   requestText: string
   duration: number
   selectedProvider: string
-  selectedModel?: string
   onReviseRequest: (text: string) => void
   onStartFresh: () => void
 }
@@ -59,7 +58,6 @@ export default function RejectedView({
   requestText,
   duration,
   selectedProvider,
-  selectedModel,
   onReviseRequest,
   onStartFresh,
 }: RejectedViewProps) {
@@ -81,7 +79,6 @@ export default function RejectedView({
         policy: policyData.policy,
         risk: policyData.risk,
         provider: selectedProvider,
-        model: selectedModel,
       })
       const rawGuidance = data.guidance || 'No guidance available. Please try revising your request with more specific resource names and limited actions.'
       // Use raw guidance directly - backend now outputs clean markdown
