@@ -87,6 +87,9 @@ export function createBackendClient(config: BackendConfig) {
         risk: input.risk ?? 'medium',
         auto_approved: input.autoApproved ?? false,
       }),
+
+    activateRequest: (requestId: number) =>
+      callBackend<LeaseCredentials>(config, `/api/requests/${requestId}/activate`, {}),
   }
 }
 

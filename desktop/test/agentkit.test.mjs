@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 // exact renderer-supplied policy, require approval, and clamp duration
 // to the guardrail risk ceiling. Runs against compiled output.
 const { analyzePolicy } = await import('../dist/main/agentkit/audit-risk.js')
-const { issueCredentials, maxDurationForRisk } = await import('../dist/main/agentkit/index.js')
+const { activateRequest, issueCredentials, maxDurationForRisk } = await import('../dist/main/agentkit/index.js')
 
 function stubDeps(captured) {
   return {
@@ -131,5 +131,44 @@ describe('issueCredentials', () => {
     assert.equal(captured.backendArgs.duration, 2)
     assert.equal(captured.ledger.details.durationHours, 2)
     assert.equal(captured.ledger.details.findingCount, 0)
+  })
+})
+
+describe('activateRequest', () => {
+  function activateDeps(captured) {
+    return {
+      backend: {
+        activateRequest: async (requestId) => {
+          captured.requestId = requestId
+          return {
+            access_key_id: 'AKIA_TEST',
+            secret_access_key: 'secret',
+            session_token: 'token',
+            expiration: new Date(Date.now() + 3600_000).toISOString(),
+            region: 'us-east-1',
+          }
+        },
+      },
+      ledger: {
+        append: (kind, summary, details) => {
+          captured.ledger = { kind, summary, details }
+          return 1
+        },
+      },
+    }
+  }
+
+  it('activates by request id only and tracks the lease', async () => {
+    const captured = {}
+    const lease = { credentials: null, issuedAt: null }
+    const creds = await activateRequest(activateDeps(captured), lease, 42)
+    // No caller-supplied policy or approved flag reaches the backend —
+    // approval is enforced server-side from the stored request.
+    assert.equal(captured.requestId, 42)
+    assert.equal(creds.access_key_id, 'AKIA_TEST')
+    assert.ok(lease.credentials !== null)
+    assert.ok(lease.issuedAt !== null)
+    assert.equal(captured.ledger.kind, 'request_activated')
+    assert.equal(captured.ledger.details.requestId, 42)
   })
 })

@@ -45,6 +45,10 @@ export const desktop = {
     requireApi().onAgentProgress(...args),
   issueCredentials: (...args: Parameters<DesktopApi['issueCredentials']>) =>
     requireApi().issueCredentials(...args),
+  activateRequest: (...args: Parameters<DesktopApi['activateRequest']>) =>
+    requireApi().activateRequest(...args),
+  logAudit: (...args: Parameters<DesktopApi['logAudit']>) =>
+    requireApi().logAudit(...args),
   revokeCredentials: () => requireApi().revokeCredentials(),
   getLeaseStatus: () => requireApi().getLeaseStatus(),
   getRecentEvents: (...args: Parameters<DesktopApi['getRecentEvents']>) =>

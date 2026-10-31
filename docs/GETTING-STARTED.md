@@ -245,15 +245,16 @@ npm run dev
 
 ## ✅ Making Your First Request
 
-1. **Open** the application in your browser
+1. **Open** the application in your browser (register an account — the first one is the admin)
 2. **Enter** a natural language request:
    ```
    I need read-only access to the S3 bucket named my-data-bucket
    ```
 3. **Select** a duration (1-12 hours)
-4. **Click** "Generate Policy"
-5. **Review** the generated IAM policy and risk assessment
-6. **Approve** to receive temporary credentials
+4. **Click** "Submit Request"
+5. **Review** the generated IAM policy and risk assessment on the request detail page
+6. **Activate** the approved request when you are ready — credentials appear only then
+7. Higher-risk requests wait for an admin in the **Review** tab (approve / deny / send back with feedback); track everything in **My Requests**, including live sessions and your last 10 (clone / clone-and-edit)
 
 ---
 

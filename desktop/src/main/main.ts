@@ -16,6 +16,7 @@ import { Ledger, eventsToMarkdown } from './ledger'
 import { vault } from './vault'
 import { createBackendClient } from './agentkit/backend-client'
 import {
+  activateRequest,
   generatePolicy,
   issueCredentials,
   leaseStatus,
@@ -27,6 +28,7 @@ import { LeaseTray } from './tray-manager'
 import {
   IpcChannels,
   type AgentProgress,
+  type AuditKind,
   type GenerateInput,
   type IssueInput,
   type UpdaterEvent,
@@ -147,6 +149,11 @@ function registerIpc(): void {
     return issueCredentials({ backend, ledger }, lease, input).finally(() => leaseTray?.refresh())
   })
 
+  ipcMain.handle(IpcChannels.agentActivate, (_event, requestId: number) => {
+    if (!ledger) throw new Error('Audit ledger is not initialized.')
+    return activateRequest({ backend, ledger }, lease, requestId).finally(() => leaseTray?.refresh())
+  })
+
   ipcMain.handle(IpcChannels.agentRevoke, () => {
     if (!ledger) throw new Error('Audit ledger is not initialized.')
     revokeCredentials({ backend, ledger }, lease)
@@ -154,6 +161,14 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IpcChannels.leaseStatus, () => leaseStatus(lease))
+
+  ipcMain.handle(
+    IpcChannels.ledgerAppend,
+    (_event, kind: AuditKind, summary: string, details?: Record<string, unknown>) => {
+      if (!ledger) throw new Error('Audit ledger is not initialized.')
+      return ledger.append(kind, summary, details ?? {})
+    },
+  )
 
   ipcMain.handle(IpcChannels.ledgerRecent, (_event, limit?: number) => {
     if (!ledger) return []

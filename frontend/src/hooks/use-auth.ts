@@ -5,6 +5,7 @@ export type AuthState = {
   username: string | null
   isLoading: boolean
   authRequired: boolean
+  isAdmin: boolean
   login: (token: string, username: string) => void
   logout: () => void
 }
@@ -14,6 +15,7 @@ export const AuthContext = createContext<AuthState>({
   username: null,
   isLoading: true,
   authRequired: true,
+  isAdmin: false,
   login: () => null,
   logout: () => null,
 })

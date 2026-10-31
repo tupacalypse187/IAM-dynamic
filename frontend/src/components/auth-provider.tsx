@@ -8,6 +8,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [authRequired, setAuthRequired] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const logout = useCallback(() => {
     setToken(null)
@@ -17,6 +18,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setIsAuthenticated(false)
     setUsername(null)
+    setIsAdmin(false)
   }, [])
 
   const login = useCallback((token: string, user: string) => {
@@ -27,6 +29,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setIsAuthenticated(true)
     setUsername(user)
+    // The login response carries no role — verify to learn is_admin.
+    api.verifySession()
+      .then((status) => setIsAdmin(status.is_admin))
+      .catch(() => undefined)
   }, [])
 
   // Verify session on mount
@@ -36,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthRequired(status.auth_required)
         setIsAuthenticated(status.authenticated)
         setUsername(status.username)
+        setIsAdmin(status.authenticated ? status.is_admin : false)
       })
       .catch(() => {
         setToken(null)
@@ -51,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:logout', handler)
   }, [logout])
 
-  const value: AuthState = { isAuthenticated, username, isLoading, authRequired, login, logout }
+  const value: AuthState = { isAuthenticated, username, isLoading, authRequired, isAdmin, login, logout }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

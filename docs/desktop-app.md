@@ -119,7 +119,7 @@ The first-run tour (Next/Back/Skip, 5 steps) launches once automatically and rep
 | Path | Description |
 | ---- | ----------- |
 | `desktop/src/main/main.ts` | Window, IPC handlers, tray, global shortcut, single-instance |
-| `desktop/src/main/agentkit/` | **Agent_Kit**: `router.ts` (intent + clarifying questions), `audit-risk.ts` (deterministic guardrail), `backend-client.ts`, `index.ts` (orchestrator), `orchestrator` streams `router → architect → audit → done` progress over IPC |
+| `desktop/src/main/agentkit/` | **Agent_Kit**: `router.ts` (intent + clarifying questions), `audit-risk.ts` (deterministic guardrail), `backend-client.ts` (incl. request activation), `index.ts` (orchestrator + `activateRequest`), `orchestrator` streams `router → architect → audit → done` progress over IPC |
 | `desktop/src/main/ledger.ts` | SQLite audit ledger (WAL, versioned migrations, Markdown/JSON export) |
 | `desktop/src/main/vault.ts` | OS credential store wrapper (lazy `keytar`, degrades to a clear error) |
 | `desktop/src/main/updater.ts` | `electron-updater` wiring — downloads in background, installs only on user restart |
@@ -135,7 +135,8 @@ The first-run tour (Next/Back/Skip, 5 steps) launches once automatically and rep
 | Symptom | Cause / Fix |
 | ------- | ----------- |
 | Blank/blue window in the packaged app | Renderer assets must use relative URLs (`base: './'` in `vite.config.ts`) — absolute `/assets/...` resolves to `file:///...` and fails. The shell now also renders load errors in-window instead of staying blank. |
-| Window can't be dragged | Only the header is a drag surface (`.app-drag`); all header buttons opt out (`.app-no-drag`). Content areas intentionally don't drag. |
+| Window can't be dragged | Only the title-bar row is a drag surface (`.app-drag`); the toolbar row and all buttons opt out (`.app-no-drag`). Content areas intentionally don't drag. |
+| Review/activation out of sync with tray | Activation must go through `agentkit:activate-request` (updates lease + tray + ledger). Direct REST activation bypasses the local lease — the renderer uses the IPC path on desktop. |
 | `iconutil: Invalid Iconset` | Sandbox/broken `iconutil` — `icon.py` detects the failure and writes a spec-compliant `.icns` directly (validated with `sips` + Pillow). No action needed. |
 | DMG step fails in `dmgbuild`/hdiutil parsing | Environmental (sandboxed shells); the `.app` and `-mac.zip` still build fine — retry `dmg` outside the sandbox. |
 | `Cannot reach the backend` toast | `IAM_DESKTOP_BACKEND_URL` wrong or backend down; the error names the URL it tried. |

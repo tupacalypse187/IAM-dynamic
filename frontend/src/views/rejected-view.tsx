@@ -36,6 +36,9 @@ interface RejectedViewProps {
   selectedProvider: string
   onReviseRequest: (text: string) => void
   onStartFresh: () => void
+  /** Human denial context from the review workflow (shown when present). */
+  reviewer?: string | null
+  reviewerFeedback?: string | null
 }
 
 // Soft tint + strong text keeps every pair readable in both themes
@@ -60,6 +63,8 @@ export default function RejectedView({
   selectedProvider,
   onReviseRequest,
   onStartFresh,
+  reviewer,
+  reviewerFeedback,
 }: RejectedViewProps) {
   const [guidance, setGuidance] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -111,6 +116,21 @@ export default function RejectedView({
           Please review the guidance below and revise your request with more specific scoping.
         </AlertDescription>
       </Alert>
+
+      {/* Reviewer feedback */}
+      {reviewerFeedback && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Why it was denied</CardTitle>
+            <CardDescription>
+              {reviewer ? `Denied by ${reviewer}` : 'Denied by a reviewer'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-sm">{reviewerFeedback}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Original Request Details */}
       <Card>

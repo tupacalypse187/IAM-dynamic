@@ -28,7 +28,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The application uses a modern frontend/backend separation pattern:
 
 - **Frontend (`frontend/`)**: React SPA with TypeScript, Vite, and Tailwind CSS
-  - Multi-view state machine (request → review → credentials/rejected)
+  - Views: submit → my requests → detail → credentials/denied, plus an admin-only review dashboard
+  - Draggable title bar (app name, version, user) separated from the clickable toolbar
   - System theme detection and toggle (light/dark/system)
   - LLM provider/model selector with real-time switching
   - Markdown-formatted AI guidance with syntax highlighting
@@ -66,34 +67,39 @@ Task-based model tiers: policy generation always uses the user-selected (frontie
 ```
 User Request (React UI)
         ↓
-FastAPI POST /api/generate-policy
+FastAPI POST /api/requests  (LLM evaluate → persist → route)
         ↓
-LLMProvider.generate_policy() → PolicyResponse
+Low risk → approved (system)  |  else → pending_review
         ↓
-{policy, risk, explanation, approver_note}
+Admin POST /api/requests/{id}/review (approve/deny/changes_requested)
         ↓
-Risk-based auto-approval OR manual approval
-        ↓
-FastAPI POST /api/issue-credentials
+Owner POST /api/requests/{id}/activate  (approval alone issues nothing)
         ↓
 boto3 sts.assume_role() → Credentials
         ↓
-Display + Slack audit log
+Display + Slack/Telegram audit log + JSONL audit trail
 ```
+
+Request rows live in `backend/requests.db` (`services/request_store.py`);
+every transition is appended to `backend/data/audit.jsonl`
+(`services/audit_log.py`, metadata only — never credentials).
+Legacy `POST /api/generate-policy` + `POST /api/issue-credentials` remain as
+thin shims. Desktop submits persist via `POST /api/requests/record`
+(same guardrails, no second LLM call).
 
 ### Application Entry Points
 
 1. **Frontend**: `frontend/src/App.tsx`
    - Main React application with view routing
    - Auth gate: shows LoginView when auth is required and user is not authenticated
-   - Views: login, request, review, credentials, rejected, help
+   - Views: login, submit, my requests, detail, review dashboard (admin-only), credentials, rejected, help
 2. **Desktop**: `desktop/src/main/main.ts`
    - Electron entry: window, IPC, tray lease manager, global capture shortcut, auto-updater
    - Loads Vite dev server in dev, `frontend-dist/` in packaged builds
 
 2. **Backend**: `backend/main.py`
    - FastAPI application with API endpoints
-   - Health check, auth (login/verify), provider config, policy generation, credential issuance, rejection guidance
+   - Health check, auth (login/verify with `is_admin`), provider config, access requests + review workflow, policy generation (legacy shim), credential issuance/activation, rejection guidance, audit trail (admin)
    - `get_current_user` dependency protects all endpoints except health and auth
 
 ### Desktop Shell (`desktop/`)
@@ -101,7 +107,7 @@ Display + Slack audit log
 Electron app reusing the React frontend and the remote FastAPI backend (no Python bundling). Source of truth for IPC is [`desktop/src/shared/ipc-contract.ts`](desktop/src/shared/ipc-contract.ts); the renderer mirror lives in `frontend/src/types/desktop.ts`.
 
 - **`desktop/src/main/main.ts`** — window (macOS `hiddenInset` + vibrancy), typed IPC handlers, tray, `Cmd/Ctrl+Shift+I` global capture, single-instance
-- **`desktop/src/main/agentkit/`** — **Agent_Kit**: `router.ts` (intent extraction + ≤3 clarifying questions), `backend-client.ts` (remote API), `audit-risk.ts` (deterministic guardrail — raises, never lowers, backend risk), `index.ts` (Router → Architect → Audit → Lifecycle orchestrator with progress events)
+- **`desktop/src/main/agentkit/`** — **Agent_Kit**: `router.ts` (intent extraction + ≤3 clarifying questions), `backend-client.ts` (remote API, incl. request activation), `audit-risk.ts` (deterministic guardrail — raises, never lowers, backend risk), `index.ts` (Router → Architect → Audit → Lifecycle orchestrator with progress events, plus `activateRequest` for approved-request issuance with lease/tray/ledger updates)
 - **`desktop/src/main/ledger.ts`** — SQLite audit ledger (`better-sqlite3`, WAL, versioned migrations, Markdown/JSON export)
 - **`desktop/src/main/vault.ts`** — OS credential store via lazy `keytar` (JWT only; temp AWS creds stay memory-only)
 - **`desktop/src/main/updater.ts`** — `electron-updater` (generic provider): background download, install on user restart only
@@ -118,6 +124,8 @@ Guides: [`docs/desktop-app.md`](docs/desktop-app.md), [`docs/auto-update.md`](do
 - **`backend/services/telegram_service.py`**: Telegram Bot API notifications (HTML messages, @BotFather credentials)
 - **`backend/services/auth_service.py`**: JWT creation/verification, bcrypt password checking
 - **`backend/services/user_store.py`**: SQLite user accounts (first registered user is admin); `POST /api/auth/register`, `GET /api/auth/users` (admin-only). Legacy `AUTH_USERNAME`/`AUTH_PASSWORD_HASH` login still works alongside. Disable open registration with `AUTH_ALLOW_REGISTRATION=false`
+- **`backend/services/request_store.py`**: SQLite access requests with the review status machine (`pending_review → approved | denied | changes_requested | discarded`, `changes_requested → pending_review`, `approved → activated | discarded`); `AUTH_REQUESTS_DB` path, gitignored
+- **`backend/services/audit_log.py`**: Append-only JSONL trail (`AUDIT_LOG_PATH`, default `backend/data/audit.jsonl`, gitignored) — metadata only, never credentials; actor roles `user` / `admin` / `automated`
 - **`backend/services/turnstile_service.py`**: Cloudflare Turnstile CAPTCHA verification
 - **`backend/services/error_handler.py`**: Maps provider API errors to actionable user-facing messages
 - **`backend/tests/`**: pytest suite (config validation, provider factory, catalog integrity, API endpoints) — run with `pytest` from `backend/`
@@ -314,16 +322,22 @@ Risk-based duration limits:
 
 ### Request View (`frontend/src/views/request-view.tsx`)
 - Task-first input ("what are you trying to do") + guided fields (task/resources/ticket) + free text
-- Desktop Agent_Kit path via `usePolicyAgent` (IPC with progress stages); browser path calls the REST API directly
+- Submits via `usePolicyAgent.submit`: desktop path evaluates through Agent_Kit (IPC with progress stages) then persists with `POST /api/requests/record`; browser path calls `POST /api/requests` directly
 - Clarifying-question loop (≤3) when intent is underspecified; duration slider (1-12 hours)
 - LLM provider selector; template buttons for common patterns
 
-### Review View (`frontend/src/views/review-view.tsx`)
-- Monaco read-only JSON editor (lazy-loaded chunk) with wildcard line highlighting + copy button
-- Before/after diff tab when revising a previous policy; plain-language grant summary (desktop path)
+### My Requests View (`frontend/src/views/my-requests-view.tsx`)
+- Live sessions (activated, unexpired), open requests, and the last 10 with Clone (resubmit as-is) / Clone & edit (prefill the submit form)
+
+### Request Detail View (`frontend/src/views/request-detail-view.tsx`)
+- Request text + evaluated LLM response (policy, risk, explanation, approver note), requester + reviewer identity, revision, timestamps
+- Monaco read-only JSON editor (lazy-loaded chunk) with wildcard line highlighting + copy button; before/after diff tab on resubmits; plain-language grant summary (desktop path)
 - Local guardrail findings with severity badges and one-click "Revise with this fix"
-- Risk assessment badge (token-based, WCAG-compliant colors); approver note and explanation
-- Issue credentials, or reject via a confirmation dialog
+- Role-aware actions: owner activates approved requests (credentials only on activation) or withdraws open ones; admins approve/deny/send-back with mandatory feedback on deny/send-back; owners see denial feedback + guidance link
+
+### Review Dashboard View (`frontend/src/views/review-dashboard-view.tsx`, admin-only)
+- Queue with status filters (defaults to needs-review) + pending-count nav badge; rows show requester, risk, age
+- Audit-trail tab (server JSONL, newest first) with links into request detail; per-request audit tab lives in the detail view
 
 ### Credentials View (`frontend/src/views/credentials-view.tsx`)
 - Display temporary credentials
@@ -332,7 +346,7 @@ Risk-based duration limits:
 - New request button
 
 ### Rejected View (`frontend/src/views/rejected-view.tsx`)
-- Rejection reason
+- Denial reason + reviewer name and feedback (from the review workflow)
 - AI-generated guidance for resubmission
 - GitHub-flavored markdown with syntax highlighting, styled tables, and per-code-block copy buttons
 - Revise request or start fresh buttons
@@ -343,6 +357,8 @@ Risk-based duration limits:
 
 ### App Shell (`frontend/src/App.tsx`)
 - Error boundary around view content (a render crash shows a recoverable fallback)
+- Two-row header: draggable title bar (`.app-drag`, app name + version + user/role, macOS traffic-light safe area) above a clickable toolbar (`.app-no-drag`, view nav + pending-count badge + help + logout)
+- Role-aware nav: New Request / My Requests for everyone, Review dashboard only for admins (`is_admin` from `/api/auth/verify`)
 - Toast notifications (session expiry, copy failures) + `UpdateBanner` (desktop update downloaded/available)
 - First-run guided tour (`lib/tour.ts`, driver.js, `data-tour` anchors), `?` shortcut → Help
 - Desktop capture shortcut focuses the request box; vault-backed JWT via `desktop.setToken`
@@ -363,12 +379,21 @@ Full guides: [`docs/desktop-app.md`](docs/desktop-app.md) (run/build/sign/troubl
 - `GET /health` - Health check
 - `GET /` - Root endpoint
 - `POST /api/auth/login` - Authenticate and get JWT token
-- `GET /api/auth/verify` - Check if current session is valid
+- `GET /api/auth/verify` - Check if current session is valid (includes `is_admin` for role gating)
 
 **Protected (requires JWT when auth is enabled):**
 - `GET /config/providers` - Get available LLM providers
-- `POST /api/generate-policy` - Generate IAM policy from natural language
-- `POST /api/issue-credentials` - Issue temporary AWS credentials
+- `POST /api/requests` - Evaluate + persist an access request (low risk → approved, else pending review)
+- `POST /api/requests/record` - Persist a desktop-evaluated policy without re-running the LLM (same guardrails)
+- `GET /api/requests` - List requests (own, or all for admins; `?status=` + `?mine=true`)
+- `GET /api/requests/{id}` - Request detail with evaluated LLM response (owner or admin)
+- `POST /api/requests/{id}/review` - Approve / deny / send back with feedback (admin only; feedback required for deny/send-back)
+- `POST /api/requests/{id}/resubmit` - Re-evaluate a sent-back request as a new revision (owner only)
+- `POST /api/requests/{id}/discard` - Withdraw an open request (owner or admin)
+- `POST /api/requests/{id}/activate` - Issue STS credentials for an approved request when the owner is ready (re-checks the stored policy; approval alone issues nothing)
+- `GET /api/audit` - Browse the JSONL audit trail (admin only; `?request_id=` / `?actor=` / `?event=`)
+- `POST /api/generate-policy` - Legacy shim: stateless policy generation (no persistence)
+- `POST /api/issue-credentials` - Legacy shim: direct issuance with caller-asserted approval
 - `POST /api/generate-rejection-guidance` - Get AI guidance for rejected requests
 
 ## 📚 Zread Wiki (`.zread/`)

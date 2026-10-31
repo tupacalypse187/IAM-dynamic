@@ -92,6 +92,7 @@ export async function generatePolicy(
     findings,
     summary: summarizePlainLanguage(backendResult.policy, durationHours),
     auditId,
+    requestText,
   }
 }
 
@@ -143,6 +144,31 @@ export async function issueCredentials(
     requestedDurationHours: requestedDuration,
     guardrailRisk,
     findingCount: findings.length,
+  })
+  return creds
+}
+
+/**
+ * Activate an approved access request: issue its stored credentials via
+ * the backend review workflow and track the lease like a direct issuance.
+ *
+ * Approval is enforced server-side (only approved requests activate), so
+ * no approved flag is accepted from the renderer — just the request id.
+ */
+export async function activateRequest(
+  deps: OrchestratorDeps,
+  lease: LeaseState,
+  requestId: number,
+  onProgress: ProgressFn = () => undefined,
+): Promise<LeaseCredentials> {
+  onProgress({ stage: 'done', message: 'Activating approved request…' })
+  const creds = await deps.backend.activateRequest(requestId)
+  lease.credentials = creds
+  lease.issuedAt = new Date().toISOString()
+  deps.ledger.append('request_activated', `Request #${requestId} activated`, {
+    requestId,
+    expiration: creds.expiration,
+    region: creds.region,
   })
   return creds
 }
