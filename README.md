@@ -14,6 +14,7 @@
 - [🏗️ Architecture](#-architecture)
 - [🧠 How It Works](#-how-it-works)
 - [✨ Features](#-features)
+- [🖥️ Desktop App](#-desktop-app)
 - [📦 Project Structure](#-project-structure)
 - [⚙️ Configuration](#-configuration)
 - [🧪 Getting Started](#-getting-started)
@@ -132,9 +133,53 @@ graph LR
 -   **🗣️ Accessible:** ARIA labels, live error regions, focus-visible rings, WCAG-compliant risk colors
 -   **✅ Real Test Suite:** pytest coverage for config, provider factory, catalog integrity, and API endpoints — now enforced in CI
 
+### New in v4.0
+-   **🖥️ Desktop Shell:** Electron app (macOS arm64, Windows x64 via CodeBuild, Linux arm64) reusing the React frontend and remote backend — see [🖥️ Desktop App](#-desktop-app)
+-   **🤖 Agent_Kit:** Typed Router → Policy Architect → Audit → Lifecycle pipeline in the main process with streaming progress and a local SQLite audit ledger
+-   **🛡️ Local Guardrail:** Deterministic AST checks (wildcards, escalation primitives) that can raise — never lower — backend risk, with one-click remediation chips
+-   **❓ Clarifying Questions:** Underspecified requests get at most three follow-ups instead of an over-broad policy
+-   **📝 Monaco Review:** Read-only JSON editor with wildcard line highlighting, before/after diff on revisions, and plain-language grant summaries
+-   **⏳ Tray Lease Manager:** Menu-bar countdown, 5-minute expiry warning, one-click revoke
+-   **🔄 Auto-Update:** Background download with user-triggered restart (toast + banner, never silent)
+-   **🧭 Onboarding:** First-run guided tour, Help view (guides, shortcuts, audit export), `?` shortcut reference
+
+---
+
+## 🖥️ Desktop App
+
+The **IAM-Dynamic Desktop Security Studio** ([`desktop/`](desktop/)) wraps the React frontend in an Electron shell backed by the same FastAPI backend — no Python bundling, no duplicated policy logic.
+
+| Capability | Detail |
+| ---------- | ------ |
+| Agent_Kit | Typed main-process pipeline (Router → Policy Architect → Audit → Lifecycle) over the existing `/api/*` endpoints, with a local SQLite audit ledger |
+| Guardrail | Deterministic wildcard/escalation checks that raise — never lower — backend risk; findings render with one-click remediation |
+| UX | Task-first requests, ≤3 clarifying questions, Monaco JSON review with diff, plain-language summaries, tray lease countdown |
+| Updates | Background download, user-triggered restart (toast + banner); feed docs in [`docs/auto-update.md`](docs/auto-update.md) |
+| Onboarding | First-run tour, Help view (`?`), shortcut cheatsheet |
+| Packaging | macOS arm64 `.dmg` (signed + notarized), Windows x64 NSIS via on-demand CodeBuild, Linux arm64 AppImage/deb |
+
+Full guide: [🖥️ Desktop App](docs/desktop-app.md) · Releases: [🔄 Auto-Update](docs/auto-update.md)
+
 ---
 
 ## 📦 Project Structure
+
+### Desktop (`desktop/`)
+| File/Directory               | Description                                      |
+| ---------------------------- | ------------------------------------------------ |
+| `src/main/main.ts`           | Window, IPC handlers, tray, global shortcut, updater wiring |
+| `src/main/agentkit/`         | **Agent_Kit**: intent router, backend client, guardrail, orchestrator |
+| `src/main/ledger.ts`         | SQLite audit ledger (WAL, migrations, Markdown/JSON export) |
+| `src/main/vault.ts`          | OS credential store wrapper (Keychain / Credential Manager) |
+| `src/main/updater.ts`        | `electron-updater` — download now, install on user restart |
+| `src/main/tray-manager.ts`   | Lease countdown, expiry warnings, revoke |
+| `src/preload/preload.ts`     | Typed `contextBridge` allowlist (only renderer↔main surface) |
+| `src/shared/ipc-contract.ts` | IPC contract — source of truth for channels + payloads |
+| `build/icon.py`              | Generates `icon.{png,ico,icns}` from code |
+| `electron-builder.yml`       | Packaging: arm64 dmg / x64 NSIS / arm64 AppImage+deb |
+| `buildspec-windows.yml`      | On-demand CodeBuild spec for Windows installers |
+| `scripts/setup-codebuild.sh` | Creates/updates the CodeBuild project (starts no builds) |
+| `README.md`                  | Desktop quick-start and command reference |
 
 ### Backend (`backend/`)
 | File                          | Description                                      |
@@ -162,6 +207,13 @@ graph LR
 | `src/views/review-view.tsx`   | Policy review with risk assessment and approval. |
 | `src/views/credentials-view.tsx` | Display credentials with multiple export formats. |
 | `src/views/rejected-view.tsx` | Rejection display with AI-generated guidance. |
+| `src/views/help-view.tsx`     | Help, guides, shortcuts, update status, audit log export. |
+| `src/components/update-manager.tsx` | Auto-update toasts + restart banner (desktop only). |
+| `src/components/policy-editor.tsx` | Lazy-loaded Monaco JSON viewer + diff (code-split chunk). |
+| `src/lib/desktop.ts`          | Typed `window.desktopApi` bridge with browser fallbacks. |
+| `src/lib/shortcuts.ts`        | Central shortcut registry (single source of truth for Help). |
+| `src/lib/tour.ts`             | First-run guided tour (driver.js, data-tour anchors). |
+| `src/types/desktop.ts`        | Renderer mirror of the desktop IPC contract. |
 | `package.json`                | Frontend dependencies (React, Vite, Tailwind, Radix UI). |
 
 ### Docker & CI/CD
@@ -311,7 +363,15 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) for the React frontend, or [http://localhost:8000/docs](http://localhost:8000/docs) for FastAPI documentation.
 
-### 4. Run with Docker
+### 4. Run the Desktop App
+
+```bash
+cd desktop && npm install && npm run dev   # needs backend + frontend dev servers above
+```
+
+Packaged installers: `npm run dist:mac` locally, Windows via on-demand CodeBuild, Linux via Docker — full guide in [🖥️ Desktop App](docs/desktop-app.md), releases in [🔄 Auto-Update](docs/auto-update.md).
+
+### 5. Run with Docker
 
 ```bash
 # Build and start both containers
@@ -336,7 +396,7 @@ GitHub Actions workflows are included for automated checks and deployment:
 
 | Workflow | Trigger | What it does |
 | -------- | ------- | ------------ |
-| **CI** (`.github/workflows/ci.yml`) | Pull requests to `main` | Lint, typecheck, and build both frontend and backend. Docker build test (no push). |
+| **CI** (`.github/workflows/ci.yml`) | Pull requests to `main` | Lint, typecheck, and build frontend, backend, and desktop (`desktop-checks`). Docker build test (no push). |
 | **Deploy** (`.github/workflows/deploy.yml`) | Push to `main` | Security scan, test, build & push images to GHCR, Trivy vulnerability scan, deploy via SSH, cleanup old images. Optionally mirrors all three images to Docker Hub. |
 
 **Required GitHub Secrets for deployment:**

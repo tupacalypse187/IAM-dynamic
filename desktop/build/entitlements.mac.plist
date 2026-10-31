@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Hardened Runtime: allow JIT for the bundled renderer (V8) and
+         inherit the hardened profile in child processes. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Outgoing connections to the remote backend and update feed. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- OS credential store (Keychain) access via keytar. -->
+    <key>com.apple.security.keychain-access-groups</key>
+    <array>
+      <string>$(AppIdentifierPrefix)dev.yantorno.iam-dynamic</string>
+    </array>
+  </dict>
+</plist>

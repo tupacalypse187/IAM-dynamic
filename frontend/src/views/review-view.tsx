@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Loader2, AlertCircle, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
-import { api } from '@/lib/api'
+import { Loader2, AlertCircle, CheckCircle2, AlertTriangle, ShieldAlert, Wand2 } from 'lucide-react'
+import { usePolicyAgent } from '@/hooks/use-policy-agent'
 import type { PolicyResponse, Credentials } from '@/types/api'
+import type { GuardrailFinding, PolicyDocument } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,9 +25,16 @@ import {
 
 interface ReviewViewProps {
   policyData: PolicyResponse
+  /** Local guardrail findings (desktop path; empty on web). */
+  findings: GuardrailFinding[]
+  /** Plain-language grant summary (desktop path; null on web). */
+  summary: string | null
+  /** Previous policy when revising — enables the before/after diff tab. */
+  baselinePolicy?: PolicyDocument | null
   onBack: () => void
   onCredentialsIssued: (credentials: Credentials) => void
   onRejected: () => void
+  onApplySuggestion: (suggestion: string) => void
 }
 
 // Static class maps — Tailwind's JIT scanner must see full class names,
@@ -58,17 +66,70 @@ const riskConfig = {
   },
 } as const
 
+const findingStyles = {
+  critical: { badge: 'bg-destructive text-destructive-foreground', label: 'Critical' },
+  high: { badge: 'bg-orange-600 text-white', label: 'High' },
+  medium: { badge: 'bg-warning text-warning-foreground', label: 'Medium' },
+  low: { badge: 'bg-success text-success-foreground', label: 'Low' },
+} as const
+
+const PolicyJsonViewer = lazy(() =>
+  import('@/components/policy-editor').then((m) => ({ default: m.PolicyJsonViewer })),
+)
+const PolicyDiffViewer = lazy(() =>
+  import('@/components/policy-editor').then((m) => ({ default: m.PolicyDiffViewer })),
+)
+
+function EditorFallback() {
+  return (
+    <div
+      className="flex h-[420px] items-center justify-center rounded-md bg-muted text-sm text-muted-foreground"
+      role="status"
+    >
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+      Loading policy editor…
+    </div>
+  )
+}
+
+/** Lines containing IAM wildcards get editor warning decorations. */
+function wildcardLineNumbers(json: string): number[] {
+  const lines: number[] = []
+  json.split('\n').forEach((line, i) => {
+    if (/"[^"]*\*[^"]*"\s*[:,]/.test(line)) lines.push(i + 1)
+  })
+  return lines
+}
+
 export default function ReviewView({
   policyData,
+  findings,
+  summary,
+  baselinePolicy,
   onBack,
   onCredentialsIssued,
   onRejected,
+  onApplySuggestion,
 }: ReviewViewProps) {
   const [changeCase, setChangeCase] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const agent = usePolicyAgent()
+
+  const policyJson = useMemo(() => JSON.stringify(policyData.policy, null, 2), [policyData.policy])
+  const baselineJson = useMemo(
+    () => (baselinePolicy ? JSON.stringify(baselinePolicy, null, 2) : null),
+    [baselinePolicy],
+  )
+  const riskyLines = useMemo(() => wildcardLineNumbers(policyJson), [policyJson])
 
   const issueMutation = useMutation({
-    mutationFn: api.issueCredentials,
+    mutationFn: () =>
+      agent.issue({
+        policy: policyData.policy,
+        duration: policyData.max_duration,
+        approved: true,
+        changeCase: changeCase || undefined,
+      }),
     onSuccess: (data) => {
       setError(null)
       onCredentialsIssued(data)
@@ -83,12 +144,7 @@ export default function ReviewView({
       setError('Please provide a business justification')
       return
     }
-    issueMutation.mutate({
-      policy: policyData.policy,
-      duration: policyData.max_duration,
-      approved: true,
-      change_case: changeCase || undefined,
-    })
+    issueMutation.mutate()
   }
 
   const risk = riskConfig[policyData.risk] ?? riskConfig.medium
@@ -126,35 +182,92 @@ export default function ReviewView({
               Max: {policyData.max_duration}h
             </Badge>
           </div>
+          {summary && (
+            <p className="mt-3 rounded-md bg-muted p-3 text-sm" data-tour="policy-summary">
+              <span className="font-medium">In plain language: </span>
+              {summary}
+            </p>
+          )}
         </CardContent>
       </Card>
 
+      {/* Guardrail findings */}
+      {findings.length > 0 && (
+        <Card data-tour="guardrail-findings">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+              Compliance Guardrail
+            </CardTitle>
+            <CardDescription>
+              Local deterministic checks on the generated policy. Findings can raise the risk
+              level, never lower it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {findings.map((finding, i) => {
+              const style = findingStyles[finding.severity]
+              return (
+                <div key={i} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={style.badge}>{style.label}</Badge>
+                    <span className="font-mono text-xs text-muted-foreground">{finding.location}</span>
+                  </div>
+                  <p className="mt-2 text-sm">{finding.message}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className="text-sm text-muted-foreground">{finding.suggestion}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto"
+                      onClick={() => onApplySuggestion(finding.suggestion)}
+                    >
+                      <Wand2 className="mr-1 h-3 w-3" />
+                      Revise with this fix
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Policy Details */}
-      <Card>
+      <Card data-tour="policy-editor">
         <CardHeader>
           <CardTitle>Generated Policy</CardTitle>
           <CardDescription>
             AI-generated IAM policy based on your request
+            {riskyLines.length > 0 && ' — highlighted lines contain wildcards'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="json">
             <TabsList>
               <TabsTrigger value="json">JSON</TabsTrigger>
+              {baselineJson !== null && <TabsTrigger value="diff">Diff vs previous</TabsTrigger>}
               <TabsTrigger value="explanation">Explanation</TabsTrigger>
             </TabsList>
             <TabsContent value="json" className="mt-4">
               <div className="relative">
-                <pre className="overflow-auto rounded-md bg-muted p-4 pr-24 font-mono text-sm">
-                  {JSON.stringify(policyData.policy, null, 2)}
-                </pre>
+                <Suspense fallback={<EditorFallback />}>
+                  <PolicyJsonViewer json={policyJson} riskyLines={riskyLines} />
+                </Suspense>
                 <CopyButton
-                  value={JSON.stringify(policyData.policy, null, 2)}
+                  value={policyJson}
                   label="Copy JSON"
                   className="absolute right-2 top-2"
                 />
               </div>
             </TabsContent>
+            {baselineJson !== null && (
+              <TabsContent value="diff" className="mt-4">
+                <Suspense fallback={<EditorFallback />}>
+                  <PolicyDiffViewer original={baselineJson} modified={policyJson} />
+                </Suspense>
+              </TabsContent>
+            )}
             <TabsContent value="explanation" className="mt-4 space-y-4">
               <div>
                 <h4 className="font-semibold">Explanation</h4>
@@ -225,7 +338,7 @@ export default function ReviewView({
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="lg" className="shrink-0">
-                  <XCircle className="mr-2 h-4 w-4" />
+                  <AlertCircle className="mr-2 h-4 w-4" />
                   Reject
                 </Button>
               </AlertDialogTrigger>

@@ -1,23 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Lock, LogOut, Loader2, Menu, User } from 'lucide-react'
+import { Lock, LogOut, Loader2, Menu, User, CircleHelp } from 'lucide-react'
 import { api } from './lib/api'
+import { desktop } from './lib/desktop'
+import { useGlobalShortcuts, useCaptureShortcut } from './lib/shortcuts'
+import { hasSeenTour, launchTour } from './lib/tour'
 import { useAuth } from './hooks/use-auth'
 import { ThemeProvider } from './components/theme-provider'
 import { Toaster } from './components/toaster'
 import { useToast } from './hooks/use-toast'
 import { ErrorBoundary } from './components/error-boundary'
+import UpdateBanner from './components/update-manager'
 import Sidebar, { SidebarContent } from './components/sidebar'
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './components/ui/sheet'
 import { Button } from './components/ui/button'
 import type { PolicyResponse, Credentials } from './types/api'
+import type { GuardrailFinding, PolicyDocument } from './types/desktop'
 import RequestView from './views/request-view'
 import ReviewView from './views/review-view'
 import CredentialsView from './views/credentials-view'
 import RejectedView from './views/rejected-view'
+import HelpView from './views/help-view'
 import LoginView from './views/login-view'
 
-type ViewType = 'request' | 'review' | 'credentials' | 'rejected'
+type ViewType = 'request' | 'review' | 'credentials' | 'rejected' | 'help'
 
 function AppShell() {
   const { isAuthenticated, isLoading, username, logout, authRequired } = useAuth()
@@ -25,6 +31,10 @@ function AppShell() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<ViewType>('request')
   const [policyData, setPolicyData] = useState<PolicyResponse | null>(null)
+  const [findings, setFindings] = useState<GuardrailFinding[]>([])
+  const [summary, setSummary] = useState<string | null>(null)
+  const [baselinePolicy, setBaselinePolicy] = useState<PolicyDocument | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   const [duration, setDuration] = useState(2)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [requestText, setRequestText] = useState('')
@@ -67,6 +77,33 @@ function AppShell() {
       }
     }
   }, [config])
+
+  // Desktop app version for the Help view
+  useEffect(() => {
+    if (!desktop.isDesktop) return
+    desktop.getAppInfo().then((info) => setAppVersion(info.version)).catch(() => undefined)
+  }, [])
+
+  // First-run guided tour (request view only, once)
+  useEffect(() => {
+    if (!isAuthenticated || view !== 'request' || hasSeenTour()) return
+    const timer = setTimeout(() => launchTour(), 800)
+    return () => clearTimeout(timer)
+  }, [isAuthenticated, view])
+
+  // `?` opens Help; global capture focuses the request box
+  const openHelp = useCallback(() => setView('help'), [])
+  useGlobalShortcuts(openHelp)
+  const handleCapture = useCallback(() => {
+    setView('request')
+    toast({
+      title: 'Quick capture',
+      description: 'Describe the job below — voice transcription is coming soon.',
+    })
+    // Let the view render before focusing.
+    setTimeout(() => document.getElementById('request-textarea')?.focus(), 100)
+  }, [toast])
+  useCaptureShortcut(handleCapture)
 
   // Loading state
   if (isLoading) {
@@ -117,14 +154,14 @@ function AppShell() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+        {/* Header — drags the frameless desktop window (see .app-drag) */}
+        <header className="app-drag sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
           <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
             <div className="flex min-w-0 items-center">
               <Button
                 variant="ghost"
                 size="icon"
-                className="mr-1 lg:hidden"
+                className="app-no-drag mr-1 lg:hidden"
                 onClick={() => setMobileNavOpen(true)}
                 aria-label="Open navigation menu"
               >
@@ -138,22 +175,35 @@ function AppShell() {
                 AI-Driven Least Privilege Access
               </p>
             </div>
-            {authRequired && (
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <User className="h-4 w-4" aria-hidden="true" />
-                  {username}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={logout}
-                  aria-label="Sign out"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="app-no-drag"
+                onClick={() => setView('help')}
+                aria-label="Open help and keyboard shortcuts"
+                title="Help & shortcuts (?)"
+              >
+                <CircleHelp className="h-4 w-4" />
+              </Button>
+              {authRequired && (
+                <>
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <User className="h-4 w-4" aria-hidden="true" />
+                    {username}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="app-no-drag"
+                    onClick={logout}
+                    aria-label="Sign out"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </header>
 
@@ -168,8 +218,11 @@ function AppShell() {
                 onDurationChange={setDuration}
                 selectedProvider={selectedProvider}
                 selectedModel={selectedModel}
-                onPolicyGenerated={(data) => {
+                onPolicyGenerated={(data, newFindings, newSummary) => {
+                  setBaselinePolicy(policyData?.policy ?? null)
                   setPolicyData(data)
+                  setFindings(newFindings)
+                  setSummary(newSummary)
                   setView('review')
                 }}
               />
@@ -178,14 +231,25 @@ function AppShell() {
             {view === 'review' && policyData && (
               <ReviewView
                 policyData={policyData}
+                findings={findings}
+                summary={summary}
+                baselinePolicy={baselinePolicy}
                 onBack={() => setView('request')}
                 onCredentialsIssued={(creds) => {
                   setCredentials(creds)
                   setView('credentials')
                 }}
                 onRejected={() => setView('rejected')}
+                onApplySuggestion={(suggestion) => {
+                  setRequestText(
+                    `${requestText}\n\nRequested fix from guardrail: ${suggestion}`.trim(),
+                  )
+                  setView('request')
+                }}
               />
             )}
+
+            {view === 'help' && <HelpView appVersion={appVersion} />}
 
             {view === 'rejected' && policyData && (
               <RejectedView
@@ -200,6 +264,9 @@ function AppShell() {
                 }}
                 onStartFresh={() => {
                   setPolicyData(null)
+                  setBaselinePolicy(null)
+                  setFindings([])
+                  setSummary(null)
                   setRequestText('')
                   setDuration(2)
                   setView('request')
@@ -213,6 +280,9 @@ function AppShell() {
                 duration={duration}
                 onNewRequest={() => {
                   setPolicyData(null)
+                  setBaselinePolicy(null)
+                  setFindings([])
+                  setSummary(null)
                   setCredentials(null)
                   setRequestText('')
                   setDuration(2)
@@ -225,6 +295,7 @@ function AppShell() {
       </main>
 
       <Toaster />
+      <UpdateBanner />
     </div>
   )
 }

@@ -48,6 +48,26 @@ jobs:
       - run: ruff check .
       - run: pytest --tb=short -q
 
+  desktop-checks:
+    name: Desktop Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # --ignore-scripts skips the native-module rebuild (keytar/better-sqlite3);
+      # the test script only needs tsc output plus node --test (no native bindings).
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest

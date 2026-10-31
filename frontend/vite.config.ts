@@ -4,6 +4,10 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative base: the same bundle runs served over HTTP (web/nginx) and
+  // from file:// inside Electron. Absolute `/assets/...` URLs resolve to
+  // file:///assets/... in the desktop shell and silently fail (blue screen).
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {
