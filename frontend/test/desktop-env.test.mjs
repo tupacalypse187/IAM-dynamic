@@ -6,7 +6,7 @@
 //   npm test
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isMacDesktop, isMacPlatformString, resolvePlatform } from '../src/lib/desktop.ts'
+import { isMacDesktop, isMacPlatformString, queryPlatform, resolvePlatform } from '../src/lib/desktop.ts'
 
 describe('isMacDesktop', () => {
   it('is false with no preload bridge (browser)', () => {
@@ -27,6 +27,19 @@ describe('isMacDesktop', () => {
     assert.equal(isMacDesktop({}, 'darwin'), true)
     assert.equal(isMacPlatformString('darwin'), true)
     assert.equal(isMacPlatformString(null), false)
+  })
+})
+
+describe('queryPlatform', () => {
+  it('reads the main-process platform injection', () => {
+    assert.equal(queryPlatform('?platform=darwin'), 'darwin')
+    assert.equal(queryPlatform('?platform=win32'), 'win32')
+  })
+
+  it('returns null when absent (browsers, tests)', () => {
+    assert.equal(queryPlatform(''), null)
+    assert.equal(queryPlatform('?other=1'), null)
+    assert.equal(queryPlatform(), null)
   })
 })
 
