@@ -222,9 +222,12 @@ class PolicyResponse:
         explanation: Explanation of the risk assessment
         approver_note: Note for the approver
     """
+    VALID_RISKS = ("low", "medium", "high", "critical")
+
     def __init__(self, policy: Dict[str, Any], risk: str, explanation: str, approver_note: str):
         self.policy = policy
-        self.risk = risk
+        normalized = (risk or "").strip().lower()
+        self.risk = normalized if normalized in self.VALID_RISKS else "medium"
         self.explanation = explanation
         self.approver_note = approver_note
 
