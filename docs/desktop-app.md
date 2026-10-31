@@ -78,7 +78,8 @@ Useful commands (all run from `desktop/`):
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `IAM_DESKTOP_BACKEND_URL` | `http://localhost:8000` | FastAPI base URL |
+| `IAM_DESKTOP_BACKEND_URL` | `http://localhost:8000` | FastAPI base URL (main process, read at runtime) |
+| `VITE_API_BASE_URL` | `http://localhost:8000` (baked at build) | FastAPI base URL for the renderer — **must be set when building a release** pointing at a hosted backend, since `file://` has no same-origin fallback |
 | `IAM_DESKTOP_UPDATE_FEED_URL` | *(unset = updates off)* | Public URL serving releases + `latest.yml` |
 | `IAM_DESKTOP_DEV` | *(unset = auto)* | `1` forces dev mode (dev server + DevTools); packaged apps default to production via `app.isPackaged` |
 | `CSC_NAME` | *(auto-detect off in CI)* | macOS signing identity (e.g. `Developer ID Application: …`) |

@@ -15,6 +15,16 @@ export function setToken(token: string | null) {
   }
 }
 
+import { describeUnreachable } from './net-error'
+
+/**
+ * The raw `fetch` TypeError ("Failed to fetch") tells users nothing.
+ * Map it to where the request was going and what to check first.
+ */
+function unreachableError(): Error {
+  return new Error(describeUnreachable(BASE_URL || undefined))
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
@@ -23,10 +33,18 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${BASE_URL}${url}`, {
-    headers,
-    ...options,
-  })
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${url}`, {
+      headers,
+      ...options,
+    })
+  } catch (err) {
+    // Network failure, DNS, refused connection, or file:// in the
+    // packaged app when no API base URL was baked in at build time.
+    if (err instanceof TypeError) throw unreachableError()
+    throw err
+  }
 
   if (response.status === 401 && !url.endsWith('/api/auth/login')) {
     setToken(null)
