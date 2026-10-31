@@ -257,7 +257,6 @@ function AppShell() {
                 requestText={requestText}
                 duration={duration}
                 selectedProvider={selectedProvider}
-                selectedModel={selectedModel}
                 onReviseRequest={(text) => {
                   setRequestText(text)
                   setView('request')

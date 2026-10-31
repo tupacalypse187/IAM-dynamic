@@ -67,3 +67,54 @@ class TestGeneratePolicy:
         )
         assert response.status_code == 400
         assert "API Key Missing" in response.json()["detail"]
+
+
+class _StubGuidanceProvider:
+    def generate_rejection_guidance(self, original_request, policy, risk):
+        return "stub guidance"
+
+
+class TestRejectionGuidanceModelTier:
+    def _guidance_body(self, **overrides):
+        body = {
+            "original_request": "need broad access",
+            "policy": {"Version": "2012-10-17", "Statement": []},
+            "risk": "high",
+            "provider": "claude",
+        }
+        body.update(overrides)
+        return body
+
+    def test_without_model_uses_fast_tier(self, monkeypatch):
+        captured = {}
+
+        def fake_get_llm_provider(provider_type=None, model=None):
+            captured["provider"] = provider_type
+            captured["model"] = model
+            return _StubGuidanceProvider()
+
+        monkeypatch.setattr(main, "get_llm_provider", fake_get_llm_provider)
+        client = TestClient(main.app)
+        response = client.post(
+            "/api/generate-rejection-guidance", json=self._guidance_body()
+        )
+        assert response.status_code == 200
+        assert response.json() == {"guidance": "stub guidance"}
+        assert captured == {"provider": "claude", "model": "claude-haiku-5-5"}
+
+    def test_explicit_model_passes_through(self, monkeypatch):
+        captured = {}
+
+        def fake_get_llm_provider(provider_type=None, model=None):
+            captured["provider"] = provider_type
+            captured["model"] = model
+            return _StubGuidanceProvider()
+
+        monkeypatch.setattr(main, "get_llm_provider", fake_get_llm_provider)
+        client = TestClient(main.app)
+        response = client.post(
+            "/api/generate-rejection-guidance",
+            json=self._guidance_body(model="claude-opus-5"),
+        )
+        assert response.status_code == 200
+        assert captured == {"provider": "claude", "model": "claude-opus-5"}

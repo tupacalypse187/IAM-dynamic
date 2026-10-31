@@ -396,6 +396,9 @@ PROVIDER_MODELS = {
         {"id": "gpt-5-mini-2025-08-07", "name": "GPT-5 Mini"},
     ],
     "claude": [
+        {"id": "claude-opus-5-5", "name": "Claude Opus 5.5"},
+        {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5"},
+        {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5"},
         {"id": "claude-opus-5", "name": "Claude Opus 5"},
         {"id": "claude-sonnet-5", "name": "Claude Sonnet 5"},
         {"id": "claude-opus-4-6", "name": "Claude Opus 4.6"},
@@ -425,6 +428,35 @@ PROVIDER_MODELS = {
         {"id": "meta/muse-spark-1.3", "name": "Muse Spark 1.3 (Meta)"},
     ],
 }
+
+
+# Fast/cheap model tier for low-stakes tasks such as rejection guidance.
+# Policy generation uses the user-selected (frontier) model; rejection
+# guidance falls back to FAST_MODELS unless the caller pins a model.
+FAST_MODELS = {
+    "gemini": "gemini-3.8-flash",
+    "openai": "gpt-5.6-luna",
+    "claude": "claude-haiku-5-5",
+    "zhipu": "glm-5.3-flash",
+    "muse": "muse-spark-1.1",
+    "openrouter": "z-ai/glm-5.3-flash",
+}
+
+# Aliases accepted by llm_service.get_llm_provider, resolved to the
+# PROVIDER_MODELS catalog key before the FAST_MODELS lookup.
+_PROVIDER_ALIASES = {
+    "anthropic": "claude",
+    "glm": "zhipu",
+    "meta": "muse",
+}
+
+
+def fast_model_for(provider: str | None) -> str | None:
+    """Return the fast-tier model for a provider, or None if unknown."""
+    if not provider:
+        return None
+    key = _PROVIDER_ALIASES.get(provider.lower(), provider.lower())
+    return FAST_MODELS.get(key)
 
 
 def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
@@ -758,8 +790,9 @@ async def generate_rejection_guidance(request: RejectionGuidanceRequest, _user: 
     Provides specific suggestions based on the original request, generated policy, and risk level.
     """
     try:
-        # Get LLM provider with optional model override
-        provider = get_llm_provider(request.provider, request.model)
+        # Rejection guidance uses the fast tier unless the caller pins a model
+        model = request.model or fast_model_for(request.provider)
+        provider = get_llm_provider(request.provider, model)
 
         # Generate guidance
         guidance = provider.generate_rejection_guidance(

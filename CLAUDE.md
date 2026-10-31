@@ -59,6 +59,8 @@ The backend uses a Strategy Pattern ([`backend/llm_service.py`](backend/llm_serv
 
 The provider is selected via `LLM_PROVIDER` environment variable (`gemini`, `openai`, `anthropic`/`claude`, `zhipu`/`glm`, `muse`/`meta`, or `openrouter`) and can be switched per-request from the UI. The model catalog served to the frontend lives in `PROVIDER_MODELS` in `backend/main.py`.
 
+Task-based model tiers: policy generation always uses the user-selected (frontier) model, while rejection guidance defaults to a fast/cheap tier (`FAST_MODELS` in `backend/main.py`, resolved via `fast_model_for()` with provider-alias handling) unless the caller pins an explicit model.
+
 ### Data Flow
 
 ```
