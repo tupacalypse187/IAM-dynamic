@@ -50,6 +50,10 @@ const ACTION_VERBS = [
   'logs',
 ]
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 const PROVIDER_KEYWORDS: Array<[RegExp, string]> = [
   [/\b(s3|bucket)\b/i, 'aws:s3'],
   [/\b(dynamodb|dynamo|table)\b/i, 'aws:dynamodb'],
@@ -89,8 +93,9 @@ export function extractIntent(freeText: string, guided: GuidedContext): Intent {
     if (m[1]) resources.add(m[1])
   }
 
-  const lowered = combined.toLowerCase()
-  const actionVerbs = ACTION_VERBS.filter((verb) => lowered.includes(verb))
+  const actionVerbs = ACTION_VERBS.filter((verb) =>
+    new RegExp(`\\b${escapeRegExp(verb)}\\b`, 'i').test(combined),
+  )
 
   const providerHints = PROVIDER_KEYWORDS.filter(([re]) => re.test(combined)).map(([, hint]) => hint)
 
