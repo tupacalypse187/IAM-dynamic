@@ -2,9 +2,9 @@
 LLM Service Layer - Supports multiple AI providers for IAM policy generation
 
 Providers supported:
-- Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
-- OpenAI GPT-5.6 family (gpt-5.6)
-- Anthropic Claude Opus 5 (claude-opus-5)
+- Google Gemini 4 Argon (gemini-4-argon)
+- OpenAI GPT-6 family (gpt-6-astra)
+- Anthropic Claude Opus 5.5 (claude-opus-5-5)
 - Z.AI GLM-5.3 (glm-5.3, via api.z.ai global platform)
 - Meta Muse (muse-spark-1.3, via api.meta.ai Meta Model API)
 - OpenRouter gateway (vendor/model slugs, e.g. z-ai/glm-5.3)
@@ -271,7 +271,7 @@ class GeminiProvider(LLMProvider):
     """
     Google Gemini provider
 
-    Latest model: gemini-3.1-pro-preview (flagship)
+    Latest model: gemini-4-argon (flagship)
     Source: https://ai.google.dev/gemini-api/docs/models
     """
 
@@ -280,9 +280,9 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             logger.warning("GOOGLE_API_KEY not found. GeminiProvider may fail.")
 
-        # Gemini 3.1 Pro Preview (released February 2026)
-        # Model code: gemini-3.1-pro-preview
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+        # Gemini 4 Argon (released October 2026)
+        # Model code: gemini-4-argon
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-4-argon")
 
         # Initialize client based on API version.
         # genai.Client raises on api_key=None, so only build it when present;
@@ -408,12 +408,12 @@ class OpenAICompatibleProvider(LLMProvider):
     display_name = "OpenAI-compatible"
     api_key_env = "OPENAI_API_KEY"
     model_env = "OPENAI_MODEL"
-    default_model = "gpt-5.6"
+    default_model = "gpt-6-astra"
     base_url = None
     # Set False for gateways whose models may not accept response_format
     supports_json_response_format = True
     # Set False for models that only support the default temperature (e.g.
-    # OpenAI's GPT-5 reasoning family rejects temperature != 1 with a 400)
+    # OpenAI's GPT-6 reasoning family rejects temperature != 1 with a 400)
     supports_temperature = True
     key_setup_instructions = (
         "🔑 **API Key Missing**\n\n"
@@ -493,9 +493,9 @@ class OpenAICompatibleProvider(LLMProvider):
 
 class OpenAIProvider(OpenAICompatibleProvider):
     """
-    OpenAI provider - GPT-5.6 family
+    OpenAI provider - GPT-6 family
 
-    Latest models: gpt-5.6 (Sol alias), gpt-5.6-terra, gpt-5.6-luna
+    Latest models: gpt-6-astra, gpt-6.1-sol, gpt-6.1-terra, gpt-6-luna
     Source: https://developers.openai.com/api/docs/models
     """
 
@@ -503,9 +503,9 @@ class OpenAIProvider(OpenAICompatibleProvider):
     display_name = "OpenAI"
     api_key_env = "OPENAI_API_KEY"
     model_env = "OPENAI_MODEL"
-    default_model = "gpt-5.6"
+    default_model = "gpt-6-astra"
     base_url = None
-    # GPT-5 reasoning models only accept the default temperature (1)
+    # GPT-6 reasoning models only accept the default temperature (1)
     supports_temperature = False
     key_setup_instructions = (
         "🔑 **API Key Missing**\n\n"
@@ -521,13 +521,13 @@ class AnthropicProvider(LLMProvider):
     """
     Anthropic Claude provider
 
-    Latest model: claude-opus-5 (July 2026)
+    Latest model: claude-opus-5-5
     Source: https://platform.claude.com/docs/en/docs/about-claude/models/overview
     """
 
     def __init__(self):
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-5")
+        self.model_name = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not found. AnthropicProvider may fail.")
             self.client = None
@@ -626,7 +626,7 @@ class MuseProvider(OpenAICompatibleProvider):
     Meta Muse provider - Meta Model API (api.meta.ai)
 
     Uses the OpenAI-compatible Meta Model API.
-    Latest models: muse-spark-1.3-contributor, muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
+    Latest models: muse-wonder-1.0, muse-spark-1.3-contributor, muse-spark-1.3, muse-spark-1.2, muse-spark-1.1
     Source: https://ai.developer.meta.com/docs/overview/
     """
 
@@ -654,7 +654,7 @@ class OpenRouterProvider(OpenAICompatibleProvider):
     OpenRouter gateway provider - one API key for many vendors' models
 
     Uses the OpenAI-compatible OpenRouter API. Models are `vendor/model`
-    slugs, e.g. z-ai/glm-5.3 or anthropic/claude-opus-5.
+    slugs, e.g. z-ai/glm-5.3 or anthropic/claude-opus-5.5.
     Source: https://openrouter.ai/docs
     """
 
@@ -684,9 +684,9 @@ def get_llm_provider(provider_type: str = None, model: str = None) -> LLMProvide
     Get the configured LLM provider instance
 
     Providers:
-    - gemini: Google Gemini 3.1 Pro Preview
-    - openai: OpenAI GPT-5.6
-    - anthropic/claude: Anthropic Claude Opus 5
+    - gemini: Google Gemini 4 Argon
+    - openai: OpenAI GPT-6 Astra
+    - anthropic/claude: Anthropic Claude Opus 5.5
     - zhipu/glm: Z.AI GLM-5.3
     - muse/meta: Meta Muse Spark
     - openrouter: OpenRouter gateway (vendor/model slugs)

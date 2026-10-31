@@ -11,7 +11,7 @@ This document outlines the strategic integration of Google's **Gemini** models i
 
 ## 🎯 Status: Implemented
 
-✅ **Default Engine:** Gemini (`gemini-3.1-pro-preview`) is the default provider for policy generation.
+✅ **Default Engine:** Gemini (`gemini-4-argon`) is the default provider for policy generation.
 ✅ **Multi-Provider Architecture:** The `LLMProvider` interface allows swapping between Gemini, OpenAI, Anthropic Claude, Z.AI GLM, Meta Muse, and OpenRouter at runtime.
 ✅ **Modern UI:** A React SPA with TypeScript, Vite, and Tailwind CSS.
 ✅ **Guardrails:** The shared `SYSTEM_INSTRUCTION` enforces strict JSON schemas and least-privilege rules across all providers.
@@ -31,17 +31,17 @@ parameter capabilities:
 class GeminiProvider(LLMProvider):
     def __init__(self):
         # Configures google.genai with GOOGLE_API_KEY
-        # Defaults to gemini-3.1-pro-preview
+        # Defaults to gemini-4-argon
         ...
 
 # Shared base for OpenAI-compatible APIs (used by 4 of the 6 providers)
 class OpenAICompatibleProvider(LLMProvider):
     api_key_env = "OPENAI_API_KEY"
     model_env = "OPENAI_MODEL"
-    default_model = "gpt-5.6"
+    default_model = "gpt-6-astra"
     base_url = None  # None → OpenAI itself
     supports_json_response_format = True
-    supports_temperature = True  # False for GPT-5 reasoning models
+    supports_temperature = True  # False for GPT-6 reasoning models
 ```
 
 The system instruction (`SYSTEM_INSTRUCTION`) is a module-level constant that
@@ -97,14 +97,14 @@ Configure Gemini in your `.env` file:
 ```bash
 LLM_PROVIDER=gemini
 GOOGLE_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-3.1-pro-preview
+GEMINI_MODEL=gemini-4-argon
 ```
 
 Available models:
 
-- `gemini-3.1-pro-preview` (default, flagship)
+- `gemini-4-argon` (default, flagship)
 - `gemini-3.8-flash` (fast, stable)
-- `gemini-3.7-flash` (fast, stable)
+- `gemini-3.6-flash` (fast, stable)
 - `gemini-3.5-flash-lite` (lowest cost)
 
 See [README.md](README.md) for the full multi-provider configuration reference.

@@ -2,9 +2,9 @@
 Centralized configuration with pydantic validation
 
 Supports LLM providers:
-- Google Gemini 3.1 Pro Preview (gemini-3.1-pro-preview)
-- OpenAI GPT-5.6 (gpt-5.6)
-- Anthropic Claude Opus 5 (claude-opus-5)
+- Google Gemini 4 Argon (gemini-4-argon)
+- OpenAI GPT-6 Astra (gpt-6-astra)
+- Anthropic Claude Opus 5.5 (claude-opus-5-5)
 - Zhipu GLM-5.3 (glm-5.3)
 - Meta Muse (muse-spark-1.3-contributor)
 - OpenRouter gateway (z-ai/glm-5.3)
@@ -45,15 +45,15 @@ class LLMConfig(BaseModel):
 
     # Gemini (Google)
     google_api_key: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")
-    gemini_model: str = Field(default="gemini-3.1-pro-preview", env="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-4-argon", env="GEMINI_MODEL")
 
     # OpenAI
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5.6", env="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-6-astra", env="OPENAI_MODEL")
 
     # Anthropic
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-opus-5", env="ANTHROPIC_MODEL")
+    anthropic_model: str = Field(default="claude-opus-5-5", env="ANTHROPIC_MODEL")
 
     # Z.AI GLM (Global platform via api.z.ai)
     zai_api_key: Optional[str] = Field(default=None, env="ZAI_API_KEY")
@@ -156,11 +156,11 @@ def load_config() -> AppConfig:
         llm_config = LLMConfig(
             provider=os.getenv("LLM_PROVIDER", "gemini"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-4-argon"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.6"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-6-astra"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-5"),
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
             zai_api_key=os.getenv("ZAI_API_KEY"),
             zai_model=os.getenv("ZAI_MODEL", "glm-5.3"),
             muse_api_key=os.getenv("MUSE_API_KEY"),
