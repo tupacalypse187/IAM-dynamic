@@ -21,7 +21,7 @@ import os
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Try to import google.genai (new package), fallback to google.generativeai (deprecated)
 try:
@@ -231,6 +231,7 @@ class PolicyResponse:
         explanation: str,
         approver_note: str,
         label: str = "",
+        narrative: Optional[Dict[str, Any]] = None,
     ):
         self.policy = policy
         normalized = (risk or "").strip().lower()
@@ -238,9 +239,60 @@ class PolicyResponse:
         self.explanation = explanation
         self.approver_note = approver_note
         self.label = label or ""
+        self.narrative = narrative or {}
 
 
 MAX_POLICY_UNITS = 5
+
+_NARRATIVE_TEXT_FIELDS = ("summary_plain", "risk_plain", "approver_plain")
+_NARRATIVE_LIST_FIELDS = ("what_changes", "next_steps")
+_MAX_NARRATIVE_ITEMS = 6
+
+
+def clean_model_markdown(text: Any) -> str:
+    """Strip wrapping fences/quotes models add around prose fields.
+
+    Keeps inner markdown (bold, inline code, lists) intact — only the
+    outer ``` fence block and one pair of surrounding quotes go.
+    """
+    if not isinstance(text, str):
+        return ""
+    cleaned = text.strip()
+    if cleaned.startswith("```") and "```" in cleaned[3:]:
+        first_break = cleaned.find("\n")
+        last_fence = cleaned.rfind("```")
+        if first_break != -1 and last_fence > first_break:
+            cleaned = cleaned[first_break + 1 : last_fence].strip()
+    if len(cleaned) >= 2 and cleaned.startswith('"') and cleaned.endswith('"'):
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
+def build_narrative(data: Any) -> Dict[str, Any]:
+    """Extract the plain-language narrative block from a reply or unit.
+
+    Unknown fields are dropped, empties removed, lists capped — anything
+    missing simply renders through the legacy explanation fallback.
+    """
+    if not isinstance(data, dict):
+        return {}
+    source = data.get("narrative")
+    if not isinstance(source, dict):
+        return {}
+    narrative: Dict[str, Any] = {}
+    for field in _NARRATIVE_TEXT_FIELDS:
+        cleaned = clean_model_markdown(source.get(field, ""))
+        if cleaned:
+            narrative[field] = cleaned
+    for field in _NARRATIVE_LIST_FIELDS:
+        items = source.get(field, [])
+        if not isinstance(items, list):
+            continue
+        cleaned_items = [clean_model_markdown(i) for i in items]
+        cleaned_items = [i for i in cleaned_items if i][: _MAX_NARRATIVE_ITEMS]
+        if cleaned_items:
+            narrative[field] = cleaned_items
+    return narrative
 
 
 def responses_from_data(data: Dict[str, Any]) -> list["PolicyResponse"]:
@@ -264,6 +316,7 @@ def responses_from_data(data: Dict[str, Any]) -> list["PolicyResponse"]:
                     explanation=unit.get("explanation", ""),
                     approver_note=unit.get("approver_note", ""),
                     label=unit.get("label", ""),
+                    narrative=build_narrative(unit),
                 )
             )
         return responses
@@ -276,6 +329,7 @@ def _single_response(data: Dict[str, Any]) -> "PolicyResponse":
         risk=data.get("risk_score", "medium"),
         explanation=data.get("explanation", ""),
         approver_note=data.get("approver_note", ""),
+        narrative=build_narrative(data),
     )
 
 
@@ -307,14 +361,31 @@ You must respond with a VALID JSON object adhering to this schema:
 {
   "policy": { ...valid IAM policy JSON... },
   "risk_score": "low" | "medium" | "high" | "critical",
-  "explanation": "Brief explanation of permissions and risks.",
-  "approver_note": "Recommendation for the approver."
+  "explanation": "Brief technical explanation of permissions and risks (for admins).",
+  "approver_note": "Technical recommendation for the approver.",
+  "narrative": {
+    "summary_plain": "1-2 sentences: what this grants, in everyday words.",
+    "what_changes": ["Concrete things the user CAN now do, each one short."],
+    "risk_plain": "What could go wrong, in everyday words.",
+    "next_steps": ["How to narrow the request or get approved faster."],
+    "approver_plain": "2-3 sentences for a non-technical approver: who needs what, blast radius, recommendation."
+  }
 }
+
+PLAIN-LANGUAGE RULES for every "narrative" field:
+1. Second person for the requester ("you"), third person for approver_plain.
+2. NEVER mention ARNs, IAM action names (e.g. s3:GetObject), policy names,
+   or service API terminology. Say "read files in the team bucket", never
+   "s3:GetObject on arn:aws:s3:::team-bucket/*".
+3. One emoji per bullet at most, none in approver_plain. No markdown code
+   fences around the whole text; inner **bold** and `inline code` are fine.
+4. If a field has nothing truthful to say, use "" (or [] for lists).
 
 When the request contains clearly SEPARABLE grants at different risk
 levels (e.g. read-only debugging plus a privileged write), split them
 into a "units" array instead — at most 5 units, each with its own
-policy, risk_score, explanation, approver_note, and short "label".
+policy, risk_score, explanation, approver_note, short "label", and its
+own "narrative" block following the rules above.
 The low-risk units are approved immediately so the user can work while
 the riskier remainder waits for review; only split when the grants are
 genuinely independent. Single-grant requests keep the flat shape above.

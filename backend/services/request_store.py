@@ -30,7 +30,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS access_requests (
@@ -64,6 +64,7 @@ _MIGRATIONS = [
     UPDATE access_requests SET batch_id = id WHERE batch_id IS NULL;
     CREATE INDEX IF NOT EXISTS idx_access_requests_batch
         ON access_requests (batch_id);""",
+    """ALTER TABLE access_requests ADD COLUMN narrative_json TEXT NOT NULL DEFAULT '{}';""",
 ]
 
 STATUS_PENDING = "pending_review"
@@ -146,6 +147,11 @@ class RequestStore:
             data["policy"] = json.loads(data.pop("policy_json") or "{}")
         except (json.JSONDecodeError, TypeError):
             data["policy"] = {}
+        try:
+            narrative = json.loads(data.pop("narrative_json", None) or "{}")
+            data["narrative"] = narrative if isinstance(narrative, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            data["narrative"] = {}
         data["auto_approved"] = bool(data["auto_approved"])
         return data
 
@@ -166,6 +172,7 @@ class RequestStore:
         environment: str = "dev",
         batch_id: Optional[int] = None,
         grant_expires_at: Optional[str] = None,
+        narrative: Optional[dict] = None,
     ) -> dict:
         """Persist a freshly evaluated request. Returns the stored row."""
         if status not in ALL_STATUSES:
@@ -176,8 +183,8 @@ class RequestStore:
                 "INSERT INTO access_requests (requester, request_text, provider, model,"
                 " duration, policy_json, risk, explanation, approver_note,"
                 " auto_approved, status, revision, created_at, updated_at,"
-                " environment, batch_id, grant_expires_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+                " environment, batch_id, grant_expires_at, narrative_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
                 (
                     requester,
                     request_text,
@@ -195,6 +202,7 @@ class RequestStore:
                     environment,
                     batch_id,
                     grant_expires_at,
+                    json.dumps(narrative or {}),
                 ),
             )
             self._conn.commit()
@@ -290,6 +298,7 @@ class RequestStore:
         approver_note: str,
         auto_approved: bool,
         status: str,
+        narrative: Optional[dict] = None,
     ) -> dict:
         """Re-evaluate a sent-back request as a new revision. Same id, same history."""
         if status not in (STATUS_PENDING, STATUS_APPROVED):
@@ -319,11 +328,11 @@ class RequestStore:
                     " duration = ?, policy_json = ?, risk = ?, explanation = ?,"
                     " approver_note = ?, auto_approved = ?, status = ?, reviewer = NULL,"
                     " feedback = NULL, revision = revision + 1, updated_at = ?,"
-                    " decided_at = NULL WHERE id = ?",
+                    " decided_at = NULL, narrative_json = ? WHERE id = ?",
                     (
                         request_text, provider, model, duration, json.dumps(policy),
                         risk, explanation, approver_note, 1 if auto_approved else 0,
-                        status, now, request_id,
+                        status, now, json.dumps(narrative or {}), request_id,
                     ),
                 )
             except BaseException:

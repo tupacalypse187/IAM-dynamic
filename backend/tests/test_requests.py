@@ -46,6 +46,7 @@ class _StubPolicyProvider:
                 explanation=unit.get("explanation", ""),
                 approver_note=unit.get("approver_note", ""),
                 label=unit.get("label", ""),
+                narrative=dict(unit.get("narrative", {})),
             )
             for unit in self.units
         ]
@@ -394,6 +395,20 @@ class TestBatchSplit:
         body = _submit(TestClient(main.app)).json()
         assert len(body) == 1
         assert body[0]["batch_id"] == body[0]["id"]
+
+    def test_batch_rows_carry_narrative(self, _as_user, _stub_llm):
+        _stub_llm["units"] = [
+            {
+                **LOW_UNIT,
+                "narrative": {"summary_plain": "Lets you read logs for debugging."},
+            }
+        ]
+        _as_user("alice")
+        client = TestClient(main.app)
+        rows = _submit(client).json()
+        assert rows[0]["narrative"] == {
+            "summary_plain": "Lets you read logs for debugging."
+        }
 
 
 class TestRecord:

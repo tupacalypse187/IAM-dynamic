@@ -2,6 +2,8 @@
 import pytest
 
 from llm_service import (
+    build_narrative,
+    clean_model_markdown,
     get_llm_provider,
     responses_from_data,
     GeminiProvider,
@@ -161,3 +163,60 @@ class TestUnitSplitting:
             }
         )
         assert len(responses) == 1
+
+
+def _narrative(**overrides):
+    base = {
+        "summary_plain": "Lets you read error logs so you can debug crashes.",
+        "what_changes": ["Read log files", "List recent crashes"],
+        "risk_plain": "Logs could contain customer names — don't copy them out.",
+        "next_steps": ["Name the exact log group to speed approval"],
+        "approver_plain": "Alice needs log access for a crash; read-only, narrow blast radius.",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestNarrative:
+    """Plain-language fields ride along per unit, sanitized."""
+
+    def test_full_narrative_parsed_per_unit(self):
+        unit = _unit("read logs", "low")
+        unit["narrative"] = _narrative()
+        (response,) = responses_from_data({"units": [unit]})
+        assert response.narrative["summary_plain"].startswith("Lets you read")
+        assert response.narrative["what_changes"] == ["Read log files", "List recent crashes"]
+        assert "customer names" in response.narrative["risk_plain"]
+        assert response.narrative["approver_plain"].startswith("Alice needs")
+
+    def test_legacy_shape_yields_empty_narrative(self):
+        (response,) = responses_from_data({"policy": {}, "risk_score": "low"})
+        assert response.narrative == {}
+
+    def test_top_level_narrative_applies_to_single(self):
+        (response,) = responses_from_data(
+            {"policy": {}, "risk_score": "low", "narrative": _narrative()}
+        )
+        assert response.narrative["summary_plain"].startswith("Lets you read")
+
+    def test_narrative_drops_empty_and_caps_lists(self):
+        narrative = build_narrative(
+            {
+                "narrative": {
+                    "summary_plain": "  padded  ",
+                    "what_changes": ["ok", "", "  ", 42, "x", "y", "z", "overflow"],
+                    "mystery_field": "ignored",
+                }
+            }
+        )
+        assert narrative["summary_plain"] == "padded"
+        assert narrative["what_changes"] == ["ok", "x", "y", "z", "overflow"]
+        assert "mystery_field" not in narrative
+
+    def test_sanitizer_strips_fences_and_quotes(self):
+        assert clean_model_markdown("```markdown\nHello **there**\n```") == "Hello **there**"
+        assert clean_model_markdown('```\nplain\n```') == "plain"
+        assert clean_model_markdown('"quoted"') == "quoted"
+        assert clean_model_markdown("  spaced  ") == "spaced"
+        assert clean_model_markdown("") == ""
+        assert clean_model_markdown("keeps **inner** `code`") == "keeps **inner** `code`"

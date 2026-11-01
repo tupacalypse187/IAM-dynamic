@@ -415,6 +415,7 @@ class AccessRequestModel(BaseModel):
     provider: str
     model: Optional[str] = None
     duration: int
+    narrative: dict = {}
     environment: str = "dev"
     batch_id: Optional[int] = None
     grant_expires_at: Optional[str] = None
@@ -1415,6 +1416,7 @@ async def submit_access_request(
                 grant_expires_at=_grant_expiry(now, body.environment)
                 if auto_approved
                 else None,
+                narrative=response.narrative,
             )
             batch.append(stored)
         # The batch id is the first row's id (single-unit batches point
@@ -1512,6 +1514,7 @@ async def record_access_request(
             status=request_status,
             environment=body.environment,
             batch_id=None,
+            narrative={},
             grant_expires_at=_grant_expiry(datetime.now(timezone.utc), body.environment)
             if auto_approved
             else None,
@@ -1684,6 +1687,7 @@ async def resubmit_access_request(
             approver_note=response.approver_note,
             auto_approved=auto_approved,
             status=request_status,
+            narrative=response.narrative,
         )
     except RequestStoreError as e:
         code = 404 if e.code == "not_found" else 400
