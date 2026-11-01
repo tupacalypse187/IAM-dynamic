@@ -72,13 +72,19 @@ function createSplash(version: string): BrowserWindow {
     backgroundColor: '#0f172a',
     center: true,
     show: false,
+    // The splash is the only window for its 3 seconds: above everything,
+    // focused on show, main window stays hidden until handover.
+    alwaysOnTop: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   })
-  splash.once('ready-to-show', () => splash.show())
+  splash.once('ready-to-show', () => {
+    splash.show()
+    splash.focus()
+  })
   void splash.loadFile(splashAssetPath(), { hash: `v=${version}` })
   return splash
 }
@@ -262,12 +268,15 @@ async function startup(): Promise<void> {
   } else {
     // Cold start: brand splash for at least SPLASH_MIN_MS, then hand over
     // to the main window once it has painted. The did-finish-load fallback
-    // covers renderers that never emit ready-to-show.
+    // covers renderers that never emit ready-to-show. The main window is
+    // never shown before the splash closes, so the splash owns the screen.
     const shownAt = Date.now()
     const splash = createSplash(app.getVersion())
     const window = ensureWindow()
+    let released = false
     const release = () => {
-      if (splash.isDestroyed()) return
+      if (released) return
+      released = true
       const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - shownAt))
       setTimeout(() => {
         if (!splash.isDestroyed()) splash.close()
@@ -276,10 +285,7 @@ async function startup(): Promise<void> {
         }
       }, wait)
     }
-    window.once('ready-to-show', () => {
-      window.show()
-      release()
-    })
+    window.once('ready-to-show', release)
     window.webContents.once('did-finish-load', release)
   }
 

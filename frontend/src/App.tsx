@@ -36,6 +36,7 @@ import { Toaster } from './components/toaster'
 import { useToast } from './hooks/use-toast'
 import { ErrorBoundary } from './components/error-boundary'
 import UpdateBanner from './components/update-manager'
+import { StartupTip } from './components/startup-tip'
 import Sidebar, { SidebarContent } from './components/sidebar'
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -696,6 +697,7 @@ function AppShell() {
 
       <Toaster />
       <UpdateBanner />
+      <StartupTip />
     </div>
   )
 }

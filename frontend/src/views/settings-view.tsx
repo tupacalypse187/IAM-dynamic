@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { CODE_THEMES } from '@/lib/code-themes'
 import { BUILD_ID } from '@/lib/build-info'
+import type { Prefs } from '@/lib/prefs'
 import { ProviderSelects } from '@/components/provider-selects'
 import { ProfileManager } from '@/components/profile-manager'
 import { CatalogManager } from '@/components/catalog-manager'
@@ -81,6 +82,13 @@ export default function SettingsView({
 }: SettingsViewProps) {
   const { theme, setTheme } = useTheme()
   const { prefs, updatePrefs } = usePrefs()
+  const { toast } = useToast()
+
+  /** Prefs already persist on every change; confirm it with a brief toast. */
+  const save = (patch: Partial<Prefs>, description: string) => {
+    updatePrefs(patch)
+    toast({ title: 'Settings saved', description })
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -109,7 +117,10 @@ export default function SettingsView({
                     <Button
                       variant={active ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setTheme(t.id)}
+                      onClick={() => {
+                        setTheme(t.id)
+                        toast({ title: 'Settings saved', description: `${t.label} theme applied.` })
+                      }}
                       aria-pressed={active}
                     >
                       <Icon className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -126,7 +137,7 @@ export default function SettingsView({
             <Tip label="Color theme for the policy JSON preview; Match follows the app theme">
               <Select
                 value={prefs.codeTheme}
-                onValueChange={(value) => updatePrefs({ codeTheme: value })}
+                onValueChange={(value) => save({ codeTheme: value }, 'Policy JSON theme updated.')}
               >
                 <SelectTrigger id="code-theme-select" className="max-w-xs">
                   <SelectValue placeholder="Match app theme" />
@@ -166,7 +177,7 @@ export default function SettingsView({
             <Switch
               id="tooltips-switch"
               checked={prefs.tooltips}
-              onCheckedChange={(checked) => updatePrefs({ tooltips: checked })}
+              onCheckedChange={(checked) => save({ tooltips: checked }, `Hover tooltips ${checked ? 'on' : 'off'}.`)}
               aria-label="Hover tooltips"
             />
           </div>
@@ -181,8 +192,23 @@ export default function SettingsView({
             <Switch
               id="tour-autoplay-switch"
               checked={prefs.tourAutoplay}
-              onCheckedChange={(checked) => updatePrefs({ tourAutoplay: checked })}
+              onCheckedChange={(checked) => save({ tourAutoplay: checked }, `Demo on startup ${checked ? 'on' : 'off'}.`)}
               aria-label="Play demo on startup"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="startup-tips-switch">Tip of the day</Label>
+              <p className="text-xs text-muted-foreground">
+                Show a rotating usage tip when the app opens.
+              </p>
+            </div>
+            <Switch
+              id="startup-tips-switch"
+              checked={prefs.startupTips}
+              onCheckedChange={(checked) => save({ startupTips: checked }, `Startup tips ${checked ? 'on' : 'off'}.`)}
+              aria-label="Tip of the day on startup"
             />
           </div>
 
