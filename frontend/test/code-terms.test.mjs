@@ -33,4 +33,21 @@ describe('highlightTechnicalTerms', () => {
   it('passes through text without colons untouched', () => {
     assert.equal(highlightTechnicalTerms('plain words'), 'plain words')
   })
+
+  it('strips quotes the model leaves around code spans', () => {
+    assert.equal(
+      highlightTechnicalTerms(
+        "Grants `'s3:ListAllMyBuckets`', `'s3:ListBucket`' and `'s3:GetObject`'.",
+      ),
+      'Grants `s3:ListAllMyBuckets`, `s3:ListBucket` and `s3:GetObject`.',
+    )
+    assert.equal(
+      highlightTechnicalTerms('See `"arn:aws:s3:::billing-bucket/*"` for scope'),
+      'See `arn:aws:s3:::billing-bucket/*` for scope',
+    )
+    assert.equal(
+      highlightTechnicalTerms("'quoted prose' stays 'as is' with s3:GetObject wrapped"),
+      "'quoted prose' stays 'as is' with `s3:GetObject` wrapped",
+    )
+  })
 })
