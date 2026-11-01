@@ -576,6 +576,7 @@ function AppShell() {
                   appVersion={appVersion}
                   backendUrl={backendUrl}
                   isAdmin={showAdminUI}
+                  authRequired={authRequired}
                   diagnostics={{
                     bridge: desktop.isDesktop,
                     urlPlatform: queryPlat,

@@ -337,6 +337,19 @@ class UserListResponse(BaseModel):
     users: list
 
 
+class ChangePasswordRequest(BaseModel):
+    """Authenticated users change their own password (current required)."""
+
+    current_password: str
+    new_password: str
+
+
+class ChangePasswordResponse(BaseModel):
+    """Password change confirmation (existing sessions stay valid)."""
+
+    username: str
+
+
 class ImpersonateRequest(BaseModel):
     """TEMPORARY hackathon demo aid: username to view the app as."""
 
@@ -882,6 +895,25 @@ async def register(request: Request, body: RegisterRequest):
         username=user["username"],
         is_admin=user["is_admin"],
     )
+
+
+@app.post("/api/auth/change-password", response_model=ChangePasswordResponse)
+async def change_password(body: ChangePasswordRequest, user: str = Depends(get_current_user)):
+    """Change the caller's own password (current password required).
+
+    Only ever acts on the authenticated user — there is no target
+    parameter, so one user can never change another's password. Already
+    issued JWTs stay valid until their own expiry.
+    """
+    store = get_user_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="Authentication is not enabled")
+    try:
+        store.change_password(user, body.current_password, body.new_password)
+    except RegistrationError as e:
+        status_code = 401 if e.code == "bad_credentials" else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+    return ChangePasswordResponse(username=user)
 
 
 @app.get("/api/auth/users", response_model=UserListResponse)

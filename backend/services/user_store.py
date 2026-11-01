@@ -125,6 +125,29 @@ class UserStore:
         logger.info("Registered user %s (admin=%s)", username, bool(is_admin))
         return {"username": username, "is_admin": bool(is_admin)}
 
+    def change_password(self, username: str, current_password: str, new_password: str) -> None:
+        """Replace a user's password after verifying the current one."""
+        if len(new_password or "") < MIN_PASSWORD_LENGTH:
+            raise RegistrationError(
+                "weak_password",
+                f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
+            )
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT password_hash FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            if row is None or not bcrypt.checkpw(
+                current_password.encode("utf-8"), row["password_hash"].encode("utf-8")
+            ):
+                raise RegistrationError("bad_credentials", "Current password is incorrect.")
+            new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            self._conn.execute(
+                "UPDATE users SET password_hash = ? WHERE username = ?",
+                (new_hash, username),
+            )
+            self._conn.commit()
+        logger.info("Password changed for user %s", username)
+
     def verify(self, username: str, password: str) -> bool:
         """Check credentials without revealing whether the username exists."""
         row = self._conn.execute(

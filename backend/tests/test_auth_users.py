@@ -182,6 +182,73 @@ class TestImpersonation:
         assert response.json()["users"] == [{"username": "alice"}]
 
 
+class TestChangePassword:
+    def _register(self, client, username):
+        response = client.post(
+            "/api/auth/register",
+            json={"username": username, "password": "correct-horse-8"},
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    def _change(self, client, token, current_password, new_password):
+        return client.post(
+            "/api/auth/change-password",
+            json={"current_password": current_password, "new_password": new_password},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def _login(self, client, username, password):
+        return client.post(
+            "/api/auth/login", json={"username": username, "password": password}
+        )
+
+    def test_change_then_new_password_works(self, store):
+        client = _client()
+        token = self._register(client, "alice")["token"]
+        response = self._change(client, token, "correct-horse-8", "fresh-horse-9x")
+        assert response.status_code == 200
+        assert response.json()["username"] == "alice"
+        assert self._login(client, "alice", "correct-horse-8").status_code == 401
+        assert self._login(client, "alice", "fresh-horse-9x").status_code == 200
+
+    def test_wrong_current_password_rejected(self, store):
+        client = _client()
+        token = self._register(client, "alice")["token"]
+        response = self._change(client, token, "wrong-horse-0", "fresh-horse-9x")
+        assert response.status_code == 401
+        assert self._login(client, "alice", "correct-horse-8").status_code == 200
+
+    def test_weak_new_password_rejected(self, store):
+        client = _client()
+        token = self._register(client, "alice")["token"]
+        assert self._change(client, token, "correct-horse-8", "short").status_code == 400
+
+    def test_unauthenticated_rejected(self, store):
+        client = _client()
+        self._register(client, "alice")
+        response = client.post(
+            "/api/auth/change-password",
+            json={"current_password": "correct-horse-8", "new_password": "fresh-horse-9x"},
+        )
+        assert response.status_code == 401
+
+    def test_only_own_password_changes(self, store):
+        client = _client()
+        self._register(client, "boss")
+        bob_token = self._register(client, "bob")["token"]
+        response = self._change(client, bob_token, "correct-horse-8", "bob-fresh-1z")
+        assert response.json()["username"] == "bob"
+        assert self._login(client, "boss", "correct-horse-8").status_code == 200
+
+    def test_no_user_store_returns_404(self, store, monkeypatch):
+        client = _client()
+        token = self._register(client, "alice")["token"]
+        monkeypatch.setattr(main, "get_user_store", lambda: None)
+        response = self._change(client, token, "correct-horse-8", "fresh-horse-9x")
+        assert response.status_code == 404
+
+
 class TestUserLogin:
     def test_registered_user_can_log_in(self, store):
         client = _client()

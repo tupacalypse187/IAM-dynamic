@@ -110,6 +110,12 @@ export const api = {
       body: JSON.stringify({ username }),
     }),
 
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    request<{ username: string }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Providers
   getProviders: () => request<ProvidersResponse>('/config/providers'),
 
