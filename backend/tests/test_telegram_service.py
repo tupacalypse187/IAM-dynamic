@@ -110,3 +110,39 @@ class TestSendMessage:
         monkeypatch.setattr("services.telegram_service.requests.post", fake_post)
         service = TelegramService(bot_token="123:ABC", chat_id="98765")
         assert service.send_message("hello") is False
+
+
+class TestDecisionMessage:
+    def _message(self, **overrides):
+        kwargs = dict(
+            request_ref="req-00007",
+            decision="denied",
+            reviewer="chad",
+            requester="bob",
+            risk_level="critical",
+            request_text="read the production-logs bucket",
+            feedback="too broad, narrow it",
+        )
+        kwargs.update(overrides)
+        service = TelegramService(bot_token="t", chat_id="1")
+        return service.format_decision_message(**kwargs)
+
+    def test_denied_carries_emoji_ref_and_names(self):
+        message = self._message()
+        assert message.startswith("❌")
+        assert "req-00007" in message and "Denied" in message
+        assert "chad" in message and "bob" in message
+        assert "🔴" in message and "CRITICAL" in message
+
+    def test_approved_and_sent_back_emoji(self):
+        assert self._message(decision="approved").startswith("✅")
+        assert self._message(decision="changes_requested").startswith("↩️")
+
+    def test_feedback_omitted_when_absent(self):
+        assert "Reviewer feedback" not in self._message(feedback=None)
+        assert "too broad" in self._message()
+
+    def test_user_content_is_html_escaped(self):
+        message = self._message(request_text="<b>x</b>", reviewer="<i>chad</i>")
+        assert "<b>x</b>" not in message.split("Request")[1]
+        assert "&lt;i&gt;chad&lt;/i&gt;" in message
