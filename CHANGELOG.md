@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - **Demo view-as (TEMPORARY, hackathon only)**: seeded demo requesters (`backend/scripts/seed_demo_users.py`), admin-only `POST /api/auth/impersonate` minting 15-minute view-as tokens restricted to the `DEMO_VIEW_USERS` allowlist (new enrolments are never switchable), "View as…" menu + banner with one-click exit, audit-logged as `impersonation_started` — remove endpoint, script, and banner before production
 - **Environment tiers + split batches**: submit form offers dev (31d re-activatable window) / stage (7d, 72h to first use) / prod (2h, 24h to first use, low-risk still auto-approves) with per-tier duration presets and blue/amber/red badges everywhere; the LLM may split separable grants into labeled units (max 5) sharing a `batch_id` so low-risk activates now while the rest pends; owners/admins can cancel live grants early (`grant_cancelled` audit; issued sessions still run to expiry)
+- **Self-service password change**: authenticated users change their own password from Settings → Account (`POST /api/auth/change-password`, current password required, no target parameter by design); Monaco policy viewer follows the app theme (`vs-dark` for dark/system-dark)
 
 ### 🛡️ Fixes
 

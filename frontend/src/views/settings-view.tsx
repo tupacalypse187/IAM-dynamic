@@ -1,10 +1,15 @@
-import { Monitor, Moon, Play, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { Loader2, Monitor, Moon, Play, Sun } from 'lucide-react'
 import { useTheme } from '@/hooks/use-theme'
 import { usePrefs } from '@/hooks/use-prefs'
+import { useToast } from '@/hooks/use-toast'
 import { launchTour } from '@/lib/tour'
+import { api } from '@/lib/api'
 import type { ProvidersResponse } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ProviderSelects } from '@/components/provider-selects'
@@ -29,6 +34,8 @@ interface SettingsViewProps {
   backendUrl: string | null
   diagnostics: WindowDiagnostics
   isAdmin: boolean
+  /** False in no-auth local dev (no passwords exist to change). */
+  authRequired: boolean
   config?: ProvidersResponse
   configLoading?: boolean
   configError?: boolean
@@ -50,6 +57,7 @@ export default function SettingsView({
   backendUrl,
   diagnostics,
   isAdmin,
+  authRequired,
   config,
   configLoading,
   configError,
@@ -146,6 +154,9 @@ export default function SettingsView({
       <ProfileManager />
       {isAdmin && <CatalogManager />}
 
+      {/* Account */}
+      {authRequired && <ChangePasswordCard />}
+
       {/* AI provider */}
       <Card>
         <CardHeader>
@@ -225,5 +236,80 @@ export default function SettingsView({
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function ChangePasswordCard() {
+  const { toast } = useToast()
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () => api.changePassword({ current_password: current, new_password: next }),
+    onSuccess: () => {
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      toast({ title: 'Password changed', description: 'Use the new password next time you sign in.' })
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Password change failed', description: err.message, variant: 'destructive' })
+    },
+  })
+
+  const mismatch = next !== '' && confirm !== '' && next !== confirm
+  const valid = current !== '' && next.length >= 8 && next === confirm
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Account password</CardTitle>
+        <CardDescription>
+          Change your own sign-in password. Existing sessions stay valid until they expire.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="pw-current">Current password</Label>
+          <Input
+            id="pw-current"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pw-new">New password (8+ characters)</Label>
+          <Input
+            id="pw-new"
+            type="password"
+            autoComplete="new-password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="pw-confirm">Confirm new password</Label>
+          <Input
+            id="pw-confirm"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {mismatch && (
+            <p className="text-xs text-destructive" role="alert">New passwords do not match.</p>
+          )}
+        </div>
+        <Tip label="Requires the current password; only ever changes your own">
+          <Button disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Change password
+          </Button>
+        </Tip>
+      </CardContent>
+    </Card>
   )
 }
