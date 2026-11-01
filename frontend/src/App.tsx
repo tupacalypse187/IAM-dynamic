@@ -12,10 +12,14 @@ import {
   Settings as SettingsIcon,
   PanelLeft,
 } from 'lucide-react'
-import { api, getToken } from './lib/api'
+import { api, getToken, setToken } from './lib/api'
 import {
+  clearAdminStash,
   clearViewAsSession,
+  isViewAsToken,
+  loadAdminStash,
   loadViewAsSession,
+  saveAdminStash,
   saveViewAsSession,
   type ViewAsSession,
 } from './lib/view-as'
@@ -115,6 +119,7 @@ function AppShell() {
     const { adminToken, adminName } = viewAsRef.current
     viewAsRef.current = null
     clearViewAsSession()
+    clearAdminStash()
     setViewAs(null)
     setView('submit')
     // Restores the admin session (and re-verifies is_admin).
@@ -133,6 +138,7 @@ function AppShell() {
       // Vault untouched — the admin token is restored from storage on exit.
       viewAsRef.current = { username: session.username, adminToken, adminName }
       saveViewAsSession(viewAsRef.current)
+      saveAdminStash({ adminToken, adminName, username: session.username })
       setViewAs(viewAsRef.current)
       setView('submit')
       impersonate(session.token, session.username)
@@ -193,6 +199,23 @@ function AppShell() {
       clearViewAsSession()
       setViewAs(null)
     }
+  }, [])
+
+  // Fresh boot while a view-as token is active (quit mid-demo): trade it
+  // back for the stashed admin session so the app starts as the initial
+  // user, never as the switched one. No stash → sign out instead.
+  useEffect(() => {
+    const token = getToken()
+    if (!isViewAsToken(token) || viewAsRef.current) return
+    const stash = loadAdminStash()
+    if (stash) {
+      clearAdminStash()
+      login(stash.adminToken, stash.adminName)
+    } else {
+      setToken(null)
+      window.dispatchEvent(new CustomEvent('auth:logout'))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Surface forced 401 logouts with an explanation instead of silently

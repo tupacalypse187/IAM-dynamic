@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, setToken } from '@/lib/api'
+import { clearAdminStash, clearViewAsSession } from '@/lib/view-as'
 import { desktop } from '@/lib/desktop'
 import { AuthContext, type AuthState } from '@/hooks/use-auth'
 
@@ -11,6 +12,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false)
 
   const logout = useCallback(() => {
+    // TEMPORARY demo aid cleanup: never resume as a switched user.
+    clearAdminStash()
+    clearViewAsSession()
     setToken(null)
     if (desktop.isDesktop) {
       // Vault failures must never break logout — localStorage is already cleared.
@@ -22,6 +26,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = useCallback((token: string, user: string) => {
+    // A fresh login is a new initial user — drop any stashed demo switch.
+    clearAdminStash()
     setToken(token)
     if (desktop.isDesktop) {
       // Best-effort: persist the session in the OS credential store.
