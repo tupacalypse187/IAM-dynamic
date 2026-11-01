@@ -13,6 +13,12 @@ import {
   PanelLeft,
 } from 'lucide-react'
 import { api, getToken } from './lib/api'
+import {
+  clearViewAsSession,
+  loadViewAsSession,
+  saveViewAsSession,
+  type ViewAsSession,
+} from './lib/view-as'
 import { desktop, isMacDesktop, queryPlatform } from './lib/desktop'
 import { useGlobalShortcuts, useCaptureShortcut } from './lib/shortcuts'
 import { hasSeenTour, launchTour } from './lib/tour'
@@ -71,10 +77,11 @@ function AppShell() {
   const [selectedModel, setSelectedModel] = useState<string>('muse-spark-1.3-contributor')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   // TEMPORARY — hackathon demo aid. View-as session for a demo user:
-  // the admin's real token is kept in memory while a short-lived
-  // impersonation token drives the UI. Remove with PreviewBanner and the
-  // impersonate endpoint before production (see that file).
-  const [viewAs, setViewAs] = useState<{ username: string; adminToken: string; adminName: string } | null>(null)
+  // the admin's real token is kept alongside (per-tab session storage, so
+  // reloads and hot-remounts don't strand the switcher) while a
+  // short-lived impersonation token drives the UI. Remove with
+  // PreviewBanner and the impersonate endpoint before production.
+  const [viewAs, setViewAs] = useState<ViewAsSession | null>(() => loadViewAsSession())
   // Effective role for UI gating. Server enforcement is unchanged, and the
   // impersonation token itself verifies as non-admin.
   const showAdminUI = isAdmin && !viewAs
@@ -92,7 +99,8 @@ function AppShell() {
   // Sync mirror of the view-as session: state updates async, so rapid
   // user-to-user switches read the admin token from here instead of a
   // potentially stale closure (which minted with the view-as token → 403).
-  const viewAsRef = useRef<typeof viewAs>(null)
+  // Seeded from the same per-tab storage as the state above.
+  const viewAsRef = useRef<ViewAsSession | null>(loadViewAsSession())
 
   // Everything except the allowlist refetches on switches; demo-users is
   // deliberately excluded so it never fires with the view-as token.
@@ -106,6 +114,7 @@ function AppShell() {
     if (!viewAsRef.current) return
     const { adminToken, adminName } = viewAsRef.current
     viewAsRef.current = null
+    clearViewAsSession()
     setViewAs(null)
     setView('submit')
     // Restores the admin session (and re-verifies is_admin).
@@ -121,8 +130,9 @@ function AppShell() {
     if (!adminToken || !adminName) return
     try {
       const session = await api.impersonate(target)
-      // Vault untouched — the admin token is restored from memory on exit.
+      // Vault untouched — the admin token is restored from storage on exit.
       viewAsRef.current = { username: session.username, adminToken, adminName }
+      saveViewAsSession(viewAsRef.current)
       setViewAs(viewAsRef.current)
       setView('submit')
       impersonate(session.token, session.username)
@@ -174,6 +184,16 @@ function AppShell() {
   })
   const profiles = profilesQuery.data ?? []
   const activeProfile = profiles.find((p) => p.active) ?? null
+
+  // Drop a hydrated view-as session with no token behind it (signed out
+  // elsewhere, or the 15-minute token expired while away).
+  useEffect(() => {
+    if (viewAsRef.current && !getToken()) {
+      viewAsRef.current = null
+      clearViewAsSession()
+      setViewAs(null)
+    }
+  }, [])
 
   // Surface forced 401 logouts with an explanation instead of silently
   // snapping back to the login screen
