@@ -22,6 +22,7 @@ import type { GuardrailFinding } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
 import { EnvBadge } from '@/components/env-badge'
+import { highlightTechnicalTerms } from '@/lib/code-terms'
 import { Markdown } from '@/components/markdown'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -391,12 +392,12 @@ export default function RequestDetailView({
               </div>
               <div>
                 <h4 className="font-semibold">Explanation</h4>
-                <Markdown>{request.explanation || 'No technical explanation recorded.'}</Markdown>
+                <Markdown>{highlightTechnicalTerms(request.explanation) || 'No technical explanation recorded.'}</Markdown>
               </div>
               {request.approver_note && (
                 <div>
                   <h4 className="font-semibold">Approver Note</h4>
-                  <Markdown>{request.approver_note}</Markdown>
+                  <Markdown>{highlightTechnicalTerms(request.approver_note)}</Markdown>
                 </div>
               )}
             </TabsContent>
