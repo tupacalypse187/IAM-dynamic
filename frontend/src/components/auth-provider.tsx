@@ -35,6 +35,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => undefined)
   }, [])
 
+  // TEMPORARY hackathon demo aid: view-as session. LocalStorage only —
+  // the vault keeps the admin's real token so exiting restores it.
+  const impersonate = useCallback((token: string, user: string) => {
+    setToken(token)
+    setIsAuthenticated(true)
+    setUsername(user)
+    api.verifySession()
+      .then((status) => setIsAdmin(status.is_admin))
+      .catch(() => undefined)
+  }, [])
+
   // Verify session on mount
   useEffect(() => {
     api.verifySession()
@@ -58,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:logout', handler)
   }, [logout])
 
-  const value: AuthState = { isAuthenticated, username, isLoading, authRequired, isAdmin, login, logout }
+  const value: AuthState = { isAuthenticated, username, isLoading, authRequired, isAdmin, login, impersonate, logout }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -68,6 +68,120 @@ class TestRegistration:
         assert response.status_code == 403
 
 
+class TestImpersonation:
+    """TEMPORARY hackathon demo aid: admin view-as-allowlisted-user."""
+
+    def _register(self, client, username):
+        response = client.post(
+            "/api/auth/register",
+            json={"username": username, "password": "correct-horse-8"},
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    def test_admin_can_impersonate_allowlisted_user(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice,bob")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        response = client.post(
+            "/api/auth/impersonate",
+            json={"username": "alice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["username"] == "alice"
+        assert body["impersonated_from"] == "boss"
+        assert body["token"]
+        me = client.get(
+            "/api/auth/verify", headers={"Authorization": f"Bearer {body['token']}"}
+        ).json()
+        assert me["username"] == "alice"
+        assert me["is_admin"] is False
+
+    def test_impersonation_is_audit_logged(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        client.post(
+            "/api/auth/impersonate",
+            json={"username": "alice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        events = [
+            e
+            for e in main.get_audit_log().read()
+            if e["event"] == "impersonation_started"
+        ]
+        assert len(events) == 1
+        assert events[0]["actor"] == "boss"
+        assert events[0]["actor_role"] == "admin"
+
+    def test_non_admin_cannot_impersonate(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice,bob")
+        client = _client()
+        self._register(client, "boss")
+        bob_token = self._register(client, "bob")["token"]
+        self._register(client, "alice")
+        response = client.post(
+            "/api/auth/impersonate",
+            json={"username": "alice"},
+            headers={"Authorization": f"Bearer {bob_token}"},
+        )
+        assert response.status_code == 403
+
+    def test_new_enrollee_outside_allowlist_rejected(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        self._register(client, "mallory")
+        response = client.post(
+            "/api/auth/impersonate",
+            json={"username": "mallory"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 403
+
+    def test_unknown_username_returns_404(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice,ghost")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        response = client.post(
+            "/api/auth/impersonate",
+            json={"username": "ghost"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 404
+
+    def test_admin_cannot_impersonate_admin(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "boss,alice")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        response = client.post(
+            "/api/auth/impersonate",
+            json={"username": "boss"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 403
+
+    def test_demo_users_lists_only_existing_allowlisted(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice,bob,ghost")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        self._register(client, "mallory")
+        response = client.get(
+            "/api/auth/demo-users",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["users"] == [{"username": "alice"}]
+
+
 class TestUserLogin:
     def test_registered_user_can_log_in(self, store):
         client = _client()

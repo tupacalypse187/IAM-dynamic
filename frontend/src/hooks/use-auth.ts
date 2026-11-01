@@ -7,6 +7,11 @@ export type AuthState = {
   authRequired: boolean
   isAdmin: boolean
   login: (token: string, username: string) => void
+  /**
+   * TEMPORARY hackathon demo aid: switch to a view-as token WITHOUT
+   * touching the OS vault (the admin's real session is restored on exit).
+   */
+  impersonate: (token: string, username: string) => void
   logout: () => void
 }
 
@@ -17,6 +22,7 @@ export const AuthContext = createContext<AuthState>({
   authRequired: true,
   isAdmin: false,
   login: () => null,
+  impersonate: () => null,
   logout: () => null,
 })
 

@@ -11,9 +11,8 @@ import {
   ShieldCheck,
   Settings as SettingsIcon,
   PanelLeft,
-  Eye,
 } from 'lucide-react'
-import { api } from './lib/api'
+import { api, getToken } from './lib/api'
 import { desktop, isMacDesktop, queryPlatform } from './lib/desktop'
 import { useGlobalShortcuts, useCaptureShortcut } from './lib/shortcuts'
 import { hasSeenTour, launchTour } from './lib/tour'
@@ -29,6 +28,7 @@ import { ErrorBoundary } from './components/error-boundary'
 import UpdateBanner from './components/update-manager'
 import Sidebar, { SidebarContent } from './components/sidebar'
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import { Button } from './components/ui/button'
 import { Badge } from './components/ui/badge'
 import { Separator } from './components/ui/separator'
@@ -50,7 +50,7 @@ function focusRequestBox() {
 }
 
 function AppShell() {
-  const { isAuthenticated, isLoading, username, isAdmin, logout, authRequired } = useAuth()
+  const { isAuthenticated, isLoading, username, isAdmin, login, impersonate, logout, authRequired } = useAuth()
   const { prefs, updatePrefs } = usePrefs()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -69,11 +69,52 @@ function AppShell() {
   const [selectedProvider, setSelectedProvider] = useState<string>('muse')
   const [selectedModel, setSelectedModel] = useState<string>('muse-spark-1.3-contributor')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  // TEMPORARY — hackathon demo aid. Session-scoped preview that masks admin
-  // UI only; remove with PreviewBanner for production (see that file).
-  const [previewAsUser, setPreviewAsUser] = useState(false)
-  // Effective role for UI gating. Server enforcement is unchanged.
-  const showAdminUI = isAdmin && !previewAsUser
+  // TEMPORARY — hackathon demo aid. View-as session for a demo user:
+  // the admin's real token is kept in memory while a short-lived
+  // impersonation token drives the UI. Remove with PreviewBanner and the
+  // impersonate endpoint before production (see that file).
+  const [viewAs, setViewAs] = useState<{ username: string; adminToken: string; adminName: string } | null>(null)
+  // Effective role for UI gating. Server enforcement is unchanged, and the
+  // impersonation token itself verifies as non-admin.
+  const showAdminUI = isAdmin && !viewAs
+
+  // Demo view-as candidates (admins only; never shown while viewing as).
+  const demoUsersQuery = useQuery({
+    queryKey: ['demo-users'],
+    queryFn: api.listDemoUsers,
+    enabled: isAuthenticated && isAdmin && !viewAs,
+  })
+  const demoUsers = demoUsersQuery.data?.users ?? []
+
+  const exitViewAs = useCallback(() => {
+    if (!viewAs) return
+    const { adminToken, adminName } = viewAs
+    setViewAs(null)
+    setView('submit')
+    // Restores the admin session (and re-verifies is_admin).
+    login(adminToken, adminName)
+    queryClient.invalidateQueries()
+  }, [viewAs, login, queryClient])
+
+  const enterViewAs = useCallback(async (target: string) => {
+    const adminToken = getToken()
+    const adminName = username
+    if (!adminToken || !adminName) return
+    try {
+      const session = await api.impersonate(target)
+      // Vault untouched — the admin token is restored from memory on exit.
+      setViewAs({ username: session.username, adminToken, adminName })
+      setView('submit')
+      impersonate(session.token, session.username)
+      queryClient.invalidateQueries()
+    } catch (err) {
+      toast({
+        title: 'View-as failed',
+        description: err instanceof Error ? err.message : 'Could not switch user.',
+        variant: 'destructive',
+      })
+    }
+  }, [username, impersonate, queryClient, toast])
 
   // macOS frameless clearance, most-authoritative first: the platform the
   // main process injected into the URL (?platform=darwin) — structural and
@@ -417,17 +458,23 @@ function AppShell() {
           </nav>
           <div className="ml-auto flex items-center gap-1">
             {/* TEMPORARY — hackathon demo aid; remove with PreviewBanner. */}
-            {isAdmin && (
-              <Tip label={previewAsUser ? 'Return to the admin view' : 'Preview the app as a regular user'}>
-                <Button
-                  variant={previewAsUser ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setPreviewAsUser((v) => !v)}
-                  aria-pressed={previewAsUser}
-                  aria-label={previewAsUser ? 'Exit user preview' : 'Preview as regular user'}
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
+            {isAdmin && !viewAs && demoUsers.length > 0 && (
+              <Tip label="Switch to a seeded demo user (view-as, 15-minute token)">
+                <Select value="" onValueChange={(v) => { if (v) void enterViewAs(v) }}>
+                  <SelectTrigger
+                    className="h-8 w-[8.5rem] border-transparent text-muted-foreground"
+                    aria-label="View app as a demo user"
+                  >
+                    <SelectValue placeholder="View as…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {demoUsers.map((u) => (
+                      <SelectItem key={u.username} value={u.username}>
+                        {u.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Tip>
             )}
             {authRequired && (
@@ -440,8 +487,8 @@ function AppShell() {
           </div>
         </header>
 
-        {/* TEMPORARY — hackathon demo aid; remove with the toggle above. */}
-        {previewAsUser && <PreviewBanner onExit={() => setPreviewAsUser(false)} />}
+        {/* TEMPORARY — hackathon demo aid; remove with the menu above. */}
+        {viewAs && <PreviewBanner username={viewAs.username} onExit={exitViewAs} />}
 
         {/* Content — the only scrolling region; bars stay fixed above it */}
         <main className="min-h-0 flex-1 overflow-y-auto">

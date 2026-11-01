@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### ✨ New Features
+
+- **Demo view-as (TEMPORARY, hackathon only)**: seeded demo requesters (`backend/scripts/seed_demo_users.py`), admin-only `POST /api/auth/impersonate` minting 15-minute view-as tokens restricted to the `DEMO_VIEW_USERS` allowlist (new enrolments are never switchable), "View as…" menu + banner with one-click exit, audit-logged as `impersonation_started` — remove endpoint, script, and banner before production
+
 ### 🛡️ Fixes
+
+- **Sidebar follows the theme switcher**: light sidebar palette in light mode (it was stuck dark); sidebar cycle button and Settings picker already shared one theme state
 
 - **Review-sweep hardening**: disabling a provider catalog pair now blocks server-default evaluation with that pair (400, alias-normalized; unknown models still pass through); admin preview-as-user no longer exposes the provider-catalog toggles; submit/record omit the Settings fallback provider/model when a saved profile is active (the server resolves them from the profile); removed dead `generate`/`issue` hook methods, `api.resubmitRequest`, and the unreachable diff-vs-previous tab; base-role trust tightened to exactly `DeployerPrincipalArn` (removed the unused `sts.amazonaws.com` service statement, dev stack updated)
 

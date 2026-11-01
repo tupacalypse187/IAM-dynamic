@@ -37,6 +37,8 @@ AUDIT_EVENTS = frozenset({
     "resubmitted",
     "activated",
     "discarded",
+    "grant_cancelled",
+    "impersonation_started",
 })
 
 
@@ -60,7 +62,7 @@ class AuditLog:
         self,
         event: str,
         *,
-        request_id: int,
+        request_id: Optional[int],
         actor: str,
         actor_role: str,
         from_status: Optional[str] = None,

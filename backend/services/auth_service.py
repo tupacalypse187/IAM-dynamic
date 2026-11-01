@@ -48,6 +48,25 @@ def verify_jwt(token: str, jwt_secret: str) -> Optional[str]:
         return None
 
 
+# TEMPORARY hackathon demo aid (admin view-as-user). Fifteen-minute tokens
+# carrying the impersonating admin in `impersonated_from`; remove with the
+# impersonate endpoint before production.
+IMPERSONATION_EXPIRY_MINUTES = 15
+
+
+def create_impersonation_jwt(username: str, impersonator: str, jwt_secret: str) -> TokenResult:
+    """Mint a short-lived view-as token for an allowlisted demo user."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=IMPERSONATION_EXPIRY_MINUTES)
+    payload = {
+        "sub": username,
+        "impersonated_from": impersonator,
+        "iat": now,
+        "exp": expires_at,
+    }
+    return TokenResult(token=jwt.encode(payload, jwt_secret, algorithm="HS256"), expires_at=expires_at)
+
+
 class AuthService:
     def __init__(
         self,

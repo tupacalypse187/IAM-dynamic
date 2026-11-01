@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 from services.sts_service import STSService, STSAssumeRoleError, select_base_role_class
 from services.slack_service import SlackService
 from services.telegram_service import TelegramService
-from services.auth_service import AuthService, create_jwt, verify_jwt
+from services.auth_service import AuthService, create_impersonation_jwt, create_jwt, verify_jwt
 from services.turnstile_service import TurnstileService
 from services.user_store import UserStore, RegistrationError
 from services.request_store import (
@@ -214,7 +214,7 @@ def _select_base_role(policy: dict) -> tuple[Optional[str], str]:
 def _audit(
     event: str,
     *,
-    request_id: int,
+    request_id: Optional[int],
     actor: str,
     actor_role: Optional[str] = None,
     from_status: Optional[str] = None,
@@ -332,6 +332,24 @@ class RegisterResponse(LoginResponse):
 
 class UserListResponse(BaseModel):
     """Admin user listing"""
+    users: list
+
+
+class ImpersonateRequest(BaseModel):
+    """TEMPORARY hackathon demo aid: username to view the app as."""
+
+    username: str
+
+
+class ImpersonateResponse(LoginResponse):
+    """View-as session — target user plus the impersonating admin."""
+
+    impersonated_from: str
+
+
+class DemoUsersResponse(BaseModel):
+    """Allowlisted view-as targets that actually exist (non-admin only)."""
+
     users: list
 
 
@@ -839,6 +857,74 @@ async def list_users(user: str = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Administrator access required")
     store = get_user_store()
     return UserListResponse(users=store.list_users() if store else [])
+
+
+def _demo_view_targets() -> list[dict]:
+    """Allowlisted view-as users that exist and are not admins.
+
+    TEMPORARY hackathon demo aid — remove with the impersonate endpoint.
+    Newly enrolled users are unreachable here unless added to
+    DEMO_VIEW_USERS, which is exactly the point.
+    """
+    store = get_user_store()
+    if store is None:
+        return []
+    registered = {u["username"]: u for u in store.list_users()}
+    targets = []
+    for username in config.auth.demo_view_usernames:
+        user = registered.get(username)
+        if user and not user.get("is_admin"):
+            targets.append({"username": username})
+    return targets
+
+
+@app.get("/api/auth/demo-users", response_model=DemoUsersResponse)
+async def list_demo_users(user: str = Depends(get_current_user)):
+    """View-as candidates for the admin demo menu (administrators only)."""
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return DemoUsersResponse(users=_demo_view_targets())
+
+
+@app.post("/api/auth/impersonate", response_model=ImpersonateResponse)
+async def impersonate(body: ImpersonateRequest, user: str = Depends(get_current_user)):
+    """Mint a short view-as token for an allowlisted demo user.
+
+    TEMPORARY hackathon demo aid — remove with PreviewBanner before
+    production. The admin never learns the target's password; the token
+    expires in 15 minutes and the switch is audit-logged.
+    """
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    targets = {t["username"] for t in _demo_view_targets()}
+    if body.username not in targets:
+        store = get_user_store()
+        known = (
+            store is not None
+            and any(u["username"] == body.username for u in store.list_users())
+        )
+        raise HTTPException(
+            status_code=404 if not known else 403,
+            detail=(
+                f"Unknown user '{body.username}'."
+                if not known
+                else f"User '{body.username}' is not a demo view-as target."
+            ),
+        )
+    result = create_impersonation_jwt(body.username, user, config.auth.jwt_secret)
+    _audit(
+        "impersonation_started",
+        request_id=None,
+        actor=user,
+        actor_role="admin",
+        impersonated_user=body.username,
+    )
+    return ImpersonateResponse(
+        token=result.token,
+        expires_at=result.expires_at.isoformat(),
+        username=body.username,
+        impersonated_from=user,
+    )
 
 
 @app.get("/api/auth/verify", response_model=AuthStatusResponse)

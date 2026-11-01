@@ -3,6 +3,8 @@ import type {
   AuditEvent,
   CatalogEntry,
   Credentials,
+  DemoUser,
+  ImpersonateResponse,
   LlmProfile,
   PolicyResponse,
   ProvidersResponse,
@@ -13,7 +15,7 @@ import type {
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const TOKEN_KEY = 'iam_token'
 
-function getToken(): string | null {
+export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
@@ -97,6 +99,15 @@ export const api = {
     request<LoginResponse>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  // TEMPORARY hackathon demo aid: admin view-as-allowlisted-user.
+  listDemoUsers: () => request<{ users: DemoUser[] }>('/api/auth/demo-users'),
+
+  impersonate: (username: string) =>
+    request<ImpersonateResponse>('/api/auth/impersonate', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
     }),
 
   // Providers
