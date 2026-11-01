@@ -74,6 +74,15 @@ export function envOf(value: string | null | undefined): Environment {
 }
 
 /** A persisted access request with its evaluated LLM response + review state. */
+/** Plain-language grant narrative (empty for rows evaluated before it existed). */
+export interface GrantNarrative {
+  summary_plain?: string
+  what_changes?: string[]
+  risk_plain?: string
+  next_steps?: string[]
+  approver_plain?: string
+}
+
 export interface AccessRequest {
   id: number
   requester: string
@@ -81,6 +90,7 @@ export interface AccessRequest {
   provider: string
   model: string | null
   duration: number
+  narrative: GrantNarrative
   environment: Environment
   batch_id: number | null
   grant_expires_at: string | null

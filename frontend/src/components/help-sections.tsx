@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BookOpen, Download, Keyboard, History, RefreshCw } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { Markdown } from './markdown'
 import { desktop } from '@/lib/desktop'
 import { SHORTCUTS } from '@/lib/shortcuts'
 import { useToast } from '@/hooks/use-toast'
@@ -120,8 +119,8 @@ export default function HelpSections({ appVersion }: HelpSectionsProps) {
           {GUIDES.map((g) => (
             <div key={g.title}>
               <h3 className="font-semibold">{g.title}</h3>
-              <div className="prose prose-sm mt-1 max-w-none dark:prose-invert">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{g.body}</ReactMarkdown>
+              <div className="mt-1">
+                <Markdown>{g.body}</Markdown>
               </div>
             </div>
           ))}

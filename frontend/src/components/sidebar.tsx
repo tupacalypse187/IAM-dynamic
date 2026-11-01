@@ -23,12 +23,12 @@ interface SidebarContentProps {
 }
 
 const templates = [
-  { id: 's3', name: 'S3 Read-Only', prompt: 'I need read-only access to list and get objects from all S3 buckets.' },
-  { id: 'ec2', name: 'EC2 Observer', prompt: 'I need to describe instances and view status checks for EC2.' },
-  { id: 'lambda', name: 'Lambda Invoker', prompt: 'I need to invoke Lambda functions in us-east-1.' },
-  { id: 'logs', name: 'CloudWatch Logs', prompt: 'I need to read and filter CloudWatch log streams for application debugging.' },
-  { id: 'dynamodb', name: 'DynamoDB Reader', prompt: 'I need to query and scan items from DynamoDB tables in production.' },
-  { id: 'secrets', name: 'Secrets Manager', prompt: 'I need to retrieve specific secrets from AWS Secrets Manager.' },
+  { id: 'debug', name: '🐞 Debug my app', prompt: 'I need to debug my application errors in dev: read CloudWatch log streams for the (LOG GROUP NAME) log group and describe the related EC2 instances, for 2 days.' },
+  { id: 'deploy', name: '🚀 Ship a release', prompt: 'I need to deploy Friday’s release to staging: invoke the (FUNCTION NAME) Lambda function and read/write the (BUCKET NAME) S3 bucket, for 3 days.' },
+  { id: 'readonly', name: '🔍 Read-only look', prompt: 'I need read-only access to list and download files from the (BUCKET NAME) S3 bucket in (dev/stage/prod) to investigate (WHAT HAPPENED).' },
+  { id: 'data', name: '📊 Query data', prompt: 'I need to query and scan items (no writes) from the (TABLE NAME) DynamoDB table in (dev/stage/prod) for analytics, for 1 week.' },
+  { id: 'secrets', name: '🔑 Fetch a secret', prompt: 'I need to retrieve the (SECRET NAME) secret from Secrets Manager in (dev/stage/prod) for the app to start.' },
+  { id: 'incident', name: '🚨 Handle an incident', prompt: 'There is an ongoing incident in prod: I need to read CloudWatch alarms and metrics plus reboot EC2 instances tagged (TAG=VALUE) for the next 2 hours.' },
 ]
 
 const themeCycle: ('system' | 'light' | 'dark')[] = ['system', 'light', 'dark']

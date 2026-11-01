@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Environment tiers + split batches**: submit form offers dev (31d re-activatable window) / stage (7d, 72h to first use) / prod (2h, 24h to first use, low-risk still auto-approves) with per-tier duration presets and blue/amber/red badges everywhere; the LLM may split separable grants into labeled units (max 5) sharing a `batch_id` so low-risk activates now while the rest pends; owners/admins can cancel live grants early (`grant_cancelled` audit; issued sessions still run to expiry)
 - **Self-service password change**: authenticated users change their own password from Settings → Account (`POST /api/auth/change-password`, current password required, no target parameter by design); Monaco policy viewer follows the app theme (`vs-dark` for dark/system-dark)
 - **Plain-language narratives**: the LLM now returns structured `narrative` blocks per grant (`summary_plain`, `what_changes`, `risk_plain`, `next_steps`, `approver_plain` with a jargon ban), sanitized and persisted in `narrative_json`; missing fields fall back to the legacy explanation
+- **Explanation UX overhaul**: request detail opens on a Plain-language tab (what you get, cautions, how to get approved faster), admins get a decision-brief tab plus the Technical tab; one shared Markdown renderer (tables, highlighted code with copy buttons, dark-mode prose) across detail, guidance, errors, and help; task-first sidebar templates and friendlier form labels with emoji section cues
 
 ### 🛡️ Fixes
 
