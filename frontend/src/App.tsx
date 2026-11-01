@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Lock,
@@ -80,36 +80,53 @@ function AppShell() {
   const showAdminUI = isAdmin && !viewAs
 
   // Demo view-as candidates (admins only; cached list stays while viewing as).
+  // No retries: a 403 here just means the token swapped mid-transition.
   const demoUsersQuery = useQuery({
     queryKey: ['demo-users'],
     queryFn: api.listDemoUsers,
     enabled: isAuthenticated && isAdmin && !viewAs,
+    retry: false,
   })
   const demoUsers = demoUsersQuery.data?.users ?? []
 
+  // Sync mirror of the view-as session: state updates async, so rapid
+  // user-to-user switches read the admin token from here instead of a
+  // potentially stale closure (which minted with the view-as token → 403).
+  const viewAsRef = useRef<typeof viewAs>(null)
+
+  // Everything except the allowlist refetches on switches; demo-users is
+  // deliberately excluded so it never fires with the view-as token.
+  const invalidateForSwitch = useCallback(() => {
+    queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] !== 'demo-users',
+    })
+  }, [queryClient])
+
   const exitViewAs = useCallback(() => {
-    if (!viewAs) return
-    const { adminToken, adminName } = viewAs
+    if (!viewAsRef.current) return
+    const { adminToken, adminName } = viewAsRef.current
+    viewAsRef.current = null
     setViewAs(null)
     setView('submit')
     // Restores the admin session (and re-verifies is_admin).
     login(adminToken, adminName)
-    queryClient.invalidateQueries()
-  }, [viewAs, login, queryClient])
+    invalidateForSwitch()
+  }, [login, invalidateForSwitch])
 
   const enterViewAs = useCallback(async (target: string) => {
     // While already viewing as someone, the stored admin session mints
     // the next switch — the localStorage token is the view-as one.
-    const adminToken = viewAs?.adminToken ?? getToken()
-    const adminName = viewAs?.adminName ?? username
+    const adminToken = viewAsRef.current?.adminToken ?? getToken()
+    const adminName = viewAsRef.current?.adminName ?? username
     if (!adminToken || !adminName) return
     try {
       const session = await api.impersonate(target)
       // Vault untouched — the admin token is restored from memory on exit.
-      setViewAs({ username: session.username, adminToken, adminName })
+      viewAsRef.current = { username: session.username, adminToken, adminName }
+      setViewAs(viewAsRef.current)
       setView('submit')
       impersonate(session.token, session.username)
-      queryClient.invalidateQueries()
+      invalidateForSwitch()
     } catch (err) {
       toast({
         title: 'View-as failed',
@@ -117,7 +134,7 @@ function AppShell() {
         variant: 'destructive',
       })
     }
-  }, [viewAs, username, impersonate, queryClient, toast])
+  }, [username, impersonate, invalidateForSwitch, toast])
 
   // macOS frameless clearance, most-authoritative first: the platform the
   // main process injected into the URL (?platform=darwin) — structural and
