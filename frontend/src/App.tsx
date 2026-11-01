@@ -79,7 +79,7 @@ function AppShell() {
   // impersonation token itself verifies as non-admin.
   const showAdminUI = isAdmin && !viewAs
 
-  // Demo view-as candidates (admins only; never shown while viewing as).
+  // Demo view-as candidates (admins only; cached list stays while viewing as).
   const demoUsersQuery = useQuery({
     queryKey: ['demo-users'],
     queryFn: api.listDemoUsers,
@@ -98,8 +98,10 @@ function AppShell() {
   }, [viewAs, login, queryClient])
 
   const enterViewAs = useCallback(async (target: string) => {
-    const adminToken = getToken()
-    const adminName = username
+    // While already viewing as someone, the stored admin session mints
+    // the next switch — the localStorage token is the view-as one.
+    const adminToken = viewAs?.adminToken ?? getToken()
+    const adminName = viewAs?.adminName ?? username
     if (!adminToken || !adminName) return
     try {
       const session = await api.impersonate(target)
@@ -115,7 +117,7 @@ function AppShell() {
         variant: 'destructive',
       })
     }
-  }, [username, impersonate, queryClient, toast])
+  }, [viewAs, username, impersonate, queryClient, toast])
 
   // macOS frameless clearance, most-authoritative first: the platform the
   // main process injected into the URL (?platform=darwin) — structural and
@@ -461,21 +463,23 @@ function AppShell() {
           </nav>
           <div className="ml-auto flex items-center gap-1">
             {/* TEMPORARY — hackathon demo aid; remove with PreviewBanner. */}
-            {isAdmin && !viewAs && demoUsers.length > 0 && (
-              <Tip label="Switch to a seeded demo user (view-as, 15-minute token)">
+            {(isAdmin || viewAs) && demoUsers.length > 0 && (
+              <Tip label={viewAs ? `Viewing as ${viewAs.username} — switch user or exit below` : 'Switch to a seeded demo user (view-as, 15-minute token)'}>
                 <Select value="" onValueChange={(v) => { if (v) void enterViewAs(v) }}>
                   <SelectTrigger
                     className="h-8 w-[8.5rem] border-transparent text-muted-foreground"
-                    aria-label="View app as a demo user"
+                    aria-label={viewAs ? `Viewing as ${viewAs.username}. Switch demo user` : 'View app as a demo user'}
                   >
-                    <SelectValue placeholder="View as…" />
+                    <SelectValue placeholder={viewAs ? viewAs.username : 'View as…'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {demoUsers.map((u) => (
-                      <SelectItem key={u.username} value={u.username}>
-                        {u.username}
-                      </SelectItem>
-                    ))}
+                    {demoUsers
+                      .filter((u) => u.username !== viewAs?.username)
+                      .map((u) => (
+                        <SelectItem key={u.username} value={u.username}>
+                          {u.username}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </Tip>
