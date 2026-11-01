@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - **Explanation UX overhaul**: request detail opens on a Plain-language tab (what you get, cautions, how to get approved faster), admins get a decision-brief tab plus the Technical tab; one shared Markdown renderer (tables, highlighted code with copy buttons, dark-mode prose) across detail, guidance, errors, and help; task-first sidebar templates and friendlier form labels with emoji section cues
 - **Technical term highlighting**: IAM actions and ARNs render as code spans in the Technical tab via shape matching (no term list to maintain); prompt instructs backticks for future evaluations
 - **Policy JSON themes + quote fix**: Settings offers Match/VS Code/One Dark/GitHub/Solarized (dark + light) for the policy preview; stray quotes the model leaves around code spans are stripped so users see clean `` `terms` ``
+- **Build marker**: Settings → About shows the baked commit + timestamp so a running app proves which build it is; theme tests wired into `npm test`
 
 ### 🛡️ Fixes
 
