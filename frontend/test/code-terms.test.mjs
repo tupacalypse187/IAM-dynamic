@@ -50,4 +50,22 @@ describe('highlightTechnicalTerms', () => {
       "'quoted prose' stays 'as is' with `s3:GetObject` wrapped",
     )
   })
+
+  it('normalizes typographic quotes around terms', () => {
+    assert.equal(
+      highlightTechnicalTerms('Grants \u2018`s3:GetObject`\u2019 today'),
+      'Grants `s3:GetObject` today',
+    )
+  })
+
+  it('strips straight quotes outside a complete code span', () => {
+    assert.equal(
+      highlightTechnicalTerms('Grants \'`s3:GetObject`\' today'),
+      'Grants `s3:GetObject` today',
+    )
+    assert.equal(
+      highlightTechnicalTerms('See "`arn:aws:s3:::b/*`" now'),
+      'See `arn:aws:s3:::b/*` now',
+    )
+  })
 })

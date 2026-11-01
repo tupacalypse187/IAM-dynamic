@@ -786,6 +786,53 @@ def fast_model_for(provider: str | None) -> str | None:
     return FAST_MODELS.get(key)
 
 
+def format_request_ref(request_id: int) -> str:
+    """Human-readable request identifier (req-00001). Display-only; the integer id stays canonical."""
+    return f"req-{request_id:05d}"
+
+
+def send_decision_notification(
+    request_id: int,
+    decision: str,
+    reviewer: str,
+    requester: str,
+    risk: str,
+    req: str,
+    feedback: str = None,
+):
+    """
+    Send a review-decision notification to every configured channel (Slack, Telegram).
+
+    Notification failures are logged but never fail the review itself.
+    """
+    request_ref = format_request_ref(request_id)
+    try:
+        slack_service.send_decision_notification(
+            request_ref=request_ref,
+            decision=decision,
+            reviewer=reviewer,
+            requester=requester,
+            risk_level=risk,
+            request_text=req,
+            feedback=feedback,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send Slack decision notification: {e}")
+
+    try:
+        telegram_service.send_decision_notification(
+            request_ref=request_ref,
+            decision=decision,
+            reviewer=reviewer,
+            requester=requester,
+            risk_level=risk,
+            request_text=req,
+            feedback=feedback,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send Telegram decision notification: {e}")
+
+
 def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
     """
     Send audit notification to every configured channel (Slack, Telegram).
@@ -1631,6 +1678,15 @@ async def review_access_request(
         from_status=stored["status"],
         to_status=to_status,
         risk=stored["risk"],
+        feedback=body.feedback,
+    )
+    send_decision_notification(
+        request_id=request_id,
+        decision=to_status,
+        reviewer=user,
+        requester=stored["requester"],
+        risk=stored["risk"],
+        req=stored["request_text"],
         feedback=body.feedback,
     )
     return updated

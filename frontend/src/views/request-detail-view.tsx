@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
 import { EnvBadge } from '@/components/env-badge'
 import { highlightTechnicalTerms } from '@/lib/code-terms'
+import { formatRequestRef } from '@/lib/request-refs'
 import { Markdown } from '@/components/markdown'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -223,7 +224,7 @@ export default function RequestDetailView({
         </Button>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Request #{request.id}
+            Request <span className="font-mono text-[0.85em]">{formatRequestRef(request.id)}</span>
           </h2>
           <EnvBadge environment={request.environment} />
           <Badge className={status.badge}>{status.label}</Badge>

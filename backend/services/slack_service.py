@@ -21,6 +21,19 @@ RISK_EMOJI = {
     "critical": ":red_circle:",
 }
 
+# Headers are plain_text (shortcodes don't render there): real glyphs only
+DECISION_HEADER_EMOJI = {
+    "approved": "✅",
+    "denied": "❌",
+    "changes_requested": "↩️",
+}
+
+DECISION_LABEL = {
+    "approved": "Approved",
+    "denied": "Denied",
+    "changes_requested": "Changes requested",
+}
+
 
 def _escape_mrkdwn(text: str) -> str:
     """
@@ -197,6 +210,134 @@ class SlackService:
             duration_hours=duration_hours,
             auto_approved=auto_approved,
             approver=approver
+        )
+        return self.send_payload(payload)
+
+    def format_decision_payload(
+        self,
+        request_ref: str,
+        decision: str,
+        reviewer: str,
+        requester: str,
+        risk_level: str,
+        request_text: str,
+        feedback: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Build a Block Kit payload for a review decision notification
+
+        Args:
+            request_ref: Human-readable request id (req-00001)
+            decision: approved, denied, or changes_requested
+            reviewer: Admin who decided
+            requester: User who asked for access
+            risk_level: Risk assessment level
+            request_text: The user's access request
+            feedback: Reviewer feedback (required for deny/send-back)
+
+        Returns:
+            Webhook payload with blocks plus a plain-text fallback
+        """
+        header_emoji = DECISION_HEADER_EMOJI.get(decision, "❔")
+        label = DECISION_LABEL.get(decision, decision)
+        risk = RISK_EMOJI.get(risk_level.lower(), ":large_yellow_circle:")
+        quoted_request = "\n".join(
+            f"> {line}"
+            for line in _escape_mrkdwn(request_text).splitlines()
+            if line.strip()
+        )
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        blocks: list = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": f"{header_emoji} Request {request_ref} {label}",
+                    "emoji": True,
+                },
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Decided by*\n{_escape_mrkdwn(reviewer)}",
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Requested by*\n{_escape_mrkdwn(requester)}",
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Risk Score*\n{risk} {risk_level.upper()}",
+                    },
+                ],
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Request*\n{quoted_request}"},
+            },
+        ]
+        if (feedback or "").strip():
+            quoted_feedback = "\n".join(
+                f"> {line}"
+                for line in _escape_mrkdwn(feedback or "").splitlines()
+                if line.strip()
+            )
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Reviewer feedback*\n{quoted_feedback}"},
+                }
+            )
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f"IAM-Dynamic • {timestamp}"},
+                ],
+            }
+        )
+
+        return {
+            "text": f"Request {request_ref} {label.lower()} by {reviewer} ({risk_level.upper()} risk)",
+            "blocks": blocks,
+        }
+
+    def send_decision_notification(
+        self,
+        request_ref: str,
+        decision: str,
+        reviewer: str,
+        requester: str,
+        risk_level: str,
+        request_text: str,
+        feedback: Optional[str] = None
+    ) -> bool:
+        """
+        Send formatted review decision notification
+
+        Args:
+            request_ref: Human-readable request id (req-00001)
+            decision: approved, denied, or changes_requested
+            reviewer: Admin who decided
+            requester: User who asked for access
+            risk_level: Risk assessment level
+            request_text: The user's access request
+            feedback: Reviewer feedback (required for deny/send-back)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        payload = self.format_decision_payload(
+            request_ref=request_ref,
+            decision=decision,
+            reviewer=reviewer,
+            requester=requester,
+            risk_level=risk_level,
+            request_text=request_text,
+            feedback=feedback
         )
         return self.send_payload(payload)
 

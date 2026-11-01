@@ -1,11 +1,13 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Copy, FileEdit, Plus, Radio } from 'lucide-react'
+import { Loader2, Copy, FileEdit, Plus, Radio, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 import { groupByBatch, isLiveSession, requestExcerpt, reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
+import { formatRequestRef, matchesRequestQuery } from '@/lib/request-refs'
 import type { AccessRequest } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { EnvBadge } from '@/components/env-badge'
 import { Tip } from '@/components/tip'
@@ -33,10 +35,10 @@ function RequestRow({
         type="button"
         onClick={() => onOpen(request)}
         className="min-w-0 flex-1 text-left"
-        aria-label={`Open request ${request.id}`}
+        aria-label={`Open request ${formatRequestRef(request.id)}`}
       >
         <span className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">#{request.id}</span>
+          <span className="font-mono text-sm font-medium">{formatRequestRef(request.id)}</span>
           <EnvBadge environment={request.environment} />
           <Badge className={status.badge}>{status.label}</Badge>
           <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
@@ -70,13 +72,14 @@ function RequestRow({
 }
 
 export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneRequest }: MyRequestsViewProps) {
+  const [search, setSearch] = useState('')
   const query = useQuery({
     queryKey: ['requests', 'mine'],
     queryFn: () => api.listRequests({ mine: true }),
   })
 
-  const { live, open, recent } = useMemo(() => {
-    const all = query.data ?? []
+  const { live, open, recent, matched, total } = useMemo(() => {
+    const all = (query.data ?? []).filter((r) => matchesRequestQuery(r, search))
     return {
       live: all.filter((r) => isLiveSession(r)),
       open: groupByBatch(
@@ -85,8 +88,10 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
         ),
       ),
       recent: groupByBatch(all.slice(0, 10)),
+      matched: all.length,
+      total: (query.data ?? []).length,
     }
-  }, [query.data])
+  }, [query.data, search])
 
   const renderGroup = (group: { batchId: number; rows: AccessRequest[] }) => (
     <li key={group.batchId} className="space-y-2">
@@ -124,6 +129,24 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
           </Button>
         </Tip>
       </div>
+
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search req-00001 or text…"
+          aria-label="Search my requests"
+          className="pl-9"
+        />
+      </div>
+      {search.trim() !== '' && query.data && (
+        <p className="-mt-3 text-xs text-muted-foreground" role="status">
+          {matched === 0
+            ? `No matches for “${search.trim()}” in ${total} requests.`
+            : `Showing ${matched} of ${total} requests matching “${search.trim()}”.`}
+        </p>
+      )}
 
       {query.isLoading && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">

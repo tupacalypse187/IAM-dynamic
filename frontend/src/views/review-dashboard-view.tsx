@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, ShieldCheck, User } from 'lucide-react'
+import { Loader2, Search, ShieldCheck, User } from 'lucide-react'
 import { api } from '@/lib/api'
 import { groupByBatch, requestExcerpt, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
+import { formatRequestRef, matchesRequestQuery } from '@/lib/request-refs'
 import type { AccessRequest, RequestStatus } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { EnvBadge } from '@/components/env-badge'
@@ -39,12 +41,18 @@ function timeAgo(iso: string): string {
 
 export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardViewProps) {
   const [filter, setFilter] = useState<QueueFilter>('pending_review')
+  const [search, setSearch] = useState('')
   const [auditError, setAuditError] = useState<string | null>(null)
 
   const queueQuery = useQuery({
     queryKey: ['requests', 'queue', filter],
     queryFn: () => api.listRequests(filter === 'all' ? undefined : { status: filter }),
   })
+
+  const visible = useMemo(
+    () => (queueQuery.data ?? []).filter((r) => matchesRequestQuery(r, search)),
+    [queueQuery.data, search],
+  )
 
   const auditQuery = useQuery({
     queryKey: ['audit', 'recent'],
@@ -85,6 +93,16 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
         </TabsList>
 
         <TabsContent value="queue" className="mt-4 space-y-4">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search req-00001, text, or person…"
+              aria-label="Search requests"
+              className="pl-9"
+            />
+          </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Filter requests">
             {FILTERS.map((f) => (
               <Tip key={f.value} label={`Show ${f.label.toLowerCase()} requests`}>
@@ -114,22 +132,29 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
               </CardContent>
             </Card>
           )}
-          {queueQuery.data && queueQuery.data.length === 0 && (
+          {queueQuery.data && visible.length === 0 && (
             <Card>
               <CardContent className="pt-6">
                 <p className="text-sm text-muted-foreground">
-                  {filter === 'pending_review'
-                    ? 'Queue is clear — nothing waiting for review.'
-                    : 'No requests with this status.'}
+                  {queueQuery.data.length === 0
+                    ? filter === 'pending_review'
+                      ? 'Queue is clear — nothing waiting for review.'
+                      : 'No requests with this status.'
+                    : `No matches for “${search.trim()}” — clear the search to see all ${queueQuery.data.length}.`}
                 </p>
               </CardContent>
             </Card>
           )}
-          {queueQuery.data && queueQuery.data.length > 0 && (
+          {visible.length > 0 && (
             <Card>
               <CardContent className="pt-6">
+                {search.trim() !== '' && queueQuery.data && (
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Showing {visible.length} of {queueQuery.data.length}
+                  </p>
+                )}
                 <ul className="space-y-3">
-                  {groupByBatch(queueQuery.data).map((group) => (
+                  {groupByBatch(visible).map((group) => (
                     <li key={group.batchId} className="space-y-2">
                       {group.rows.length > 1 && (
                         <p className="text-xs font-medium text-muted-foreground">
@@ -144,10 +169,10 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                             type="button"
                             onClick={() => onOpenRequest(request)}
                             className="block w-full rounded-md border p-3 text-left hover:border-primary/50 hover:bg-muted/50"
-                            aria-label={`Review request ${request.id} from ${request.requester}`}
+                            aria-label={`Review request ${formatRequestRef(request.id)} from ${request.requester}`}
                           >
                             <span className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">#{request.id}</span>
+                              <span className="font-medium font-mono text-sm">{formatRequestRef(request.id)}</span>
                               <EnvBadge environment={request.environment} />
                               <Badge className={status.badge}>{status.label}</Badge>
                               <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
@@ -220,10 +245,10 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                         {event.request_id != null ? (
                           <button
                             type="button"
-                            className="font-medium text-primary hover:underline"
+                            className="font-mono text-sm font-medium text-primary hover:underline"
                             onClick={() => openAuditRequest(event.request_id as number)}
                           >
-                            #{event.request_id}
+                            {formatRequestRef(event.request_id)}
                           </button>
                         ) : (
                           <span className="text-xs text-muted-foreground">account event</span>
