@@ -374,7 +374,8 @@ You must respond with a VALID JSON object adhering to this schema:
 
 TECHNICAL-FIELD RULES for "explanation" and "approver_note":
 Wrap every AWS action name, ARN, and policy element name in `backticks`
-so they stand out when rendered.
+so they stand out when rendered. Write the bare term only — no surrounding
+quotes inside the backticks (`s3:GetObject`, never `'s3:GetObject'`).
 
 PLAIN-LANGUAGE RULES for every "narrative" field:
 1. Second person for the requester ("you"), third person for approver_plain.

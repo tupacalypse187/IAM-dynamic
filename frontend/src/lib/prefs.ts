@@ -7,12 +7,15 @@ export interface Prefs {
   tourAutoplay: boolean
   /** Collapse the desktop sidebar rail (mobile drawer unaffected). */
   sidebarCollapsed: boolean
+  /** Monaco theme id for the JSON policy preview ('match' follows the app theme). */
+  codeTheme: string
 }
 
 export const DEFAULT_PREFS: Prefs = {
   tooltips: true,
   tourAutoplay: true,
   sidebarCollapsed: false,
+  codeTheme: 'match',
 }
 
 const STORAGE_KEY = 'iam-prefs-v1'
@@ -38,6 +41,8 @@ export function loadPrefs(storage?: Pick<Storage, 'getItem'>): Prefs {
         typeof parsed.sidebarCollapsed === 'boolean'
           ? parsed.sidebarCollapsed
           : DEFAULT_PREFS.sidebarCollapsed,
+      codeTheme:
+        typeof parsed.codeTheme === 'string' ? parsed.codeTheme : DEFAULT_PREFS.codeTheme,
     }
   } catch {
     return { ...DEFAULT_PREFS }

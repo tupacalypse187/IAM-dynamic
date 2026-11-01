@@ -12,6 +12,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { CODE_THEMES } from '@/lib/code-themes'
 import { ProviderSelects } from '@/components/provider-selects'
 import { ProfileManager } from '@/components/profile-manager'
 import { CatalogManager } from '@/components/catalog-manager'
@@ -107,6 +118,41 @@ export default function SettingsView({
                 )
               })}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="code-theme-select">Policy JSON theme</Label>
+            <Tip label="Color theme for the policy JSON preview; Match follows the app theme">
+              <Select
+                value={prefs.codeTheme}
+                onValueChange={(value) => updatePrefs({ codeTheme: value })}
+              >
+                <SelectTrigger id="code-theme-select" className="max-w-xs">
+                  <SelectValue placeholder="Match app theme" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="match">Match app theme</SelectItem>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Dark</SelectLabel>
+                    {CODE_THEMES.filter((t) => t.id !== 'match' && t.dark).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Light</SelectLabel>
+                    {CODE_THEMES.filter((t) => t.id !== 'match' && !t.dark).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Tip>
           </div>
 
           <div className="flex items-center justify-between gap-4">
