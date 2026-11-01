@@ -217,13 +217,17 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                     <li key={i} className="rounded-md border p-3 text-sm">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{event.event.replace(/_/g, ' ')}</Badge>
-                        <button
-                          type="button"
-                          className="font-medium text-primary hover:underline"
-                          onClick={() => openAuditRequest(event.request_id)}
-                        >
-                          #{event.request_id}
-                        </button>
+                        {event.request_id != null ? (
+                          <button
+                            type="button"
+                            className="font-medium text-primary hover:underline"
+                            onClick={() => openAuditRequest(event.request_id as number)}
+                          >
+                            #{event.request_id}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">account event</span>
+                        )}
                         <span className="font-medium">{event.actor}</span>
                         <span className="text-muted-foreground">({event.actor_role})</span>
                         <span className="ml-auto text-xs text-muted-foreground">

@@ -168,6 +168,26 @@ class TestImpersonation:
         )
         assert response.status_code == 403
 
+    def test_audit_read_survives_request_less_events(self, store, monkeypatch):
+        monkeypatch.setattr(main.config.auth, "demo_view_users", "alice")
+        client = _client()
+        admin_token = self._register(client, "boss")["token"]
+        self._register(client, "alice")
+        client.post(
+            "/api/auth/impersonate",
+            json={"username": "alice"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        response = client.get(
+            "/api/audit", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        assert response.status_code == 200
+        started = next(
+            e for e in response.json() if e["event"] == "impersonation_started"
+        )
+        assert started["request_id"] is None
+        assert started["actor"] == "boss"
+
     def test_demo_users_lists_only_existing_allowlisted(self, store, monkeypatch):
         monkeypatch.setattr(main.config.auth, "demo_view_users", "alice,bob,ghost")
         client = _client()
