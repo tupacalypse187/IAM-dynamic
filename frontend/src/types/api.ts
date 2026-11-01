@@ -84,6 +84,18 @@ export interface AccessRequest {
 
 export type ReviewDecision = 'approve' | 'deny' | 'changes_requested'
 
+/** TEMPORARY hackathon demo aid: admin view-as-allowlisted-user. */
+export interface DemoUser {
+  username: string
+}
+
+export interface ImpersonateResponse {
+  token: string
+  expires_at: string
+  username: string
+  impersonated_from: string
+}
+
 /** A user's saved LLM profile — key material is never serialized. */
 export interface LlmProfile {
   id: number

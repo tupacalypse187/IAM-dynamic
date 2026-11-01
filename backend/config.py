@@ -103,6 +103,15 @@ class AuthConfig(BaseModel):
     # Open self-registration (hackathon-friendly). Set false to require
     # provisioning via setup-auth.sh / AUTH_PASSWORD_HASH instead.
     allow_registration: bool = Field(default=True)
+    # TEMPORARY hackathon demo aid: usernames the admin may impersonate
+    # ("View as"). Only these exact names are switchable — newly enrolled
+    # users are never impersonatable. Remove with the impersonate endpoint.
+    demo_view_users: str = Field(default="alice,bob,carol")
+
+    @property
+    def demo_view_usernames(self) -> list[str]:
+        """Allowlisted view-as targets as clean exact-match usernames."""
+        return [u.strip() for u in self.demo_view_users.split(",") if u.strip()]
 
     @property
     def enabled(self) -> bool:
@@ -212,6 +221,7 @@ def load_config() -> AppConfig:
             users_db_path=os.getenv("AUTH_USERS_DB", "users.db"),
             allow_registration=os.getenv("AUTH_ALLOW_REGISTRATION", "true").lower()
             not in ("0", "false", "no"),
+            demo_view_users=os.getenv("DEMO_VIEW_USERS", "alice,bob,carol"),
         )
 
         config = AppConfig(
