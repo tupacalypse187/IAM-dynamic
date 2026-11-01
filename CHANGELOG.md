@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - **Policy JSON themes + quote fix**: Settings offers Match/VS Code/One Dark/GitHub/Solarized (dark + light) for the policy preview; stray quotes the model leaves around code spans are stripped so users see clean `` `terms` ``
 - **Build marker**: Settings → About shows the baked commit + timestamp so a running app proves which build it is; theme tests wired into `npm test`
 - **Review decisions notify + req IDs + search**: approve/deny/send-back posts ✅/❌/↩️ Slack + Telegram notifications naming the reviewer, requester, and `req-00001` ref; request lists show refs and filter live by id/text/person; quote-stripper hardened for all quote orders plus typographic quotes
+- **Splash + tips + saved toast**: splash stays sole focused window for 3s (main window no longer flashes first); rotating tip-of-day card with Settings toggle and in-card opt-out; every Settings change confirms with a brief saved toast
 
 ### 🛡️ Fixes
 

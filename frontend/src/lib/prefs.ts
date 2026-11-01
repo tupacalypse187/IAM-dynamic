@@ -9,6 +9,8 @@ export interface Prefs {
   sidebarCollapsed: boolean
   /** Monaco theme id for the JSON policy preview ('match' follows the app theme). */
   codeTheme: string
+  /** Show a rotating usage tip on startup. */
+  startupTips: boolean
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -16,6 +18,7 @@ export const DEFAULT_PREFS: Prefs = {
   tourAutoplay: true,
   sidebarCollapsed: false,
   codeTheme: 'match',
+  startupTips: true,
 }
 
 const STORAGE_KEY = 'iam-prefs-v1'
@@ -43,6 +46,8 @@ export function loadPrefs(storage?: Pick<Storage, 'getItem'>): Prefs {
           : DEFAULT_PREFS.sidebarCollapsed,
       codeTheme:
         typeof parsed.codeTheme === 'string' ? parsed.codeTheme : DEFAULT_PREFS.codeTheme,
+      startupTips:
+        typeof parsed.startupTips === 'boolean' ? parsed.startupTips : DEFAULT_PREFS.startupTips,
     }
   } catch {
     return { ...DEFAULT_PREFS }
