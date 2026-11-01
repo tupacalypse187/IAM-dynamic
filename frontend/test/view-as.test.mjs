@@ -2,10 +2,19 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  clearAdminStash,
   clearViewAsSession,
+  isViewAsToken,
+  loadAdminStash,
   loadViewAsSession,
+  saveAdminStash,
   saveViewAsSession,
 } from '../src/lib/view-as.ts'
+
+function fakeJwt(payload) {
+  const b64 = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  return `header.${b64}.signature`
+}
 
 function memoryStore(initial) {
   const data = { ...(initial ?? {}) }
@@ -49,5 +58,21 @@ describe('view-as session persistence', () => {
     saveViewAsSession(SESSION, store)
     clearViewAsSession(store)
     assert.equal(loadViewAsSession(store), null)
+  })
+
+  it('round-trips the admin stash for fresh boots', () => {
+    const store = memoryStore()
+    const stash = { adminToken: 'admintoken', adminName: 'boss', username: 'alice' }
+    saveAdminStash(stash, store)
+    assert.deepEqual(loadAdminStash(store), stash)
+    clearAdminStash(store)
+    assert.equal(loadAdminStash(store), null)
+  })
+
+  it('detects view-as tokens by claim', () => {
+    assert.equal(isViewAsToken(fakeJwt({ sub: 'alice', impersonated_from: 'boss' })), true)
+    assert.equal(isViewAsToken(fakeJwt({ sub: 'alice' })), false)
+    assert.equal(isViewAsToken(null), false)
+    assert.equal(isViewAsToken('not-a-token'), false)
   })
 })
