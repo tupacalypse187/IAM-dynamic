@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { CODE_THEMES } from '@/lib/code-themes'
+import { BUILD_ID } from '@/lib/build-info'
 import { ProviderSelects } from '@/components/provider-selects'
 import { ProfileManager } from '@/components/profile-manager'
 import { CatalogManager } from '@/components/catalog-manager'
@@ -255,6 +256,10 @@ export default function SettingsView({
             <div className="flex gap-2">
               <dt className="text-muted-foreground">Version:</dt>
               <dd>{appVersion ? `v${appVersion}` : 'local build'}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Build:</dt>
+              <dd className="font-mono text-xs">{BUILD_ID}</dd>
             </div>
             {backendUrl && (
               <div className="flex gap-2">
