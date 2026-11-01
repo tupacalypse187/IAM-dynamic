@@ -30,12 +30,14 @@ class _StubPolicyProvider:
         self.risk = risk
 
     def generate_policy(self, request_text):
-        return PolicyResponse(
-            policy=dict(SAFE_POLICY),
-            risk=self.risk,
-            explanation="stub explanation",
-            approver_note="stub approver note",
-        )
+        return [
+            PolicyResponse(
+                policy=dict(SAFE_POLICY),
+                risk=self.risk,
+                explanation="stub explanation",
+                approver_note="stub approver note",
+            )
+        ]
 
 
 @pytest.fixture()
@@ -207,9 +209,9 @@ class TestProfileEvaluation:
         assert _stub_llm["api_key"] == "sk-test-aaaabbbbccccdddd"
         assert _stub_llm["provider"] == "muse"
         assert _stub_llm["model"] == "muse-spark-1.3-contributor"
-        assert body["provider"] == "muse"
-        assert body["model"] == "muse-spark-1.3-contributor"
-        events = main.get_audit_log().read(request_id=body["id"])
+        assert body[0]["provider"] == "muse"
+        assert body[0]["model"] == "muse-spark-1.3-contributor"
+        events = main.get_audit_log().read(request_id=body[0]["id"])
         submitted = next(e for e in events if e["event"] == "submitted")
         assert submitted["profile"] == "profile:work-muse"
         assert not _bodies_contain_key(events, "sk-test-aaaabbbbccccdddd")

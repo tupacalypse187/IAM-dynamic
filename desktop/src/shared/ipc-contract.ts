@@ -70,6 +70,8 @@ export interface GenerateInput {
   provider: string
   model?: string
   durationHours: number
+  /** Deployment tier — caps the grant window at record time. */
+  environment?: string
   /** Answers keyed by ClarifyQuestion.field from a previous clarify round. */
   answers?: Record<string, string>
   /** Saved LLM profile — its key evaluates, its id attributes the record. */

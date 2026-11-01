@@ -11,7 +11,10 @@ import type {
 
 /** A submitted (persisted) request plus transient local evaluation context. */
 export interface SubmitOutcome {
+  /** First unit of the created batch (detail navigation target). */
   request: AccessRequest
+  /** Every row created by this submission (usually one). */
+  batch: AccessRequest[]
   /** Local guardrail findings (desktop path; empty on web). */
   findings: GuardrailFinding[]
   /** Plain-language grant summary (desktop path; null on web). */
@@ -59,16 +62,17 @@ export function usePolicyAgent(): PolicyAgent {
 
   const submit = useCallback(async (input: GenerateInput): Promise<SubmitResult> => {
     if (!isDesktop()) {
-      const request = await api.submitRequest({
+      const batch = await api.submitRequest({
         request_text: composeWebText(input),
         // A saved profile resolves provider/model server-side; sending the
         // unrelated Settings fallback alongside would only mislead.
         provider: input.profileId ? undefined : input.provider,
         model: input.profileId ? undefined : input.model,
         duration: input.durationHours,
+        environment: input.environment,
         profile_id: input.profileId,
       })
-      return { kind: 'submitted', request, findings: [], summary: null }
+      return { kind: 'submitted', request: batch[0], batch, findings: [], summary: null }
     }
     // Desktop: clarify-aware Agent_Kit evaluation first, then persist the
     // evaluated result without re-running the LLM (see /api/requests/record).
@@ -77,17 +81,19 @@ export function usePolicyAgent(): PolicyAgent {
     if (result.status === 'clarify') {
       return { kind: 'clarify', questions: result.questions }
     }
-    const request = await api.recordRequest({
+    const batch = await api.recordRequest({
       request_text: result.requestText,
       provider: input.profileId ? undefined : input.provider,
       model: input.profileId ? undefined : input.model,
       duration: result.result.max_duration,
+      environment: input.environment,
       policy: result.result.policy,
       risk: result.result.risk,
       explanation: result.result.explanation,
       approver_note: result.result.approver_note,
       profile_id: input.profileId,
     })
+    const request = batch[0]
     if (isDesktop()) {
       desktop
         .logAudit('request_submitted', `Request #${request.id} submitted (${request.status})`, {
@@ -97,7 +103,7 @@ export function usePolicyAgent(): PolicyAgent {
         })
         .catch(() => undefined)
     }
-    return { kind: 'submitted', request, findings: result.findings, summary: result.summary }
+    return { kind: 'submitted', request, batch, findings: result.findings, summary: result.summary }
   }, [])
 
   const activate = useCallback(async (id: number): Promise<Credentials> => {

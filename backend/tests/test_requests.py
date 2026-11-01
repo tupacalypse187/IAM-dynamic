@@ -25,16 +25,30 @@ SAFE_POLICY = {
 
 
 class _StubPolicyProvider:
-    def __init__(self, risk="medium"):
+    def __init__(self, risk="medium", units=None):
         self.risk = risk
+        self.units = units
 
     def generate_policy(self, request_text):
-        return PolicyResponse(
-            policy=dict(SAFE_POLICY),
-            risk=self.risk,
-            explanation="stub explanation",
-            approver_note="stub approver note",
-        )
+        if self.units is None:
+            return [
+                PolicyResponse(
+                    policy=dict(SAFE_POLICY),
+                    risk=self.risk,
+                    explanation="stub explanation",
+                    approver_note="stub approver note",
+                )
+            ]
+        return [
+            PolicyResponse(
+                policy=dict(unit["policy"]),
+                risk=unit["risk"],
+                explanation=unit.get("explanation", ""),
+                approver_note=unit.get("approver_note", ""),
+                label=unit.get("label", ""),
+            )
+            for unit in self.units
+        ]
 
 
 @pytest.fixture()
@@ -52,11 +66,11 @@ def _as_user(monkeypatch):
 
 @pytest.fixture()
 def _stub_llm(monkeypatch):
-    """Stub LLM evaluation with a controllable risk level."""
-    state = {"risk": "medium"}
+    """Stub LLM evaluation with a controllable risk level (and units)."""
+    state = {"risk": "medium", "units": None}
 
     def fake_get_llm_provider(provider_type=None, model=None, api_key=None):
-        return _StubPolicyProvider(risk=state["risk"])
+        return _StubPolicyProvider(risk=state["risk"], units=state["units"])
 
     monkeypatch.setattr(main, "get_llm_provider", fake_get_llm_provider)
     return state
@@ -78,7 +92,7 @@ class TestSubmit:
         response = TestClient(main.app)
         result = _submit(response)
         assert result.status_code == 201
-        body = result.json()
+        body = result.json()[0]
         assert body["requester"] == "alice"
         assert body["status"] == "pending_review"
         assert body["risk"] == "medium"
@@ -90,7 +104,7 @@ class TestSubmit:
         _stub_llm["risk"] = "low"
         _as_user("alice")
         client = TestClient(main.app)
-        body = _submit(client).json()
+        body = _submit(client).json()[0]
         assert body["status"] == "approved"
         assert body["auto_approved"] is True
         # Approval alone must not issue anything: activation is still required.
@@ -105,7 +119,7 @@ class TestSubmit:
     def test_queued_audit_trail(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        body = _submit(client).json()
+        body = _submit(client).json()[0]
         events = main.get_audit_log().read(request_id=body["id"])
         kinds = {e["event"] for e in events}
         assert {"submitted", "queued_for_review"} <= kinds
@@ -160,6 +174,228 @@ class TestCatalogEnforcement:
         assert response.status_code == 201
 
 
+def _fake_sts(monkeypatch, calls):
+    """Stub STS issuance + silence notifications; records (policy, duration)."""
+
+    def fake_assume(policy, duration, **kwargs):
+        calls.append((policy, duration))
+        return {
+            "AccessKeyId": "AKIAEXAMPLE",
+            "SecretAccessKey": "secret",
+            "SessionToken": "token",
+            "Expiration": datetime.now(timezone.utc),
+        }
+
+    monkeypatch.setattr(main.sts_service, "assume_role_with_policy", fake_assume)
+    monkeypatch.setattr(main, "send_audit_notification", lambda **kwargs: None)
+
+
+def _approve_as_boss(client, request_id, decision="approve"):
+    return client.post(f"/api/requests/{request_id}/review", json={"decision": decision})
+
+
+LOW_UNIT = {
+    "label": "read logs",
+    "policy": dict(SAFE_POLICY),
+    "risk": "low",
+    "explanation": "read-only",
+    "approver_note": "fine",
+}
+HIGH_UNIT = {
+    "label": "manage users",
+    "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Effect": "Allow", "Action": ["iam:CreateUser"], "Resource": ["*"]}
+        ],
+    },
+    "risk": "high",
+    "explanation": "privileged",
+    "approver_note": "needs review",
+}
+
+
+class TestEnvironments:
+    def test_unknown_environment_rejected(self, _as_user, _stub_llm):
+        _as_user("alice")
+        response = _submit(TestClient(main.app), environment="qa")
+        assert response.status_code == 422
+
+    def test_stage_duration_cap(self, _as_user, _stub_llm):
+        _as_user("alice")
+        response = _submit(TestClient(main.app), environment="stage", duration=200)
+        assert response.status_code == 400
+
+    def test_prod_duration_cap(self, _as_user, _stub_llm):
+        _as_user("alice")
+        response = _submit(TestClient(main.app), environment="prod", duration=3)
+        assert response.status_code == 400
+
+    def test_dev_long_window_accepted(self, _as_user, _stub_llm):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        body = _submit(TestClient(main.app), environment="dev", duration=100).json()[0]
+        assert body["status"] == "approved"
+        assert body["environment"] == "dev"
+        assert body["grant_expires_at"] is not None
+
+    def test_prod_low_risk_still_auto_approved(self, _as_user, _stub_llm):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        body = _submit(TestClient(main.app), environment="prod", duration=2).json()[0]
+        assert body["status"] == "approved"
+        assert body["auto_approved"] is True
+
+
+class TestGrantReactivation:
+    def test_dev_grant_reactivates_within_window(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        first = client.post(f"/api/requests/{stored['id']}/activate")
+        assert first.status_code == 200
+        second = client.post(f"/api/requests/{stored['id']}/activate")
+        assert second.status_code == 200
+        assert len(calls) == 2
+
+    def test_stage_grant_is_single_use(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client, environment="stage").json()[0]
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        assert client.post(f"/api/requests/{stored['id']}/activate").status_code == 200
+        again = client.post(f"/api/requests/{stored['id']}/activate")
+        assert again.status_code == 400
+        assert len(calls) == 1
+
+    def test_expired_window_blocks_activation(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        main.get_request_store()._conn.execute(
+            "UPDATE access_requests SET grant_expires_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (stored["id"],),
+        )
+        main.get_request_store()._conn.commit()
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        response = client.post(f"/api/requests/{stored['id']}/activate")
+        assert response.status_code == 400
+        assert calls == []
+
+    def test_stage_first_activation_deadline(self, _as_user, _stub_llm, monkeypatch):
+        _as_user("alice")
+        client = TestClient(main.app)
+        _stub_llm["risk"] = "medium"
+        stored = _submit(client, environment="stage").json()[0]
+        _as_user("boss")
+        assert _approve_as_boss(client, stored["id"]).status_code == 200
+        main.get_request_store()._conn.execute(
+            "UPDATE access_requests SET grant_expires_at = '2000-01-01T00:00:00+00:00' WHERE id = ?",
+            (stored["id"],),
+        )
+        main.get_request_store()._conn.commit()
+        _as_user("alice")
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        response = client.post(f"/api/requests/{stored['id']}/activate")
+        assert response.status_code == 400
+        assert calls == []
+
+
+class TestGrantCancel:
+    def test_owner_cancels_approved_grant(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        response = client.post(f"/api/requests/{stored['id']}/cancel")
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelled"
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        assert client.post(f"/api/requests/{stored['id']}/activate").status_code == 400
+        assert calls == []
+        events = main.get_audit_log().read(request_id=stored["id"])
+        assert any(e["event"] == "grant_cancelled" for e in events)
+
+    def test_cancel_after_activation_closes_window(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        assert client.post(f"/api/requests/{stored['id']}/activate").status_code == 200
+        assert client.post(f"/api/requests/{stored['id']}/cancel").status_code == 200
+        assert client.post(f"/api/requests/{stored['id']}/activate").status_code == 400
+        assert len(calls) == 1
+
+    def test_admin_cancels_others_grant(self, _as_user, _stub_llm):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        _as_user("boss")
+        response = client.post(f"/api/requests/{stored['id']}/cancel")
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelled"
+
+    def test_stranger_cannot_cancel(self, _as_user, _stub_llm):
+        _stub_llm["risk"] = "low"
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        _as_user("mallory")
+        assert client.post(f"/api/requests/{stored['id']}/cancel").status_code == 403
+
+    def test_pending_grant_uses_discard_not_cancel(self, _as_user, _stub_llm):
+        _as_user("alice")
+        client = TestClient(main.app)
+        stored = _submit(client).json()[0]
+        assert stored["status"] == "pending_review"
+        assert client.post(f"/api/requests/{stored['id']}/cancel").status_code == 400
+
+
+class TestBatchSplit:
+    def test_units_become_linked_requests(self, _as_user, _stub_llm):
+        _stub_llm["units"] = [LOW_UNIT, HIGH_UNIT]
+        _as_user("alice")
+        client = TestClient(main.app)
+        response = _submit(client)
+        assert response.status_code == 201
+        rows = response.json()
+        assert len(rows) == 2
+        assert rows[0]["batch_id"] == rows[1]["batch_id"] == rows[0]["id"]
+        assert rows[0]["status"] == "approved"
+        assert rows[0]["auto_approved"] is True
+        assert rows[1]["status"] == "pending_review"
+        assert rows[1]["auto_approved"] is False
+
+    def test_low_unit_activates_while_remainder_pends(self, _as_user, _stub_llm, monkeypatch):
+        _stub_llm["units"] = [LOW_UNIT, HIGH_UNIT]
+        _as_user("alice")
+        client = TestClient(main.app)
+        rows = _submit(client).json()
+        calls = []
+        _fake_sts(monkeypatch, calls)
+        assert client.post(f"/api/requests/{rows[0]['id']}/activate").status_code == 200
+        assert client.post(f"/api/requests/{rows[1]['id']}/activate").status_code == 400
+        assert len(calls) == 1
+
+    def test_single_unit_batch_points_at_itself(self, _as_user, _stub_llm):
+        _as_user("alice")
+        body = _submit(TestClient(main.app)).json()
+        assert len(body) == 1
+        assert body[0]["batch_id"] == body[0]["id"]
+
+
 class TestRecord:
     def _record_body(self, **overrides):
         body = {
@@ -184,7 +420,7 @@ class TestRecord:
         client = TestClient(main.app)
         response = client.post("/api/requests/record", json=self._record_body())
         assert response.status_code == 201
-        assert response.json()["status"] == "pending_review"
+        assert response.json()[0]["status"] == "pending_review"
 
     def test_record_normalizes_unknown_risk(self, _as_user, monkeypatch):
         _as_user("alice")
@@ -195,8 +431,8 @@ class TestRecord:
         body = client.post(
             "/api/requests/record", json=self._record_body(risk="Mystery")
         ).json()
-        assert body["risk"] == "medium"
-        assert body["auto_approved"] is False
+        assert body[0]["risk"] == "medium"
+        assert body[0]["auto_approved"] is False
 
     def test_record_rejects_overly_broad_policy(self, _as_user):
         _as_user("alice")
@@ -215,7 +451,7 @@ class TestReview:
     def test_non_admin_cannot_review(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         response = client.post(
             f"/api/requests/{request_id}/review",
             json={"decision": "approve"},
@@ -225,7 +461,7 @@ class TestReview:
     def test_approve_records_reviewer(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("boss")
         response = client.post(
             f"/api/requests/{request_id}/review",
@@ -242,7 +478,7 @@ class TestReview:
     def test_deny_requires_feedback(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("boss")
         response = client.post(
             f"/api/requests/{request_id}/review", json={"decision": "deny"}
@@ -253,7 +489,7 @@ class TestReview:
     def test_send_back_then_resubmit_bumps_revision(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("boss")
         sent_back = client.post(
             f"/api/requests/{request_id}/review",
@@ -274,7 +510,7 @@ class TestReview:
     def test_double_review_rejected(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("boss")
         client.post(f"/api/requests/{request_id}/review", json={"decision": "approve"})
         again = client.post(
@@ -287,7 +523,7 @@ class TestActivate:
     def test_pending_request_cannot_be_activated(self, _as_user, _stub_llm, monkeypatch):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         issued = []
         monkeypatch.setattr(
             main.sts_service,
@@ -302,7 +538,7 @@ class TestActivate:
         _stub_llm["risk"] = "low"
         _as_user("alice")
         client = TestClient(main.app)
-        stored = _submit(client).json()
+        stored = _submit(client).json()[0]
         calls = []
 
         def fake_assume(policy, duration, **kwargs):
@@ -321,9 +557,12 @@ class TestActivate:
         assert response.json()["access_key_id"] == "AKIAEXAMPLE"
         # The reviewed policy — not a caller-supplied one — reaches STS.
         assert calls == [(SAFE_POLICY, stored["duration"])]
+        # Dev grants re-activate inside their window (each call is a fresh
+        # ≤12h session); stage/prod single-use is pinned in
+        # TestGrantReactivation.test_stage_grant_is_single_use.
         again = client.post(f"/api/requests/{stored['id']}/activate")
-        assert again.status_code == 400
-        assert len(calls) == 1
+        assert again.status_code == 200
+        assert len(calls) == 2
         events = main.get_audit_log().read(request_id=stored["id"])
         activated = next(e for e in events if e["event"] == "activated")
         assert activated["actor"] == "alice"
@@ -333,7 +572,7 @@ class TestActivate:
         _stub_llm["risk"] = "low"
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("mallory")
         response = client.post(f"/api/requests/{request_id}/activate")
         assert response.status_code == 403
@@ -376,7 +615,7 @@ class TestBaseRoleSelection:
         _stub_llm["risk"] = "low"
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         calls = self._activate_with_capture(
             monkeypatch,
             {"base_role_readonly": "arn:aws:iam::123456789012:role/ro"},
@@ -391,7 +630,7 @@ class TestBaseRoleSelection:
         _stub_llm["risk"] = "low"
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         calls = self._activate_with_capture(monkeypatch, {})
         assert client.post(f"/api/requests/{request_id}/activate").status_code == 200
         assert calls == [None]
@@ -415,7 +654,7 @@ class TestBaseRoleSelection:
 
         monkeypatch.setattr(main, "get_llm_provider", fake_factory)
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("boss")
         client.post(f"/api/requests/{request_id}/review", json={"decision": "approve"})
         _as_user("alice")
@@ -493,7 +732,7 @@ class TestVisibility:
     def test_user_cannot_open_others_request(self, _as_user, _stub_llm):
         _as_user("alice")
         client = TestClient(main.app)
-        request_id = _submit(client).json()["id"]
+        request_id = _submit(client).json()[0]["id"]
         _as_user("mallory")
         assert client.get(f"/api/requests/{request_id}").status_code == 403
 

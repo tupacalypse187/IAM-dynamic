@@ -30,7 +30,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS access_requests (
@@ -58,6 +58,12 @@ _MIGRATIONS = [
         ON access_requests (requester);
     CREATE INDEX IF NOT EXISTS idx_access_requests_status
         ON access_requests (status);""",
+    """ALTER TABLE access_requests ADD COLUMN environment TEXT NOT NULL DEFAULT 'dev';
+    ALTER TABLE access_requests ADD COLUMN batch_id INTEGER;
+    ALTER TABLE access_requests ADD COLUMN grant_expires_at TEXT;
+    UPDATE access_requests SET batch_id = id WHERE batch_id IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_access_requests_batch
+        ON access_requests (batch_id);""",
 ]
 
 STATUS_PENDING = "pending_review"
@@ -66,6 +72,7 @@ STATUS_DENIED = "denied"
 STATUS_CHANGES = "changes_requested"
 STATUS_ACTIVATED = "activated"
 STATUS_DISCARDED = "discarded"
+STATUS_CANCELLED = "cancelled"
 
 ALL_STATUSES = frozenset({
     STATUS_PENDING,
@@ -74,17 +81,21 @@ ALL_STATUSES = frozenset({
     STATUS_CHANGES,
     STATUS_ACTIVATED,
     STATUS_DISCARDED,
+    STATUS_CANCELLED,
 })
 
 # Allowed transitions for set_status(). Resubmits go through resubmit(),
 # activations through mark_activated() — both enforce the same map.
+# Cancelled is terminal: a cancelled grant can never be re-activated, and
+# already-issued sessions run to their own expiry (STS has no revocation).
 _VALID_TRANSITIONS = {
     STATUS_PENDING: frozenset({STATUS_APPROVED, STATUS_DENIED, STATUS_CHANGES, STATUS_DISCARDED}),
     STATUS_CHANGES: frozenset({STATUS_PENDING, STATUS_DISCARDED}),
-    STATUS_APPROVED: frozenset({STATUS_ACTIVATED, STATUS_DISCARDED}),
+    STATUS_APPROVED: frozenset({STATUS_ACTIVATED, STATUS_DISCARDED, STATUS_CANCELLED}),
     STATUS_DENIED: frozenset(),
-    STATUS_ACTIVATED: frozenset(),
+    STATUS_ACTIVATED: frozenset({STATUS_CANCELLED}),
     STATUS_DISCARDED: frozenset(),
+    STATUS_CANCELLED: frozenset(),
 }
 
 
@@ -152,6 +163,9 @@ class RequestStore:
         approver_note: str,
         auto_approved: bool,
         status: str,
+        environment: str = "dev",
+        batch_id: Optional[int] = None,
+        grant_expires_at: Optional[str] = None,
     ) -> dict:
         """Persist a freshly evaluated request. Returns the stored row."""
         if status not in ALL_STATUSES:
@@ -161,8 +175,9 @@ class RequestStore:
             cursor = self._conn.execute(
                 "INSERT INTO access_requests (requester, request_text, provider, model,"
                 " duration, policy_json, risk, explanation, approver_note,"
-                " auto_approved, status, revision, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                " auto_approved, status, revision, created_at, updated_at,"
+                " environment, batch_id, grant_expires_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
                 (
                     requester,
                     request_text,
@@ -177,6 +192,9 @@ class RequestStore:
                     status,
                     now,
                     now,
+                    environment,
+                    batch_id,
+                    grant_expires_at,
                 ),
             )
             self._conn.commit()
@@ -317,8 +335,39 @@ class RequestStore:
         logger.info("Access request %s resubmitted (status=%s)", request_id, status)
         return self.get(request_id)  # type: ignore[return-value]
 
+    def set_batch_ids(self, request_ids: list[int], batch_id: int) -> None:
+        """Link freshly created unit rows into one batch."""
+        if not request_ids:
+            return
+        with self._write_lock:
+            self._conn.execute(
+                f"UPDATE access_requests SET batch_id = ?, updated_at = ? WHERE id IN"
+                f" ({','.join('?' * len(request_ids))})",
+                [batch_id, _utcnow(), *request_ids],
+            )
+            self._conn.commit()
+
+    def set_grant_expires_at(self, request_id: int, grant_expires_at: str) -> None:
+        """Stamp the approval window (set on every approval)."""
+        with self._write_lock:
+            cursor = self._conn.execute(
+                "UPDATE access_requests SET grant_expires_at = ?, updated_at = ?"
+                " WHERE id = ?",
+                (grant_expires_at, _utcnow(), request_id),
+            )
+            self._conn.commit()
+            if cursor.rowcount == 0:
+                raise RequestStoreError("not_found", f"Request {request_id} not found.")
+
     def mark_activated(self, request_id: int, *, credentials_expires_at: str) -> dict:
-        """Record STS issuance. Only approved requests can be activated."""
+        """Record STS issuance.
+
+        Approved grants activate; activated dev grants re-activate (each
+        issuance is a fresh ≤12h session inside the grant window). The
+        endpoint enforces environment + window rules — the store only
+        enforces that anything else (pending, denied, discarded,
+        cancelled…) can never issue.
+        """
         with self._write_lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
@@ -328,11 +377,11 @@ class RequestStore:
                 if row is None:
                     self._conn.rollback()
                     raise RequestStoreError("not_found", f"Request {request_id} not found.")
-                if row["status"] != STATUS_APPROVED:
+                if row["status"] not in (STATUS_APPROVED, STATUS_ACTIVATED):
                     self._conn.rollback()
                     raise RequestStoreError(
                         "invalid_transition",
-                        f"Only approved requests can be activated "
+                        f"Only approved grants can be activated "
                         f"(request {request_id} is {row['status']}).",
                     )
                 now = _utcnow()

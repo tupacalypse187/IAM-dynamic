@@ -33,6 +33,8 @@ export interface GenerateInput {
   provider: string
   model?: string
   durationHours: number
+  /** Deployment tier — caps the grant window server-side. */
+  environment?: string
   answers?: Record<string, string>
   /** Saved LLM profile — its key evaluates, its id attributes the record. */
   profileId?: number

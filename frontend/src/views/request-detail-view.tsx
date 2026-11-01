@@ -17,9 +17,11 @@ import { usePolicyAgent } from '@/hooks/use-policy-agent'
 import { api } from '@/lib/api'
 import { reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
 import type { AccessRequest, Credentials, ReviewDecision } from '@/types/api'
+import { envOf } from '@/types/api'
 import type { GuardrailFinding } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
+import { EnvBadge } from '@/components/env-badge'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -165,6 +167,19 @@ export default function RequestDetailView({
     onError: (err: Error) => setError(err.message),
   })
 
+  const cancelMutation = useMutation({
+    mutationFn: () => api.cancelRequest(request.id),
+    onSuccess: (updated) => {
+      setError(null)
+      agent.track('request_reviewed', `Request #${request.id} grant cancelled`, {
+        requestId: request.id,
+        decision: 'cancelled',
+      })
+      onChanged(updated)
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
   const activateMutation = useMutation({
     mutationFn: () => agent.activate(request.id),
     onSuccess: (creds) => {
@@ -174,7 +189,7 @@ export default function RequestDetailView({
     onError: (err: Error) => setError(err.message),
   })
 
-  const busy = reviewMutation.isPending || discardMutation.isPending || activateMutation.isPending
+  const busy = reviewMutation.isPending || discardMutation.isPending || activateMutation.isPending || cancelMutation.isPending
 
   const handleReview = (decision: ReviewDecision) => {
     if ((decision === 'deny' || decision === 'changes_requested') && !feedback.trim()) {
@@ -185,12 +200,17 @@ export default function RequestDetailView({
   }
 
   const showAdminActions = isAdmin && request.status === 'pending_review'
-  const showOwnerActivation = isOwner && request.status === 'approved'
+  const reactivatable = envOf(request.environment) === 'dev'
+  const showOwnerActivation =
+    isOwner && (request.status === 'approved' || (request.status === 'activated' && reactivatable))
   const canDiscard =
     (isOwner || isAdmin) &&
     (request.status === 'pending_review' ||
       request.status === 'approved' ||
       request.status === 'changes_requested')
+  const canCancel =
+    (isOwner || isAdmin) &&
+    (request.status === 'approved' || request.status === 'activated')
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -203,6 +223,7 @@ export default function RequestDetailView({
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Request #{request.id}
           </h2>
+          <EnvBadge environment={request.environment} />
           <Badge className={status.badge}>{status.label}</Badge>
           <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
             {riskLabel[request.risk] ?? riskLabel.medium}
@@ -222,6 +243,9 @@ export default function RequestDetailView({
           </span>
           <span>Submitted {formatTime(request.created_at)}</span>
           {request.decided_at && <span>Decided {formatTime(request.decided_at)}</span>}
+          {request.grant_expires_at && (request.status === 'approved' || request.status === 'activated') && (
+            <span>Grant window ends {formatTime(request.grant_expires_at)}</span>
+          )}
         </div>
       </div>
 
@@ -418,14 +442,17 @@ export default function RequestDetailView({
         </div>
       )}
 
-      {/* Owner: activate an approved request */}
+      {/* Owner: activate an approved request (dev grants re-activate in-window) */}
       {showOwnerActivation && (
         <Card>
           <CardHeader>
-            <CardTitle>Ready to use it?</CardTitle>
+            <CardTitle>
+              {request.status === 'activated' ? 'Need fresh credentials?' : 'Ready to use it?'}
+            </CardTitle>
             <CardDescription>
-              Approval creates no credentials — not even for auto-approved requests.
-              Activate below when you are ready; the session lasts {request.duration}h.
+              {request.status === 'activated'
+                ? `Dev grant — activate again for a fresh ≤12h session inside the window${request.grant_expires_at ? ` (ends ${formatTime(request.grant_expires_at)})` : ''}.`
+                : `Approval creates no credentials — not even for auto-approved requests. Activate below when you are ready; sessions last up to ${request.duration}h.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -445,11 +472,18 @@ export default function RequestDetailView({
                   ) : (
                     <>
                       <Rocket className="mr-2 h-4 w-4" />
-                      Activate credentials
+                      {request.status === 'activated' ? 'Activate fresh session' : 'Activate credentials'}
                     </>
                   )}
                 </Button>
               </Tip>
+              {canCancel && (
+                <CancelGrantButton
+                  disabled={busy}
+                  pending={cancelMutation.isPending}
+                  onConfirm={() => cancelMutation.mutate()}
+                />
+              )}
               {canDiscard && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -475,6 +509,23 @@ export default function RequestDetailView({
                 </AlertDialog>
               )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Admin: cancel someone else's live grant */}
+      {isAdmin && !isOwner && canCancel && (
+        <Card>
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center">
+            <p className="flex-1 text-sm text-muted-foreground">
+              This grant is live. Cancel it early if the access is no longer needed —
+              already-issued sessions still run to their own expiry.
+            </p>
+            <CancelGrantButton
+              disabled={busy}
+              pending={cancelMutation.isPending}
+              onConfirm={() => cancelMutation.mutate()}
+            />
           </CardContent>
         </Card>
       )}
@@ -617,5 +668,44 @@ export default function RequestDetailView({
         </Card>
       )}
     </div>
+  )
+}
+
+function CancelGrantButton({
+  disabled,
+  pending,
+  onConfirm,
+}: {
+  disabled: boolean
+  pending: boolean
+  onConfirm: () => void
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="lg" disabled={disabled}>
+          {pending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Ban className="mr-2 h-4 w-4" />
+          )}
+          Cancel grant
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this grant?</AlertDialogTitle>
+          <AlertDialogDescription>
+            No further credentials will be issued for it. Already-issued
+            sessions stay valid until their own expiry — AWS cannot
+            revoke temporary credentials early.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep grant</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>Cancel grant</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

@@ -9,6 +9,7 @@ export const statusStyles: Record<RequestStatus, { badge: string; label: string 
   changes_requested: { badge: 'bg-orange-600/15 text-orange-700 dark:text-orange-400', label: 'Changes requested' },
   activated: { badge: 'bg-primary/15 text-primary', label: 'Active' },
   discarded: { badge: 'bg-muted text-muted-foreground', label: 'Discarded' },
+  cancelled: { badge: 'bg-muted text-muted-foreground', label: 'Cancelled' },
 }
 
 export const riskBadgeClass: Record<string, string> = {
@@ -27,7 +28,21 @@ export const riskLabel: Record<string, string> = {
 
 /** Terminal states — no further action is possible on the request. */
 export function isTerminal(status: RequestStatus): boolean {
-  return status === 'denied' || status === 'activated' || status === 'discarded'
+  return status === 'denied' || status === 'activated' || status === 'discarded' || status === 'cancelled'
+}
+
+/** Group rows by batch (single-unit batches stand alone). */
+export function groupByBatch(rows: AccessRequest[]): { batchId: number; rows: AccessRequest[] }[] {
+  const groups = new Map<number, AccessRequest[]>()
+  for (const row of rows) {
+    const key = row.batch_id ?? row.id
+    const list = groups.get(key)
+    if (list) list.push(row)
+    else groups.set(key, [row])
+  }
+  return [...groups.entries()]
+    .map(([batchId, batchRows]) => ({ batchId, rows: batchRows }))
+    .sort((a, b) => b.batchId - a.batchId)
 }
 
 /** Requests still waiting on someone: a reviewer, or the owner. */
