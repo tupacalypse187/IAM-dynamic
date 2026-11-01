@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - **Technical term highlighting**: IAM actions and ARNs render as code spans in the Technical tab via shape matching (no term list to maintain); prompt instructs backticks for future evaluations
 - **Policy JSON themes + quote fix**: Settings offers Match/VS Code/One Dark/GitHub/Solarized (dark + light) for the policy preview; stray quotes the model leaves around code spans are stripped so users see clean `` `terms` ``
 - **Build marker**: Settings → About shows the baked commit + timestamp so a running app proves which build it is; theme tests wired into `npm test`
+- **Review decisions notify + req IDs + search**: approve/deny/send-back posts ✅/❌/↩️ Slack + Telegram notifications naming the reviewer, requester, and `req-00001` ref; request lists show refs and filter live by id/text/person; quote-stripper hardened for all quote orders plus typographic quotes
 
 ### 🛡️ Fixes
 

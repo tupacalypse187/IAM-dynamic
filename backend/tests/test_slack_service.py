@@ -98,3 +98,51 @@ class TestSendPayload:
         monkeypatch.setattr("services.slack_service.requests.post", fake_post)
         service = SlackService(webhook_url="https://hooks.slack.com/services/T/B/X")
         assert service.send_notification("hello") is False
+
+
+class TestDecisionPayload:
+    def _payload(self, **overrides):
+        kwargs = dict(
+            request_ref="req-00007",
+            decision="approved",
+            reviewer="chad",
+            requester="bob",
+            risk_level="high",
+            request_text="read the production-logs bucket",
+        )
+        kwargs.update(overrides)
+        return SlackService().format_decision_payload(**kwargs)
+
+    def test_header_carries_ref_decision_emoji(self):
+        payload = self._payload()
+        header = payload["blocks"][0]["text"]["text"]
+        assert "req-00007" in header
+        assert "Approved" in header
+        assert "✅" in header
+
+    def test_denied_and_sent_back_emoji(self):
+        assert "❌" in self._payload(decision="denied")["blocks"][0]["text"]["text"]
+        assert "↩️" in self._payload(decision="changes_requested")["blocks"][0]["text"]["text"]
+
+    def test_names_reviewer_requester_and_risk(self):
+        payload = self._payload()
+        joined = " ".join(
+            f.get("text", "") for b in payload["blocks"] if b["type"] == "section"
+            for f in b.get("fields", [])
+        )
+        assert "chad" in joined and "bob" in joined
+        assert "HIGH" in joined
+
+    def test_feedback_section_only_when_present(self):
+        no_fb = [b for b in self._payload()["blocks"] if b["type"] == "section"]
+        assert not any("Reviewer feedback" in (b.get("text") or {}).get("text", "") for b in no_fb)
+        with_fb = self._payload(decision="denied", feedback="too broad, narrow it")
+        sections = [b for b in with_fb["blocks"] if b["type"] == "section" and "text" in b]
+        body = " ".join(s["text"]["text"] for s in sections)
+        assert "too broad, narrow it" in body
+
+    def test_fallback_text_names_decision_and_reviewer(self):
+        payload = self._payload(decision="denied", feedback="nope")
+        assert "req-00007" in payload["text"]
+        assert "denied" in payload["text"]
+        assert "chad" in payload["text"]

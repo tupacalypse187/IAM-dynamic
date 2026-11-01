@@ -22,6 +22,19 @@ RISK_EMOJI = {
     "critical": "🔴",
 }
 
+# Review-decision markers: every decision notification carries one
+DECISION_EMOJI = {
+    "approved": "✅",
+    "denied": "❌",
+    "changes_requested": "↩️",
+}
+
+DECISION_LABEL = {
+    "approved": "Approved",
+    "denied": "Denied",
+    "changes_requested": "Changes requested",
+}
+
 
 def _blockquote(text: str) -> str:
     """Render text as a Telegram <blockquote>, escaping HTML."""
@@ -153,6 +166,82 @@ class TelegramService:
             duration_hours=duration_hours,
             auto_approved=auto_approved,
             approver=approver
+        )
+        return self.send_message(message)
+
+    def format_decision_message(
+        self,
+        request_ref: str,
+        decision: str,
+        reviewer: str,
+        requester: str,
+        risk_level: str,
+        request_text: str,
+        feedback: Optional[str] = None
+    ) -> str:
+        """
+        Format review decision message for Telegram
+
+        Args:
+            request_ref: Human-readable request id (req-00001)
+            decision: approved, denied, or changes_requested
+            reviewer: Admin who decided
+            requester: User who asked for access
+            risk_level: Risk assessment level
+            request_text: The user's access request
+            feedback: Reviewer feedback (required for deny/send-back)
+
+        Returns:
+            Formatted Telegram HTML message
+        """
+        emoji = DECISION_EMOJI.get(decision, "❔")
+        label = DECISION_LABEL.get(decision, decision)
+        risk = RISK_EMOJI.get(risk_level.lower(), "🟡")
+
+        message = (
+            f"{emoji} <b>Request {escape(request_ref)} {escape(label)}</b>\n\n"
+            f"<b>Decided by:</b> {escape(reviewer)}\n"
+            f"<b>Requested by:</b> {escape(requester)}\n"
+            f"<b>Risk Score:</b> {risk} {escape(risk_level.upper())}\n\n"
+            f"{_blockquote(request_text)}"
+        )
+        if (feedback or "").strip():
+            message += f"\n\n<b>Reviewer feedback:</b>\n{_blockquote(feedback or '')}"
+        return message
+
+    def send_decision_notification(
+        self,
+        request_ref: str,
+        decision: str,
+        reviewer: str,
+        requester: str,
+        risk_level: str,
+        request_text: str,
+        feedback: Optional[str] = None
+    ) -> bool:
+        """
+        Send formatted review decision notification
+
+        Args:
+            request_ref: Human-readable request id (req-00001)
+            decision: approved, denied, or changes_requested
+            reviewer: Admin who decided
+            requester: User who asked for access
+            risk_level: Risk assessment level
+            request_text: The user's access request
+            feedback: Reviewer feedback (required for deny/send-back)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        message = self.format_decision_message(
+            request_ref=request_ref,
+            decision=decision,
+            reviewer=reviewer,
+            requester=requester,
+            risk_level=risk_level,
+            request_text=request_text,
+            feedback=feedback
         )
         return self.send_message(message)
 
