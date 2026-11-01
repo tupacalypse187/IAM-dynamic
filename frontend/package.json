@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test test/net-error.test.mjs test/error-detail.test.mjs test/desktop-env.test.mjs test/requests.test.mjs test/prefs.test.mjs"
+    "test": "node --experimental-strip-types --test test/net-error.test.mjs test/error-detail.test.mjs test/desktop-env.test.mjs test/requests.test.mjs test/prefs.test.mjs test/view-as.test.mjs"
   },
   "overrides": {
     "dompurify": "^3.4.17"
