@@ -63,6 +63,7 @@ function AppShell() {
   const [backendUrl, setBackendUrl] = useState<string | null>(null)
   const [appPlatform, setAppPlatform] = useState<string | null>(null)
   const [duration, setDuration] = useState(2)
+  const [environment, setEnvironment] = useState<'dev' | 'stage' | 'prod'>('dev')
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [deniedRequest, setDeniedRequest] = useState<AccessRequest | null>(null)
   const [requestText, setRequestText] = useState('')
@@ -258,18 +259,19 @@ function AppShell() {
     setDuration(2)
   }
 
-  const gotoSubmitForEdit = (text: string, requestDuration: number, provider: string, model: string | null) => {
+  const gotoSubmitForEdit = (text: string, requestDuration: number, provider: string, model: string | null, environment: string) => {
     setRequestText(text)
     setDuration(requestDuration)
     setSelectedProvider(provider)
     if (model) setSelectedModel(model)
+    if (environment === 'stage' || environment === 'prod') setEnvironment(environment)
     setView('submit')
     focusRequestBox()
   }
 
   const handleClone = async (request: AccessRequest, edit: boolean) => {
     if (edit) {
-      gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model)
+      gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model, request.environment)
       return
     }
     // Clone as-is: resubmit the stored parameters directly.
@@ -279,9 +281,10 @@ function AppShell() {
         provider: request.provider,
         model: request.model ?? undefined,
         duration: request.duration,
+        environment: request.environment,
       })
       refreshRequests()
-      openDetail(cloned, 'mine')
+      openDetail(cloned[0], 'mine')
     } catch (err) {
       toast({
         title: 'Clone failed',
@@ -500,6 +503,8 @@ function AppShell() {
                   onRequestTextChange={setRequestText}
                   duration={duration}
                   onDurationChange={setDuration}
+                  environment={environment}
+                  onEnvironmentChange={setEnvironment}
                   selectedProvider={selectedProvider}
                   selectedModel={selectedModel}
                   activeProfileId={activeProfile?.id ?? null}
@@ -546,7 +551,7 @@ function AppShell() {
                   onChanged={handleChanged}
                   onCredentialsIssued={handleCredentialsIssued}
                   onResubmit={(request) =>
-                    gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model)
+                    gotoSubmitForEdit(request.request_text, request.duration, request.provider, request.model, request.environment)
                   }
                   onShowGuidance={(request) => {
                     setDeniedRequest(request)
@@ -593,7 +598,7 @@ function AppShell() {
                   reviewer={deniedRequest.reviewer}
                   reviewerFeedback={deniedRequest.feedback}
                   onReviseRequest={(text) => {
-                    gotoSubmitForEdit(text, deniedRequest.duration, deniedRequest.provider, deniedRequest.model)
+                    gotoSubmitForEdit(text, deniedRequest.duration, deniedRequest.provider, deniedRequest.model, deniedRequest.environment)
                   }}
                   onStartFresh={() => {
                     setDeniedRequest(null)

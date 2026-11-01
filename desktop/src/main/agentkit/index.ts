@@ -67,6 +67,7 @@ export async function generatePolicy(
     provider: input.provider,
     model: input.model,
     duration: durationHours,
+    environment: input.environment,
     profileId: input.profileId,
   })
 

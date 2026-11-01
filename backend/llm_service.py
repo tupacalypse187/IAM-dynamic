@@ -224,20 +224,72 @@ class PolicyResponse:
     """
     VALID_RISKS = ("low", "medium", "high", "critical")
 
-    def __init__(self, policy: Dict[str, Any], risk: str, explanation: str, approver_note: str):
+    def __init__(
+        self,
+        policy: Dict[str, Any],
+        risk: str,
+        explanation: str,
+        approver_note: str,
+        label: str = "",
+    ):
         self.policy = policy
         normalized = (risk or "").strip().lower()
         self.risk = normalized if normalized in self.VALID_RISKS else "medium"
         self.explanation = explanation
         self.approver_note = approver_note
+        self.label = label or ""
+
+
+MAX_POLICY_UNITS = 5
+
+
+def responses_from_data(data: Dict[str, Any]) -> list["PolicyResponse"]:
+    """Split one model reply into per-grant policy responses.
+
+    When the reply carries a valid `units` array (1-5 entries, each with
+    its own policy + risk), each unit becomes its own response so the
+    caller can approve the low-risk grants while the rest wait for
+    review. Anything else falls back to the legacy single-policy shape.
+    """
+    units = data.get("units")
+    if isinstance(units, list) and 1 <= len(units) <= MAX_POLICY_UNITS:
+        responses = []
+        for unit in units:
+            if not isinstance(unit, dict) or not isinstance(unit.get("policy"), dict):
+                return [_single_response(data)]
+            responses.append(
+                PolicyResponse(
+                    policy=unit.get("policy", {}),
+                    risk=unit.get("risk_score", "medium"),
+                    explanation=unit.get("explanation", ""),
+                    approver_note=unit.get("approver_note", ""),
+                    label=unit.get("label", ""),
+                )
+            )
+        return responses
+    return [_single_response(data)]
+
+
+def _single_response(data: Dict[str, Any]) -> "PolicyResponse":
+    return PolicyResponse(
+        policy=data.get("policy", {}),
+        risk=data.get("risk_score", "medium"),
+        explanation=data.get("explanation", ""),
+        approver_note=data.get("approver_note", ""),
+    )
 
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers"""
 
     @abstractmethod
-    def generate_policy(self, request_text: str) -> PolicyResponse:
-        """Generate an IAM policy from natural language request"""
+    def generate_policy(self, request_text: str) -> list[PolicyResponse]:
+        """Generate IAM policies from natural language request.
+
+        Returns one response per separable grant (usually one). Each
+        unit carries its own risk so low-risk grants can be approved
+        while the remainder waits for review.
+        """
         pass
 
     @abstractmethod
@@ -258,6 +310,14 @@ You must respond with a VALID JSON object adhering to this schema:
   "explanation": "Brief explanation of permissions and risks.",
   "approver_note": "Recommendation for the approver."
 }
+
+When the request contains clearly SEPARABLE grants at different risk
+levels (e.g. read-only debugging plus a privileged write), split them
+into a "units" array instead — at most 5 units, each with its own
+policy, risk_score, explanation, approver_note, and short "label".
+The low-risk units are approved immediately so the user can work while
+the riskier remainder waits for review; only split when the grants are
+genuinely independent. Single-grant requests keep the flat shape above.
 
 RULES:
 1. NO WILDCARDS ('*') on sensitive actions or resources unless absolutely necessary (score as HIGH/CRITICAL if present).
@@ -331,15 +391,12 @@ class GeminiProvider(LLMProvider):
                 response = chat.send_message(f"User Request: {request_text}")
                 response_text = response.text
 
-            # Parse JSON
+            # Parse JSON (single grant or separable units)
             data = json.loads(response_text)
-
-            return PolicyResponse(
-                policy=data.get("policy", {}),
-                risk=data.get("risk_score", "medium"),
-                explanation=data.get("explanation", "No explanation provided."),
-                approver_note=data.get("approver_note", "")
-            )
+            responses = responses_from_data(data)
+            if not data.get("units") and not responses[0].explanation:
+                responses[0].explanation = "No explanation provided."
+            return responses
         except UserFacingError:
             raise
         except Exception as e:
@@ -458,12 +515,7 @@ class OpenAICompatibleProvider(LLMProvider):
             response = self.client.chat.completions.create(**request_kwargs)
             data = _parse_json_content(response.choices[0].message.content)
 
-            return PolicyResponse(
-                policy=data.get("policy", {}),
-                risk=data.get("risk_score", "medium"),
-                explanation=data.get("explanation", ""),
-                approver_note=data.get("approver_note", "")
-            )
+            return responses_from_data(data)
         except UserFacingError:
             raise
         except Exception as e:
@@ -568,12 +620,10 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
 
             data = _parse_json_content(response.content[0].text)
 
-            return PolicyResponse(
-                policy=data.get("policy", {}),
-                risk=data.get("risk_score", "medium"),
-                explanation=data.get("explanation", "No explanation provided."),
-                approver_note=data.get("approver_note", "")
-            )
+            responses = responses_from_data(data)
+            if not data.get("units") and not responses[0].explanation:
+                responses[0].explanation = "No explanation provided."
+            return responses
         except UserFacingError:
             raise
         except Exception as e:

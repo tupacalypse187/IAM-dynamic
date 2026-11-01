@@ -58,6 +58,20 @@ export type RequestStatus =
   | 'changes_requested'
   | 'activated'
   | 'discarded'
+  | 'cancelled'
+
+export type Environment = 'dev' | 'stage' | 'prod'
+
+/** Environment badge colors — dev blue, stage amber, prod red. */
+export const ENV_STYLES: Record<Environment, { label: string; badgeClass: string; dotClass: string }> = {
+  dev: { label: 'Development', badgeClass: 'bg-sky-500/15 text-sky-600 dark:text-sky-400', dotClass: 'bg-sky-500' },
+  stage: { label: 'Staging', badgeClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-400', dotClass: 'bg-amber-500' },
+  prod: { label: 'Production', badgeClass: 'bg-red-500/15 text-red-600 dark:text-red-400', dotClass: 'bg-red-500' },
+}
+
+export function envOf(value: string | null | undefined): Environment {
+  return value === 'stage' || value === 'prod' ? value : 'dev'
+}
 
 /** A persisted access request with its evaluated LLM response + review state. */
 export interface AccessRequest {
@@ -67,6 +81,9 @@ export interface AccessRequest {
   provider: string
   model: string | null
   duration: number
+  environment: Environment
+  batch_id: number | null
+  grant_expires_at: string | null
   policy: Record<string, unknown>
   risk: 'low' | 'medium' | 'high' | 'critical'
   explanation: string

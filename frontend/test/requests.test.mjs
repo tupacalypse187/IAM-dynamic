@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 // The helper is TypeScript with a type-only import; strip-types handles it,
 // and the @/ alias is resolved by mapping to the relative source path.
 import {
+  groupByBatch,
   isLiveSession,
   isOpen,
   isTerminal,
@@ -57,5 +58,29 @@ describe('request status helpers', () => {
     const long = `x${'y'.repeat(200)}`
     assert.ok(requestExcerpt(long).length <= 120)
     assert.ok(requestExcerpt(long).endsWith('…'))
+  })
+
+  it('treats cancelled grants as terminal and closed', () => {
+    assert.equal(isTerminal('cancelled'), true)
+    assert.equal(isOpen('cancelled'), false)
+  })
+
+  it('groups batch units under their shared batch id, newest first', () => {
+    const rows = [
+      { id: 7, batch_id: 7 },
+      { id: 9, batch_id: 8 },
+      { id: 8, batch_id: 8 },
+    ]
+    const groups = groupByBatch(rows)
+    assert.equal(groups.length, 2)
+    assert.equal(groups[0].batchId, 8)
+    assert.deepEqual(groups[0].rows.map((r) => r.id), [9, 8])
+    assert.equal(groups[1].batchId, 7)
+  })
+
+  it('stands null batch ids alone under their own id', () => {
+    const groups = groupByBatch([{ id: 3, batch_id: null }])
+    assert.equal(groups.length, 1)
+    assert.equal(groups[0].batchId, 3)
   })
 })

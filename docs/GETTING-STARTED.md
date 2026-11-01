@@ -258,6 +258,10 @@ npm run dev
 
 > 💡 **Use your own key:** open **Settings → LLM profiles**, add a profile with your provider key, and activate it — new evaluations bill to your key instead of the server default. Admins curate the available providers under **Settings → Provider catalog**; disabling a provider/model blocks new evaluations with it (server defaults and profiles alike) until re-enabled.
 
+> 🎪 **Hackathon demo mode:** seed throwaway requesters with `python backend/scripts/seed_demo_users.py`, then use the **View as…** menu (top bar) to impersonate exactly those users — anyone who self-registers later is never switchable. Tokens last 15 minutes and every switch is audit-logged. Remove before production (endpoint + script + banner).
+>
+> 🌍 **Environments:** the submit form offers **Development** (blue, up to 31 days — approved grants re-activate in fresh ≤12h sessions without resubmitting), **Staging** (amber, up to 7 days, first activation within 72h), and **Production** (red, max 2 hours, first activation within 24h; low-risk still auto-approves). One submission may split into labeled units sharing a batch — activate the low-risk ones now while the rest awaits review. Cancel a live grant anytime; already-issued sessions run to their own expiry.
+
 ---
 
 ## 🐛 Troubleshooting

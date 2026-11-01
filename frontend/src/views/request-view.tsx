@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { usePolicyAgent, type SubmitOutcome } from '@/hooks/use-policy-agent'
 import type { AgentProgress, ClarifyQuestion } from '@/types/desktop'
+import { ENVIRONMENTS, formatGrantLength, type EnvironmentId } from '@/lib/environments'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
@@ -12,13 +13,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
+
 
 interface RequestViewProps {
   requestText: string
   onRequestTextChange: (text: string) => void
   duration: number
   onDurationChange: (duration: number) => void
+  environment: EnvironmentId
+  onEnvironmentChange: (env: EnvironmentId) => void
   selectedProvider: string
   selectedModel?: string
   /** Active saved profile (its key evaluates); null = server defaults. */
@@ -34,6 +37,8 @@ export default function RequestView({
   onRequestTextChange,
   duration,
   onDurationChange,
+  environment,
+  onEnvironmentChange,
   selectedProvider,
   selectedModel,
   activeProfileId,
@@ -49,6 +54,9 @@ export default function RequestView({
 
   useEffect(() => agent.subscribeProgress((p: AgentProgress) => setStage(p.message)), [agent])
 
+  const envConfig = ENVIRONMENTS[environment]
+  const clampToEnv = (hours: number) => Math.min(Math.max(1, Math.round(hours)), envConfig.maxHours)
+
   const generateMutation = useMutation({
     mutationFn: (extraAnswers: Record<string, string>) =>
       agent.submit({
@@ -57,6 +65,7 @@ export default function RequestView({
         provider: selectedProvider,
         model: selectedModel,
         durationHours: duration,
+        environment,
         answers: extraAnswers,
         profileId: activeProfileId ?? undefined,
       }),
@@ -166,24 +175,69 @@ export default function RequestView({
             </div>
           </div>
 
-          {/* Duration */}
+          {/* Environment + grant length */}
           <div className="space-y-4" data-tour="request-duration">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="session-duration">Session Duration</Label>
-              <span className="text-sm font-medium tabular-nums">{duration} hours</span>
+            <div>
+              <Label id="env-label">Environment</Label>
+              <div className="mt-2 grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="env-label">
+                {(Object.keys(ENVIRONMENTS) as EnvironmentId[]).map((id) => (
+                  <Tip key={id} label={ENVIRONMENTS[id].windowNote}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={environment === id}
+                      onClick={() => {
+                        onEnvironmentChange(id)
+                        onDurationChange(Math.min(duration, ENVIRONMENTS[id].maxHours))
+                      }}
+                      className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                        environment === id
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-input text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {ENVIRONMENTS[id].label}
+                    </button>
+                  </Tip>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">{envConfig.windowNote}</p>
             </div>
-            <Slider
-              id="session-duration"
-              aria-label="Session duration in hours"
-              value={[duration]}
-              onValueChange={(values) => onDurationChange(values[0])}
-              min={1}
-              max={12}
-              step={1}
-              className="w-full"
-            />
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="grant-length">Grant length</Label>
+                <span className="text-sm font-medium tabular-nums">{formatGrantLength(duration)}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {envConfig.presets.map((hours) => (
+                  <Button
+                    key={hours}
+                    type="button"
+                    variant={duration === hours ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={() => onDurationChange(hours)}
+                  >
+                    {formatGrantLength(hours)}
+                  </Button>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  id="grant-length"
+                  type="number"
+                  min={1}
+                  max={envConfig.maxHours}
+                  value={duration}
+                  aria-label={`Custom grant length in hours, 1 to ${envConfig.maxHours}`}
+                  onChange={(e) => onDurationChange(clampToEnv(Number(e.target.value) || 1))}
+                  className="w-28"
+                />
+                <span className="text-xs text-muted-foreground">hours (max {formatGrantLength(envConfig.maxHours)})</span>
+              </div>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Maximum duration may be limited based on risk level assessment.
+              Each session is capped at 12 hours by AWS; dev grants re-activate inside their
+              window. Risk assessment may shorten the grant further.
             </p>
           </div>
 

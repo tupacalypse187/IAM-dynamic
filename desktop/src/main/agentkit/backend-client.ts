@@ -63,6 +63,7 @@ export function createBackendClient(config: BackendConfig) {
       provider: string
       model?: string
       duration: number
+      environment?: string
       profileId?: number
     }) =>
       callBackend<GeneratedPolicy>(config, '/api/generate-policy', {
@@ -70,6 +71,7 @@ export function createBackendClient(config: BackendConfig) {
         provider: input.provider,
         model: input.model,
         duration: input.duration,
+        environment: input.environment,
         profile_id: input.profileId,
       }),
 

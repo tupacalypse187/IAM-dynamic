@@ -2,11 +2,12 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Copy, FileEdit, Plus, Radio } from 'lucide-react'
 import { api } from '@/lib/api'
-import { isLiveSession, requestExcerpt, reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
+import { groupByBatch, isLiveSession, requestExcerpt, reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
 import type { AccessRequest } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { EnvBadge } from '@/components/env-badge'
 import { Tip } from '@/components/tip'
 
 interface MyRequestsViewProps {
@@ -36,6 +37,7 @@ function RequestRow({
       >
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-medium">#{request.id}</span>
+          <EnvBadge environment={request.environment} />
           <Badge className={status.badge}>{status.label}</Badge>
           <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
             {riskLabel[request.risk] ?? riskLabel.medium}
@@ -77,12 +79,34 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
     const all = query.data ?? []
     return {
       live: all.filter((r) => isLiveSession(r)),
-      open: all.filter(
-        (r) => r.status === 'pending_review' || r.status === 'changes_requested' || r.status === 'approved',
+      open: groupByBatch(
+        all.filter(
+          (r) => r.status === 'pending_review' || r.status === 'changes_requested' || r.status === 'approved',
+        ),
       ),
-      recent: all.slice(0, 10),
+      recent: groupByBatch(all.slice(0, 10)),
     }
   }, [query.data])
+
+  const renderGroup = (group: { batchId: number; rows: AccessRequest[] }) => (
+    <li key={group.batchId} className="space-y-2">
+      {group.rows.length > 1 && (
+        <p className="text-xs font-medium text-muted-foreground">
+          Batch #{group.batchId} · {group.rows.length} grants — low-risk units activate now, the rest wait for review.
+        </p>
+      )}
+      <ul className="space-y-2">
+        {group.rows.map((request) => (
+          <RequestRow
+            key={request.id}
+            request={request}
+            onOpen={onOpenRequest}
+            onClone={(edit) => onCloneRequest(request, edit)}
+          />
+        ))}
+      </ul>
+    </li>
+  )
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -153,14 +177,7 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
                 <p className="text-sm text-muted-foreground">Nothing open — submit a request to get started.</p>
               ) : (
                 <ul className="space-y-2">
-                  {open.map((request) => (
-                    <RequestRow
-                      key={request.id}
-                      request={request}
-                      onOpen={onOpenRequest}
-                      onClone={(edit) => onCloneRequest(request, edit)}
-                    />
-                  ))}
+                  {open.map(renderGroup)}
                 </ul>
               )}
             </CardContent>
@@ -176,14 +193,7 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
                 <p className="text-sm text-muted-foreground">No requests yet.</p>
               ) : (
                 <ul className="space-y-2">
-                  {recent.map((request) => (
-                    <RequestRow
-                      key={request.id}
-                      request={request}
-                      onOpen={onOpenRequest}
-                      onClone={(edit) => onCloneRequest(request, edit)}
-                    />
-                  ))}
+                  {recent.map(renderGroup)}
                 </ul>
               )}
             </CardContent>

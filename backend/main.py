@@ -7,9 +7,9 @@ Generates least-privilege IAM policies using LLM and issues temporary credential
 import os
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Depends, status
@@ -37,6 +37,8 @@ from services.request_store import (
     RequestStoreError,
     STATUS_PENDING,
     STATUS_APPROVED,
+    STATUS_ACTIVATED,
+    STATUS_CANCELLED,
 )
 from services.audit_log import AuditLog
 from services.profile_store import ProfileStore, ProfileStoreError
@@ -353,12 +355,41 @@ class DemoUsersResponse(BaseModel):
     users: list
 
 
+Environment = Literal["dev", "stage", "prod"]
+
+# Deployment environment tiers. max_duration_hours caps the requested
+# grant; activation_window_hours caps how long after approval the grant
+# may first be activated (stage 72h, prod 24h per owner); only dev
+# grants re-activate inside their window — stage/prod are single-use.
+# Every session is still min(risk ceiling, 12h) — AWS caps STS at 12h.
+ENVIRONMENTS: dict[str, dict] = {
+    "dev": {"label": "Development", "max_duration_hours": 744, "activation_window_hours": 744, "reactivatable": True},
+    "stage": {"label": "Staging", "max_duration_hours": 168, "activation_window_hours": 72, "reactivatable": False},
+    "prod": {"label": "Production", "max_duration_hours": 2, "activation_window_hours": 24, "reactivatable": False},
+}
+
+ENV_COLORS: dict[str, str] = {"dev": "blue", "stage": "amber", "prod": "red"}
+
+
+def _env_or_400(environment: str) -> dict:
+    if environment not in ENVIRONMENTS:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown environment '{environment}'."
+        )
+    return ENVIRONMENTS[environment]
+
+
+def _grant_expiry(from_time: datetime, environment: str) -> str:
+    return (from_time + timedelta(hours=ENVIRONMENTS[environment]["activation_window_hours"])).isoformat()
+
+
 class SubmitAccessRequest(BaseModel):
     """Submit a new access request for LLM evaluation + review routing"""
     request_text: str = Field(..., description="Natural language description of access needed", min_length=10)
     provider: Optional[str] = Field(default="gemini", description="LLM provider to use")
     model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
-    duration: int = Field(default=2, description="Requested session duration in hours", ge=1, le=12)
+    duration: int = Field(default=2, description="Requested grant length in hours", ge=1, le=744)
+    environment: Environment = Field(default="dev", description="Deployment tier: dev, stage, or prod")
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
     profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
 
@@ -371,6 +402,9 @@ class AccessRequestModel(BaseModel):
     provider: str
     model: Optional[str] = None
     duration: int
+    environment: str = "dev"
+    batch_id: Optional[int] = None
+    grant_expires_at: Optional[str] = None
     policy: dict
     risk: str
     explanation: str
@@ -397,7 +431,7 @@ class ResubmitAccessRequest(BaseModel):
     request_text: Optional[str] = Field(default=None, description="Edited request text (defaults to stored text)", min_length=10)
     provider: Optional[str] = Field(default=None, description="LLM provider to use (defaults to stored)")
     model: Optional[str] = Field(default=None, description="Model to use (overrides provider default)")
-    duration: Optional[int] = Field(default=None, description="Requested session duration in hours", ge=1, le=12)
+    duration: Optional[int] = Field(default=None, description="Requested grant length in hours", ge=1, le=744)
     profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
 
 
@@ -1021,8 +1055,8 @@ async def generate_policy(request: PolicyRequest, user: str = Depends(get_curren
         )
         provider = get_llm_provider(provider_id, model, api_key)
 
-        # Generate policy
-        response: PolicyResponse = provider.generate_policy(request.request_text)
+        # Generate policy (legacy single-grant shape: first unit)
+        response: PolicyResponse = provider.generate_policy(request.request_text)[0]
 
         # Calculate max duration based on risk
         max_duration = get_max_duration(response.risk)
@@ -1260,17 +1294,21 @@ def _evaluate_access_request(
     request_text: str,
     duration: int,
     api_key: Optional[str] = None,
-):
+) -> list[tuple[PolicyResponse, int, bool]]:
     """Run the LLM evaluation shared by submit and resubmit.
 
-    Returns (PolicyResponse, clamped duration, auto_approved).
+    Returns one (PolicyResponse, clamped duration, auto_approved) triple
+    per separable grant — usually exactly one.
     """
     provider = get_llm_provider(provider_id, model, api_key)
-    response: PolicyResponse = provider.generate_policy(request_text)
-    max_duration = get_max_duration(response.risk)
-    actual_duration = min(duration, max_duration)
-    auto_approved = response.risk.lower() == "low"
-    return response, actual_duration, auto_approved
+    responses: list[PolicyResponse] = provider.generate_policy(request_text)
+    evaluated = []
+    for response in responses:
+        max_duration = get_max_duration(response.risk)
+        actual_duration = min(duration, max_duration)
+        auto_approved = response.risk.lower() == "low"
+        evaluated.append((response, actual_duration, auto_approved))
+    return evaluated
 
 
 def _get_stored_request(request_id: int) -> dict:
@@ -1288,21 +1326,30 @@ def _require_owner_or_admin(stored: dict, user: str) -> None:
         )
 
 
-@app.post("/api/requests", response_model=AccessRequestModel, status_code=201)
+@app.post("/api/requests", response_model=list[AccessRequestModel], status_code=201)
 async def submit_access_request(
     body: SubmitAccessRequest, user: str = Depends(get_current_user)
 ):
     """Evaluate a request with the LLM, persist it, and route for review.
 
-    Low-risk requests are marked approved (actor "system" in the audit
-    trail) but still require POST /api/requests/{id}/activate before any
-    credentials exist. Everything else waits in pending_review.
+    The evaluation may split separable grants into units (at most 5):
+    each unit becomes its own request row sharing a batch_id, so
+    low-risk units are approved immediately while the riskier remainder
+    waits in pending_review. Low-risk rows are marked approved (actor
+    "system") but still require POST /api/requests/{id}/activate before
+    any credentials exist.
     """
+    env = _env_or_400(body.environment)
+    if body.duration > env["max_duration_hours"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.environment} grants allow at most {env['max_duration_hours']} hours.",
+        )
     provider_id, model, api_key, profile_label = _resolve_evaluation_config(
         user, body.provider, body.model, body.profile_id
     )
     try:
-        response, actual_duration, auto_approved = _evaluate_access_request(
+        evaluated = _evaluate_access_request(
             provider_id, model, body.request_text, body.duration, api_key
         )
     except UserFacingError as e:
@@ -1315,55 +1362,62 @@ async def submit_access_request(
             detail="An unexpected error occurred. Please try again.",
         )
 
-    request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
+    now = datetime.now(timezone.utc)
     store = _require_request_store()
+    batch: list[dict] = []
     try:
-        stored = store.create(
-            requester=user,
-            request_text=body.request_text,
-            provider=provider_id or "gemini",
-            model=model,
-            duration=actual_duration,
-            policy=response.policy,
-            risk=response.risk,
-            explanation=response.explanation,
-            approver_note=response.approver_note,
-            auto_approved=auto_approved,
-            status=request_status,
-        )
+        for response, actual_duration, auto_approved in evaluated:
+            request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
+            stored = store.create(
+                requester=user,
+                request_text=body.request_text,
+                provider=provider_id or "gemini",
+                model=model,
+                duration=actual_duration,
+                policy=response.policy,
+                risk=response.risk,
+                explanation=response.explanation,
+                approver_note=response.approver_note,
+                auto_approved=auto_approved,
+                status=request_status,
+                environment=body.environment,
+                grant_expires_at=_grant_expiry(now, body.environment)
+                if auto_approved
+                else None,
+            )
+            batch.append(stored)
+        # The batch id is the first row's id (single-unit batches point
+        # at themselves), so clients can group without a second roundtrip.
+        store.set_batch_ids([row["id"] for row in batch], batch[0]["id"])
     except RequestStoreError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    rows = [store.get(row["id"]) for row in batch]
 
-    _audit(
-        "submitted",
-        request_id=stored["id"],
-        actor=user,
-        to_status=request_status,
-        risk=response.risk,
-        provider=stored["provider"],
-        profile=profile_label,
-        duration_hours=actual_duration,
-        revision=stored["revision"],
-    )
-    if auto_approved:
+    for stored, (response, actual_duration, auto_approved) in zip(rows, evaluated):
+        assert stored is not None
         _audit(
-            "auto_approved",
+            "submitted",
+            request_id=stored["id"],
+            actor=user,
+            to_status=stored["status"],
+            risk=response.risk,
+            provider=stored["provider"],
+            profile=profile_label,
+            environment=body.environment,
+            batch_id=stored["batch_id"],
+            label=response.label,
+            duration_hours=actual_duration,
+            revision=stored["revision"],
+        )
+        _audit(
+            "auto_approved" if auto_approved else "queued_for_review",
             request_id=stored["id"],
             actor="system",
             actor_role="automated",
-            to_status=request_status,
+            to_status=stored["status"],
             risk=response.risk,
         )
-    else:
-        _audit(
-            "queued_for_review",
-            request_id=stored["id"],
-            actor="system",
-            actor_role="automated",
-            to_status=request_status,
-            risk=response.risk,
-        )
-    return stored
+    return rows
 
 
 class RecordAccessRequest(BaseModel):
@@ -1379,7 +1433,8 @@ class RecordAccessRequest(BaseModel):
     request_text: str = Field(..., min_length=10)
     provider: Optional[str] = Field(default="gemini")
     model: Optional[str] = Field(default=None)
-    duration: int = Field(default=2, ge=1, le=12)
+    duration: int = Field(default=2, ge=1, le=744)
+    environment: Environment = Field(default="dev")
     policy: dict
     risk: str = Field(default="medium")
     explanation: str = Field(default="")
@@ -1387,7 +1442,7 @@ class RecordAccessRequest(BaseModel):
     profile_id: Optional[int] = Field(default=None, description="Your saved profile (provider/model attribution only; no LLM call)")
 
 
-@app.post("/api/requests/record", response_model=AccessRequestModel, status_code=201)
+@app.post("/api/requests/record", response_model=list[AccessRequestModel], status_code=201)
 async def record_access_request(
     body: RecordAccessRequest, user: str = Depends(get_current_user)
 ):
@@ -1395,6 +1450,12 @@ async def record_access_request(
     violation = find_overly_broad_policy_violation(body.policy)
     if violation is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    env = _env_or_400(body.environment)
+    if body.duration > env["max_duration_hours"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.environment} grants allow at most {env['max_duration_hours']} hours.",
+        )
     provider_id, model, _, profile_label = _resolve_evaluation_config(
         user, body.provider, body.model, body.profile_id
     )
@@ -1418,9 +1479,17 @@ async def record_access_request(
             approver_note=body.approver_note,
             auto_approved=auto_approved,
             status=request_status,
+            environment=body.environment,
+            batch_id=None,
+            grant_expires_at=_grant_expiry(datetime.now(timezone.utc), body.environment)
+            if auto_approved
+            else None,
         )
+        store.set_batch_ids([stored["id"]], stored["id"])
+        stored = store.get(stored["id"])
     except RequestStoreError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    assert stored is not None
     _audit(
         "submitted",
         request_id=stored["id"],
@@ -1429,6 +1498,8 @@ async def record_access_request(
         risk=risk,
         provider=stored["provider"],
         profile=profile_label,
+        environment=body.environment,
+        batch_id=stored["batch_id"],
         duration_hours=actual_duration,
         revision=stored["revision"],
     )
@@ -1440,7 +1511,7 @@ async def record_access_request(
         to_status=request_status,
         risk=risk,
     )
-    return stored
+    return [stored]
 
 
 @app.get("/api/requests", response_model=list[AccessRequestModel])
@@ -1505,9 +1576,20 @@ async def review_access_request(
         updated = store.set_status(
             request_id, to_status, reviewer=user, feedback=(body.feedback or None)
         )
+        if to_status == STATUS_APPROVED:
+            # Approval opens the environment grant window (dev 31d for
+            # repeat activation, stage 72h / prod 24h to first use).
+            store.set_grant_expires_at(
+                request_id,
+                _grant_expiry(
+                    datetime.now(timezone.utc), updated.get("environment") or "dev"
+                ),
+            )
+            updated = store.get(request_id)
     except RequestStoreError as e:
         code = 404 if e.code == "not_found" else 400
         raise HTTPException(status_code=code, detail=str(e))
+    assert updated is not None
     _audit(
         event,
         request_id=request_id,
@@ -1531,14 +1613,22 @@ async def resubmit_access_request(
             status_code=403, detail="Only the requester can resubmit this request."
         )
     request_text = body.request_text or stored["request_text"]
+    env = _env_or_400(stored.get("environment") or "dev")
     duration = body.duration if body.duration is not None else stored["duration"]
+    if duration > env["max_duration_hours"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{stored.get('environment') or 'dev'} grants allow at most {env['max_duration_hours']} hours.",
+        )
     provider_id, model, api_key, profile_label = _resolve_evaluation_config(
         user, body.provider or stored["provider"], body.model, body.profile_id
     )
     try:
+        # Resubmits are targeted follow-ups: re-evaluate as one grant
+        # (first unit) against the same row.
         response, actual_duration, auto_approved = _evaluate_access_request(
             provider_id, model, request_text, duration, api_key
-        )
+        )[0]
     except UserFacingError as e:
         logger.error(f"Access request re-evaluation failed (user-facing): {e.log_message}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
@@ -1567,6 +1657,13 @@ async def resubmit_access_request(
     except RequestStoreError as e:
         code = 404 if e.code == "not_found" else 400
         raise HTTPException(status_code=code, detail=str(e))
+    if request_status == STATUS_APPROVED:
+        store.set_grant_expires_at(
+            request_id,
+            _grant_expiry(datetime.now(timezone.utc), stored.get("environment") or "dev"),
+        )
+        updated = store.get(request_id)
+        assert updated is not None
     _audit(
         "resubmitted",
         request_id=request_id,
@@ -1606,6 +1703,43 @@ async def discard_access_request(
     return updated
 
 
+@app.post("/api/requests/{request_id}/cancel", response_model=AccessRequestModel)
+async def cancel_access_request(
+    request_id: int, user: str = Depends(get_current_user)
+):
+    """Cancel an approved grant early (owner, or any admin).
+
+    Closes the grant window: no further activations are possible.
+    Already-issued sessions stay valid until their own expiry — AWS STS
+    has no revocation — so the UI says exactly that.
+    """
+    stored = _get_stored_request(request_id)
+    if stored["requester"] != user and not _is_admin(user):
+        raise HTTPException(
+            status_code=403, detail="Only the requester or an administrator can cancel this grant."
+        )
+    if stored["status"] not in (STATUS_APPROVED, STATUS_ACTIVATED):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only approved grants can be cancelled (request {request_id} is {stored['status']}) — discard open requests instead.",
+        )
+    store = _require_request_store()
+    try:
+        updated = store.set_status(request_id, STATUS_CANCELLED, reviewer=user)
+    except RequestStoreError as e:
+        code = 404 if e.code == "not_found" else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    _audit(
+        "grant_cancelled",
+        request_id=request_id,
+        actor=user,
+        from_status=stored["status"],
+        to_status=STATUS_CANCELLED,
+        risk=stored["risk"],
+    )
+    return updated
+
+
 @app.post("/api/requests/{request_id}/activate", response_model=CredentialsResponse)
 async def activate_access_request(
     request_id: int, user: str = Depends(get_current_user)
@@ -1622,10 +1756,24 @@ async def activate_access_request(
         raise HTTPException(
             status_code=403, detail="Only the requester can activate this request."
         )
-    if stored["status"] != STATUS_APPROVED:
+    if stored["status"] not in (STATUS_APPROVED, STATUS_ACTIVATED):
         raise HTTPException(
             status_code=400,
-            detail=f"Only approved requests can be activated (request {request_id} is {stored['status']}).",
+            detail=f"Only approved grants can be activated (request {request_id} is {stored['status']}).",
+        )
+    env = _env_or_400(stored.get("environment") or "dev")
+    if stored["status"] == STATUS_ACTIVATED and not env["reactivatable"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"This {stored.get('environment') or 'dev'} grant is single-use — submit a new request for fresh credentials.",
+        )
+    grant_expires_at = stored.get("grant_expires_at")
+    if grant_expires_at and datetime.now(timezone.utc) > datetime.fromisoformat(
+        grant_expires_at
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"The grant window for request {request_id} expired — submit a new request.",
         )
     violation = find_overly_broad_policy_violation(stored["policy"])
     if violation is not None:
@@ -1661,11 +1809,13 @@ async def activate_access_request(
         "activated",
         request_id=request_id,
         actor=user,
-        from_status=STATUS_APPROVED,
+        from_status=stored["status"],
         to_status="activated",
         risk=stored["risk"],
         reviewer=reviewer,
         base_role=base_role_class,
+        environment=stored.get("environment") or "dev",
+        reactivation=stored["status"] == STATUS_ACTIVATED,
         duration_hours=stored["duration"],
     )
     risk = stored["risk"].lower()

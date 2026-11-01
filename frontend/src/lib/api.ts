@@ -131,9 +131,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // Access requests + review workflow
-  submitRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; profile_id?: number }) =>
-    request<AccessRequest>('/api/requests', {
+  // Access requests + review workflow. Submit/record return the created
+  // batch (usually one row): units share a batch_id for grouped display.
+  submitRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; environment?: string; profile_id?: number }) =>
+    request<AccessRequest[]>('/api/requests', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -143,13 +144,14 @@ export const api = {
     provider?: string
     model?: string
     duration: number
+    environment?: string
     policy: Record<string, unknown>
     risk: string
     explanation: string
     approver_note: string
     profile_id?: number
   }) =>
-    request<AccessRequest>('/api/requests/record', {
+    request<AccessRequest[]>('/api/requests/record', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -204,6 +206,12 @@ export const api = {
 
   discardRequest: (id: number) =>
     request<AccessRequest>(`/api/requests/${id}/discard`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  cancelRequest: (id: number) =>
+    request<AccessRequest>(`/api/requests/${id}/cancel`, {
       method: 'POST',
       body: JSON.stringify({}),
     }),

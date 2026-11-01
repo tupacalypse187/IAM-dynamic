@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, ShieldCheck, User } from 'lucide-react'
 import { api } from '@/lib/api'
-import { requestExcerpt, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
+import { groupByBatch, requestExcerpt, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
 import type { AccessRequest, RequestStatus } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { EnvBadge } from '@/components/env-badge'
 import { Tip } from '@/components/tip'
 
 interface ReviewDashboardViewProps {
@@ -23,6 +24,7 @@ const FILTERS: { value: QueueFilter; label: string }[] = [
   { value: 'changes_requested', label: 'Sent back' },
   { value: 'denied', label: 'Denied' },
   { value: 'activated', label: 'Active' },
+  { value: 'cancelled', label: 'Cancelled' },
 ]
 
 function timeAgo(iso: string): string {
@@ -126,46 +128,55 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
           {queueQuery.data && queueQuery.data.length > 0 && (
             <Card>
               <CardContent className="pt-6">
-                <ul className="space-y-2">
-                  {queueQuery.data.map((request) => {
-                    const status = statusStyles[request.status]
-                    return (
-                      <li key={request.id}>
-                        <button
-                          type="button"
-                          onClick={() => onOpenRequest(request)}
-                          className="block w-full rounded-md border p-3 text-left hover:border-primary/50 hover:bg-muted/50"
-                          aria-label={`Review request ${request.id} from ${request.requester}`}
-                        >
-                          <span className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">#{request.id}</span>
-                            <Badge className={status.badge}>{status.label}</Badge>
-                            <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
-                              {riskLabel[request.risk] ?? riskLabel.medium}
-                            </Badge>
-                            {request.revision > 1 && (
-                              <Badge variant="outline">rev {request.revision}</Badge>
-                            )}
-                            <span className="ml-auto text-xs text-muted-foreground">
-                              {timeAgo(request.created_at)}
-                            </span>
-                          </span>
-                          <span className="mt-1 block truncate text-sm text-muted-foreground">
-                            {requestExcerpt(request.request_text)}
-                          </span>
-                          <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <User className="h-3 w-3" aria-hidden="true" />
-                            {request.requester}
-                            {request.reviewer && (
-                              <span>
-                                · reviewed by <span className="font-medium">{request.reviewer}</span>
+                <ul className="space-y-3">
+                  {groupByBatch(queueQuery.data).map((group) => (
+                    <li key={group.batchId} className="space-y-2">
+                      {group.rows.length > 1 && (
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Batch #{group.batchId} · {group.rows.length} grants from {group.rows[0].requester}
+                        </p>
+                      )}
+                      {group.rows.map((request) => {
+                        const status = statusStyles[request.status]
+                        return (
+                          <button
+                            key={request.id}
+                            type="button"
+                            onClick={() => onOpenRequest(request)}
+                            className="block w-full rounded-md border p-3 text-left hover:border-primary/50 hover:bg-muted/50"
+                            aria-label={`Review request ${request.id} from ${request.requester}`}
+                          >
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium">#{request.id}</span>
+                              <EnvBadge environment={request.environment} />
+                              <Badge className={status.badge}>{status.label}</Badge>
+                              <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
+                                {riskLabel[request.risk] ?? riskLabel.medium}
+                              </Badge>
+                              {request.revision > 1 && (
+                                <Badge variant="outline">rev {request.revision}</Badge>
+                              )}
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                {timeAgo(request.created_at)}
                               </span>
-                            )}
-                          </span>
-                        </button>
-                      </li>
-                    )
-                  })}
+                            </span>
+                            <span className="mt-1 block truncate text-sm text-muted-foreground">
+                              {requestExcerpt(request.request_text)}
+                            </span>
+                            <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <User className="h-3 w-3" aria-hidden="true" />
+                              {request.requester}
+                              {request.reviewer && (
+                                <span>
+                                  · reviewed by <span className="font-medium">{request.reviewer}</span>
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </li>
+                  ))}
                 </ul>
               </CardContent>
             </Card>

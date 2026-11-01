@@ -3,6 +3,7 @@ import pytest
 
 from llm_service import (
     get_llm_provider,
+    responses_from_data,
     GeminiProvider,
     OpenAIProvider,
     AnthropicProvider,
@@ -114,3 +115,49 @@ class TestRiskNormalization:
     def test_unknown_risks_fall_back_to_medium(self, raw):
         resp = PolicyResponse({}, raw, "expl", "note")
         assert resp.risk == "medium"
+
+
+def _unit(label, risk):
+    return {
+        "label": label,
+        "policy": {"Statement": []},
+        "risk_score": risk,
+        "explanation": f"{label} why",
+        "approver_note": f"{label} note",
+    }
+
+
+class TestUnitSplitting:
+    """One model reply may carry separable grants as labeled units."""
+
+    def test_valid_units_split_with_labels_and_risks(self):
+        responses = responses_from_data(
+            {"units": [_unit("read logs", "low"), _unit("manage users", "high")]}
+        )
+        assert len(responses) == 2
+        assert [(r.label, r.risk) for r in responses] == [
+            ("read logs", "low"),
+            ("manage users", "high"),
+        ]
+
+    def test_legacy_shape_without_units_stays_single(self):
+        responses = responses_from_data(
+            {"policy": {"Statement": []}, "risk_score": "medium"}
+        )
+        assert len(responses) == 1
+        assert responses[0].label == ""
+
+    def test_too_many_units_fall_back_to_single(self):
+        responses = responses_from_data(
+            {"policy": {"Statement": []}, "units": [_unit(f"u{i}", "low") for i in range(6)]}
+        )
+        assert len(responses) == 1
+
+    def test_malformed_unit_falls_back_to_single(self):
+        responses = responses_from_data(
+            {
+                "policy": {"Statement": []},
+                "units": [_unit("ok", "low"), {"label": "broken"}],
+            }
+        )
+        assert len(responses) == 1
