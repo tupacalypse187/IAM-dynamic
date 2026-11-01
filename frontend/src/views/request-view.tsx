@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Loader2, AlertCircle, Info, MessageCircleQuestion, Sparkles } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { Markdown } from '@/components/markdown'
 import { usePolicyAgent, type SubmitOutcome } from '@/hooks/use-policy-agent'
 import type { AgentProgress, ClarifyQuestion } from '@/types/desktop'
 import { ENVIRONMENTS, formatGrantLength, type EnvironmentId } from '@/lib/environments'
@@ -128,15 +127,19 @@ export default function RequestView({
         <CardContent className="space-y-6">
           {/* Free text */}
           <div className="space-y-2" data-tour="request-input">
-            <Label htmlFor="request-textarea">What are you trying to do?</Label>
+            <Label htmlFor="request-textarea">📝 What are you trying to get done?</Label>
             <Textarea
               id="request-textarea"
-              placeholder="e.g. Investigate incident 501 in the orders table and billing bucket for 30 minutes."
+              placeholder="e.g. I need to investigate incident 501 — check the orders table and billing bucket for about 30 minutes."
               value={requestText}
               onChange={(e) => onRequestTextChange(e.target.value)}
               rows={4}
               className="resize-none"
             />
+            <p className="text-xs text-muted-foreground">
+              Write it like you&apos;d tell a teammate. Name the thing (bucket, table, app), the
+              environment, and how long — the more specific, the faster the approval. ⏱️
+            </p>
           </div>
 
           {/* Guided scaffold */}
@@ -147,7 +150,7 @@ export default function RequestView({
               <span className="font-normal text-muted-foreground">(optional — fills in the blanks)</span>
             </p>
             <div className="space-y-2">
-              <Label htmlFor="guided-task">The task</Label>
+              <Label htmlFor="guided-task">🔧 The job to be done</Label>
               <Input
                 id="guided-task"
                 placeholder="e.g. Debug failed checkout webhooks"
@@ -156,16 +159,19 @@ export default function RequestView({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="guided-resources">Where (resources, if known)</Label>
+              <Label htmlFor="guided-resources">📦 Which things (names, if you know them)</Label>
               <Input
                 id="guided-resources"
-                placeholder='e.g. "checkout-events" SQS queue, production logs bucket'
+                placeholder='e.g. "checkout-events" queue, production logs bucket'
                 value={guided.resources}
                 onChange={(e) => setGuided({ ...guided, resources: e.target.value })}
               />
+              <p className="text-xs text-muted-foreground">
+                Exact names get you narrower, faster-approved access. 🎯
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="guided-ticket">Why (ticket or incident)</Label>
+              <Label htmlFor="guided-ticket">🎫 Why (ticket or incident number)</Label>
               <Input
                 id="guided-ticket"
                 placeholder="e.g. incident 501, CHG-1234"
@@ -281,10 +287,8 @@ export default function RequestView({
             >
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" aria-hidden="true" />
-                <div className="flex-1 text-sm prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {error}
-                  </ReactMarkdown>
+                <div className="flex-1 text-sm">
+                  <Markdown>{error}</Markdown>
                 </div>
               </div>
             </div>

@@ -22,6 +22,7 @@ import type { GuardrailFinding } from '@/types/desktop'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/tip'
 import { EnvBadge } from '@/components/env-badge'
+import { Markdown } from '@/components/markdown'
 import { CopyButton } from '@/components/copy-button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -362,13 +363,22 @@ export default function RequestDetailView({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="json">
+          <Tabs defaultValue="plain">
             <TabsList>
-              <TabsTrigger value="json">JSON</TabsTrigger>
-              <TabsTrigger value="explanation">Explanation</TabsTrigger>
+              <TabsTrigger value="plain">Plain language</TabsTrigger>
+              {isAdmin && <TabsTrigger value="brief">Admin brief</TabsTrigger>}
+              <TabsTrigger value="technical">Technical</TabsTrigger>
               {isAdmin && <TabsTrigger value="audit">Audit trail</TabsTrigger>}
             </TabsList>
-            <TabsContent value="json" className="mt-4">
+            <TabsContent value="plain" className="mt-4">
+              <PlainLanguagePanel request={request} />
+            </TabsContent>
+            {isAdmin && (
+              <TabsContent value="brief" className="mt-4">
+                <AdminBriefPanel request={request} />
+              </TabsContent>
+            )}
+            <TabsContent value="technical" className="mt-4 space-y-4">
               <div className="relative">
                 <Suspense fallback={<EditorFallback />}>
                   <PolicyJsonViewer json={policyJson} riskyLines={riskyLines} />
@@ -379,16 +389,14 @@ export default function RequestDetailView({
                   className="absolute right-2 top-2"
                 />
               </div>
-            </TabsContent>
-            <TabsContent value="explanation" className="mt-4 space-y-4">
               <div>
                 <h4 className="font-semibold">Explanation</h4>
-                <p className="text-muted-foreground">{request.explanation}</p>
+                <Markdown>{request.explanation || 'No technical explanation recorded.'}</Markdown>
               </div>
               {request.approver_note && (
                 <div>
                   <h4 className="font-semibold">Approver Note</h4>
-                  <p className="text-muted-foreground">{request.approver_note}</p>
+                  <Markdown>{request.approver_note}</Markdown>
                 </div>
               )}
             </TabsContent>
@@ -666,6 +674,138 @@ export default function RequestDetailView({
             </div>
           </CardContent>
         </Card>
+      )}
+    </div>
+  )
+}
+
+const RISK_CALLOUT: Record<string, string> = {
+  low: 'border-green-500/30 bg-green-500/10',
+  medium: 'border-amber-500/30 bg-amber-500/10',
+  high: 'border-orange-500/30 bg-orange-500/10',
+  critical: 'border-red-500/30 bg-red-500/10',
+}
+
+/** Default tab: what the grant means, in everyday words. */
+function PlainLanguagePanel({ request }: { request: AccessRequest }) {
+  const narrative = request.narrative ?? {}
+  const hasNarrative =
+    narrative.summary_plain ||
+    (narrative.what_changes?.length ?? 0) > 0 ||
+    narrative.risk_plain ||
+    (narrative.next_steps?.length ?? 0) > 0
+  if (!hasNarrative) {
+    return (
+      <div className="space-y-2">
+        <Markdown>{request.explanation || 'No explanation recorded.'}</Markdown>
+        <p className="text-xs text-muted-foreground">
+          A plain-language summary isn&apos;t available for this older request.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-5">
+      {narrative.summary_plain && (
+        <p className="text-base leading-7">{narrative.summary_plain}</p>
+      )}
+      {(narrative.what_changes?.length ?? 0) > 0 && (
+        <div>
+          <h4 className="mb-2 flex items-center gap-1.5 font-semibold">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden="true" />
+            What this lets you do
+          </h4>
+          <ul className="space-y-1.5">
+            {narrative.what_changes!.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="mt-0.5 text-green-600 dark:text-green-400" aria-hidden="true">✓</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {narrative.risk_plain && (
+        <div className={`rounded-md border p-3 ${RISK_CALLOUT[request.risk] ?? RISK_CALLOUT.medium}`}>
+          <h4 className="mb-1 flex items-center gap-1.5 font-semibold">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            What to be careful about
+          </h4>
+          <div className="text-sm">
+            <Markdown>{narrative.risk_plain}</Markdown>
+          </div>
+        </div>
+      )}
+      {(narrative.next_steps?.length ?? 0) > 0 && (
+        <div>
+          <h4 className="mb-2 flex items-center gap-1.5 font-semibold">
+            <Wand2 className="h-4 w-4 text-primary" aria-hidden="true" />
+            How to get approved faster
+          </h4>
+          <ul className="space-y-1.5">
+            {narrative.next_steps!.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="mt-0.5 text-primary" aria-hidden="true">→</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Admin-only: the decision brief in plain words, no ARNs. */
+function AdminBriefPanel({ request }: { request: AccessRequest }) {
+  const narrative = request.narrative ?? {}
+  return (
+    <div className="space-y-5">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-muted-foreground">Requester</dt>
+          <dd className="font-medium">{request.requester}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Environment</dt>
+          <dd><EnvBadge environment={request.environment} /></dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Risk</dt>
+          <dd>
+            <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${riskBadgeClass[request.risk] ?? riskBadgeClass.medium}`}>
+              {riskLabel[request.risk] ?? riskLabel.medium}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Grant window</dt>
+          <dd className="font-medium">
+            {request.duration}h{request.grant_expires_at ? ` · ends ${formatTime(request.grant_expires_at)}` : ''}
+          </dd>
+        </div>
+      </dl>
+      {narrative.approver_plain ? (
+        <div>
+          <h4 className="mb-1 font-semibold">Reviewer brief</h4>
+          <div className="text-sm">
+            <Markdown>{narrative.approver_plain}</Markdown>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No plain-words brief for this older request — see the Technical tab.
+        </p>
+      )}
+      {(narrative.next_steps?.length ?? 0) > 0 && (
+        <div>
+          <h4 className="mb-1 font-semibold">If you send this back, ask for</h4>
+          <ul className="list-disc space-y-1 pl-6 text-sm">
+            {narrative.next_steps!.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )
