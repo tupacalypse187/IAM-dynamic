@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from dotenv import load_dotenv
 
@@ -449,17 +449,16 @@ class ResubmitAccessRequest(BaseModel):
 
 
 class AuditEventModel(BaseModel):
-    """One JSONL audit trail record"""
+    """One JSONL audit trail record (request_id is null for account events)."""
+    model_config = ConfigDict(extra="allow")
+
     ts: str
     event: str
-    request_id: int
+    request_id: Optional[int] = None
     actor: str
     actor_role: str
     from_status: Optional[str] = None
     to_status: Optional[str] = None
-
-    class Config:
-        extra = "allow"
 
 
 class CatalogEntryModel(BaseModel):

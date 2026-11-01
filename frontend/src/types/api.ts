@@ -139,7 +139,8 @@ export interface CatalogEntry {
 export interface AuditEvent {
   ts: string
   event: string
-  request_id: number
+  /** Null for account-level events (e.g. impersonation switches). */
+  request_id: number | null
   actor: string
   actor_role: string
   from_status: string | null
