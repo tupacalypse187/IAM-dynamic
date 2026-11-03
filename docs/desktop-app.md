@@ -71,8 +71,17 @@ Useful commands (all run from `desktop/`):
 | `npm run typecheck` | Typecheck main + preload + contract (CI gate) |
 | `npm run build` | Compile to `dist/` |
 | `npm run icons` | Regenerate icons into `build/icons/` |
+| `npm run verify-fresh` | Fail when staged `frontend-dist/` predates the checkout (packaging runs this automatically) |
 | `npm run dist:mac` | Signed (if certs) arm64 `.dmg` |
 | `npm run dist:win` / `dist:linux` | NSIS / AppImage+deb (Windows needs CodeBuild — see below) |
+
+> Never ship a packaged app without rebuilding the renderer first. Every
+> `dist*` script runs `predist*` (`build:renderer` + `copy-renderer`), and
+> the `beforePack` hook (`scripts/verify-fresh-renderer.js`) refuses to pack
+> a `frontend-dist/` that predates `HEAD` — so a direct `electron-builder`
+> run can no longer silently bundle last month's UI. After installing a
+> packaged build, confirm Settings → About shows the expected build ID
+> (commit + UTC time, baked by `build-renderer.mjs`).
 
 ## ⚙️ Configuration
 

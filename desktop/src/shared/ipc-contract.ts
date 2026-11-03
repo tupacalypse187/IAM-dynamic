@@ -40,6 +40,22 @@ export interface GeneratedPolicy {
   approver_note: string
   auto_approved: boolean
   max_duration: number
+  /** True when the backend truncated a multi-grant split to the first unit. */
+  single_grant_only?: boolean
+  total_units?: number
+  unit_labels?: string[]
+}
+
+/** One proposed grant from the preview endpoint (nothing persisted). */
+export interface PreviewUnit {
+  policy: PolicyDocument
+  risk: RiskLevel
+  explanation: string
+  approver_note: string
+  label: string
+  narrative: Record<string, unknown>
+  duration: number
+  auto_approved: boolean
 }
 
 export interface GuardrailFinding {
@@ -83,6 +99,8 @@ export type GenerateResult =
   | {
       status: 'policy'
       result: GeneratedPolicy
+      /** Every proposed unit (usually one). Several means the request split. */
+      units: PreviewUnit[]
       findings: GuardrailFinding[]
       /** Plain-language grant summary for users who don't read JSON. */
       summary: string

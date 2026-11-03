@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 // exact renderer-supplied policy, require approval, and clamp duration
 // to the guardrail risk ceiling. Runs against compiled output.
 const { analyzePolicy } = await import('../dist/main/agentkit/audit-risk.js')
-const { activateRequest, issueCredentials, maxDurationForRisk } = await import('../dist/main/agentkit/index.js')
+const { activateRequest, generatePolicy, issueCredentials, maxDurationForRisk } = await import('../dist/main/agentkit/index.js')
 
 function stubDeps(captured) {
   return {
@@ -170,5 +170,87 @@ describe('activateRequest', () => {
     assert.ok(lease.issuedAt !== null)
     assert.equal(captured.ledger.kind, 'request_activated')
     assert.equal(captured.ledger.details.requestId, 42)
+  })
+})
+
+describe('generatePolicy preview units', () => {
+  const readUnit = {
+    policy: readOnlyPolicy,
+    risk: 'low',
+    explanation: 'reads',
+    approver_note: '',
+    label: 'Read part',
+    narrative: {},
+    duration: 12,
+    auto_approved: true,
+  }
+  const broadWrite = {
+    Version: '2012-10-17',
+    Statement: [{ Effect: 'Allow', Action: ['iam:CreateUser'], Resource: ['*'] }],
+  }
+  const writeUnit = {
+    policy: broadWrite,
+    risk: 'medium',
+    explanation: 'writes',
+    approver_note: '',
+    label: 'Write part',
+    narrative: {},
+    duration: 4,
+    auto_approved: false,
+  }
+
+  function previewDeps(captured, units) {
+    return {
+      backend: {
+        previewUnits: async (args) => {
+          captured.previewArgs = args
+          return units
+        },
+      },
+      ledger: {
+        append: (kind, summary, details) => {
+          captured.ledger = { kind, summary, details }
+          return 7
+        },
+      },
+    }
+  }
+
+  const input = {
+    freeText: 'Read the reports and manage users for the audit.',
+    guided: { task: '', resources: '', ticket: '' },
+    provider: 'muse',
+    durationHours: 2,
+    answers: { resources: 'reports bucket' },
+  }
+
+  it('returns every unit so the renderer can consent to a split', async () => {
+    const captured = {}
+    const out = await generatePolicy(previewDeps(captured, [readUnit, writeUnit]), input)
+    assert.equal(out.status, 'policy')
+    assert.equal(out.units.length, 2)
+    assert.deepEqual(
+      out.units.map((u) => u.label),
+      ['Read part', 'Write part']
+    )
+    assert.ok(captured.previewArgs.request_text.length > 0)
+    assert.equal(captured.ledger.details.unitCount, 2)
+    // The legacy single-grant shape still carries the first unit only.
+    assert.equal(out.result.total_units, 2)
+  })
+
+  it('raises per-unit guardrail risk without lowering the evaluated risk', async () => {
+    const captured = {}
+    const out = await generatePolicy(previewDeps(captured, [readUnit, writeUnit]), input)
+    // iam:CreateUser on * is not read-only-scoped: guardrail must raise medium.
+    const write = out.units.find((u) => u.label === 'Write part')
+    assert.ok(['high', 'critical'].includes(write.risk))
+    // The scoped read stays low.
+    assert.equal(out.units[0].risk, 'low')
+  })
+
+  it('throws when the preview returns no grants', async () => {
+    const captured = {}
+    await assert.rejects(() => generatePolicy(previewDeps(captured, []), input))
   })
 })

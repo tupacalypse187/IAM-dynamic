@@ -19,6 +19,7 @@
     "dist:linux": "npm run build && electron-builder --linux",
     "copy-renderer": "rm -rf frontend-dist && mkdir -p frontend-dist && cp -R ../frontend/dist/. frontend-dist/",
     "build:renderer": "node scripts/build-renderer.mjs",
+    "verify-fresh": "node scripts/verify-fresh-renderer.js",
     "icons": "python3 build/icon.py || ../backend/.venv/bin/python build/icon.py",
     "stage-splash": "mkdir -p assets && cp build/icons/icon.png assets/app-icon.png",
     "predist": "npm run build:renderer && npm run copy-renderer && npm run icons && npm run stage-splash",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { desktop, isDesktop } from '@/lib/desktop'
-import type { AccessRequest, ConfirmedUnit, Credentials, PreviewUnit } from '@/types/api'
+import type { AccessRequest, ConfirmedUnit, Credentials, GrantNarrative, PreviewUnit } from '@/types/api'
 import type {
   AgentProgress,
   ClarifyQuestion,
@@ -137,38 +137,82 @@ export function usePolicyAgent(): PolicyAgent {
       })
       return { kind: 'submitted', request: batch[0], batch, findings: [], summary: null }
     }
-    // Desktop: clarify-aware Agent_Kit evaluation first, then persist the
-    // evaluated result without re-running the LLM (see /api/requests/record).
-    // The stored request_text is the exact text that was evaluated.
+    // Desktop: clarify-aware Agent_Kit evaluation first. The main process
+    // previews (dry-run), so every separable grant comes back and a split
+    // goes through the same consent step as the browser — nothing persists
+    // until the user chooses. Single grants persist via record without
+    // re-running the LLM. The stored request_text is the exact evaluated text.
     const result = await desktop.generatePolicy(input)
     if (result.status === 'clarify') {
       return { kind: 'clarify', questions: result.questions }
     }
-    const findings = [...result.findings]
-    if (result.result.single_grant_only) {
-      // The legacy single-grant endpoint truncated grants 2..N. Never
-      // silently drop them: warn so the user resubmits via the web
-      // preview/consent path instead.
-      const extra = (result.result.unit_labels ?? []).filter(Boolean).join(', ')
-      findings.push({
-        severity: 'medium',
-        location: 'split',
-        message: `This request looks like ${result.result.total_units ?? 2} separable grants, but the desktop path only kept the first.`,
-        suggestion: extra
-          ? `Split parts detected (${extra}). Submit from the web app to accept the split or request a full review.`
-          : 'Submit from the web app to accept the split or request a full review.',
-      })
+    const head = result.result
+    const units: PreviewUnit[] = (result.units ?? [{
+      policy: head.policy,
+      risk: head.risk,
+      explanation: head.explanation,
+      approver_note: head.approver_note,
+      label: '',
+      narrative: {},
+      duration: head.max_duration,
+      auto_approved: head.auto_approved,
+    }]).map((u) => ({
+      policy: u.policy as Record<string, unknown>,
+      risk: u.risk,
+      explanation: u.explanation,
+      approver_note: u.approver_note,
+      label: u.label,
+      narrative: (u.narrative ?? {}) as GrantNarrative,
+      duration: u.duration,
+      auto_approved: u.auto_approved,
+    }))
+    if (units.length > 1) {
+      const confirm = async (choice: 'split' | 'full-review'): Promise<SubmitOutcome> => {
+        const batch =
+          choice === 'split'
+            ? await api.recordRequest({
+                request_text: result.requestText,
+                provider: input.profileId ? undefined : input.provider,
+                model: input.profileId ? undefined : input.model,
+                duration: input.durationHours,
+                environment: input.environment,
+                policy: {},
+                risk: 'medium',
+                units: units.map((u) => ({ ...u, narrative: u.narrative as Record<string, unknown> })),
+                profile_id: input.profileId,
+              })
+            : (
+                await confirmPreview(
+                  { ...input, durationHours: input.durationHours },
+                  result.requestText,
+                  units,
+                  'full-review',
+                )
+              ).batch
+        const outcome = { request: batch[0], batch, findings: result.findings, summary: result.summary }
+        desktop
+          .logAudit('request_submitted', `Request batch submitted (${batch.length} parts)`, {
+            requestIds: batch.map((r) => r.id),
+            choice,
+          })
+          .catch(() => undefined)
+        return outcome
+      }
+      return { kind: 'split-consent', preview: units, requestText: result.requestText, confirm }
     }
+    const [only] = units
     const batch = await api.recordRequest({
       request_text: result.requestText,
       provider: input.profileId ? undefined : input.provider,
       model: input.profileId ? undefined : input.model,
-      duration: result.result.max_duration,
+      duration: input.durationHours,
       environment: input.environment,
-      policy: result.result.policy,
-      risk: result.result.risk,
-      explanation: result.result.explanation,
-      approver_note: result.result.approver_note,
+      policy: only.policy,
+      risk: only.risk,
+      explanation: only.explanation,
+      approver_note: only.approver_note,
+      label: only.label,
+      narrative: only.narrative as Record<string, unknown>,
       profile_id: input.profileId,
     })
     const request = batch[0]
@@ -181,7 +225,7 @@ export function usePolicyAgent(): PolicyAgent {
         })
         .catch(() => undefined)
     }
-    return { kind: 'submitted', request, batch, findings, summary: result.summary }
+    return { kind: 'submitted', request, batch, findings: result.findings, summary: result.summary }
   }, [confirmPreview])
 
   const activate = useCallback(async (id: number): Promise<Credentials> => {
