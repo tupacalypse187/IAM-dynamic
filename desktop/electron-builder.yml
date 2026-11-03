@@ -48,6 +48,8 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
 
+beforePack: scripts/verify-fresh-renderer.js
+
 afterSign: scripts/notarize.js
 
 # Windows: NSIS only until Azure Trusted Signing exists (see docs).

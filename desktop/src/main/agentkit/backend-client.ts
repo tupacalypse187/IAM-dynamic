@@ -7,7 +7,7 @@
  * the bearer token when one is stored.
  */
 
-import type { GeneratedPolicy, LeaseCredentials } from '../../shared/ipc-contract'
+import type { LeaseCredentials, PreviewUnit } from '../../shared/ipc-contract'
 
 export interface BackendConfig {
   baseUrl: string
@@ -58,7 +58,10 @@ async function callBackend<T>(
 
 export function createBackendClient(config: BackendConfig) {
   return {
-    generatePolicy: (input: {
+    // Dry-run evaluation: every separable grant comes back, so the
+    // renderer can consent to a split. The legacy single-grant endpoint
+    // is intentionally not offered here — it silently truncated units 2..N.
+    previewUnits: (input: {
       request_text: string
       provider: string
       model?: string
@@ -66,7 +69,7 @@ export function createBackendClient(config: BackendConfig) {
       environment?: string
       profileId?: number
     }) =>
-      callBackend<GeneratedPolicy>(config, '/api/generate-policy', {
+      callBackend<PreviewUnit[]>(config, '/api/requests/preview', {
         request_text: input.request_text,
         provider: input.provider,
         model: input.model,

@@ -52,11 +52,25 @@ export interface DesktopPolicyResult {
   unit_labels?: string[]
 }
 
+/** One proposed grant from the AgentKit preview (nothing persisted). */
+export interface DesktopPreviewUnit {
+  policy: PolicyDocument
+  risk: RiskLevel
+  explanation: string
+  approver_note: string
+  label: string
+  narrative: Record<string, unknown>
+  duration: number
+  auto_approved: boolean
+}
+
 export type DesktopGenerateResult =
   | { status: 'clarify'; questions: ClarifyQuestion[] }
   | {
       status: 'policy'
       result: DesktopPolicyResult
+      /** Every proposed unit (usually one). Several means the request split. */
+      units?: DesktopPreviewUnit[]
       findings: GuardrailFinding[]
       summary: string
       auditId: number

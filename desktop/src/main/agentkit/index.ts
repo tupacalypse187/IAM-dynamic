@@ -11,9 +11,11 @@ import type {
   AgentProgress,
   GenerateInput,
   GenerateResult,
+  GuardrailFinding,
   IssueInput,
   LeaseCredentials,
   LeaseStatus,
+  PreviewUnit,
   RiskLevel,
 } from '../../shared/ipc-contract'
 import { applyAnswers, clarifyingQuestions, extractIntent } from './router'
@@ -62,7 +64,11 @@ export async function generatePolicy(
   const durationHours = Math.min(input.durationHours || intent.durationHours || 2, 12)
 
   onProgress({ stage: 'architect', message: 'Synthesizing least-privilege policy…' })
-  const backendResult = await deps.backend.generatePolicy({
+  // Preview (dry-run) returns every separable grant — usually one. The
+  // renderer shows a consent step when several come back, so the desktop
+  // path has the same split capability as the browser and never silently
+  // truncates grants 2..N the way the legacy single-grant endpoint did.
+  const units: PreviewUnit[] = await deps.backend.previewUnits({
     request_text: requestText,
     provider: input.provider,
     model: input.model,
@@ -70,19 +76,32 @@ export async function generatePolicy(
     environment: input.environment,
     profileId: input.profileId,
   })
+  if (units.length === 0) {
+    throw new Error('Policy evaluation returned no grants.')
+  }
 
   onProgress({ stage: 'audit', message: 'Checking compliance guardrails…' })
-  const { findings, risk: guardrailRisk } = analyzePolicy(backendResult.policy)
-  const risk = combineRisk(backendResult.risk, guardrailRisk)
-  const effectiveMax = Math.min(backendResult.max_duration, maxDurationForRisk(risk))
+  // The guardrail raises, never lowers: each unit keeps the higher of its
+  // evaluated risk and the local deterministic verdict.
+  const findings: GuardrailFinding[] = []
+  const adjusted = units.map((unit, i) => {
+    const { findings: unitFindings, risk: guardrailRisk } = analyzePolicy(unit.policy)
+    for (const finding of unitFindings) {
+      findings.push({ ...finding, location: `part ${i + 1}/${units.length} · ${finding.location}` })
+    }
+    return { ...unit, risk: combineRisk(unit.risk, guardrailRisk) }
+  })
+  const head = adjusted[0]
+  const risk = adjusted.map((u) => u.risk).reduce((a, b) => combineRisk(a, b))
+  const effectiveMax = Math.min(head.duration, maxDurationForRisk(head.risk))
 
   const auditId = deps.ledger.append('generation', `Policy generated (${risk} risk)`, {
     provider: input.provider,
     model: input.model,
     durationHours,
     risk,
-    backendRisk: backendResult.risk,
-    guardrailRisk,
+    unitCount: adjusted.length,
+    unitLabels: adjusted.map((u) => u.label).filter(Boolean),
     findingCount: findings.length,
     requestExcerpt: requestText.slice(0, 500),
   })
@@ -90,9 +109,20 @@ export async function generatePolicy(
   onProgress({ stage: 'done', message: 'Policy ready for review.' })
   return {
     status: 'policy',
-    result: { ...backendResult, risk, max_duration: effectiveMax },
+    result: {
+      policy: head.policy,
+      risk: head.risk,
+      explanation: head.explanation,
+      approver_note: head.approver_note,
+      auto_approved: head.auto_approved,
+      max_duration: effectiveMax,
+      single_grant_only: false,
+      total_units: adjusted.length,
+      unit_labels: adjusted.map((u) => u.label),
+    },
+    units: adjusted,
     findings,
-    summary: summarizePlainLanguage(backendResult.policy, durationHours),
+    summary: summarizePlainLanguage(head.policy, durationHours),
     auditId,
     requestText,
   }

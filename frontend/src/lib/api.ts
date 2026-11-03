@@ -163,8 +163,8 @@ export const api = {
     environment?: string
     policy: Record<string, unknown>
     risk: string
-    explanation: string
-    approver_note: string
+    explanation?: string
+    approver_note?: string
     label?: string
     narrative?: Record<string, unknown>
     units?: ConfirmedUnit[]
