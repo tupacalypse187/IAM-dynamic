@@ -47,7 +47,7 @@ from services.profile_store import ProfileStore, ProfileStoreError
 from services.decision_rationale import build_decision_rationale
 from services.policy_summary import summarize_policy
 from services.error_handler import UserFacingError
-from llm_service import get_llm_provider, PolicyResponse
+from llm_service import get_llm_provider, normalize_policy_scope, PolicyResponse
 from config import load_config
 
 # Load configuration
@@ -1987,6 +1987,9 @@ def _evaluate_access_request(
     responses: list[PolicyResponse] = provider.generate_policy(request_text)
     evaluated = []
     for response in responses:
+        # Pin any '*' region/account ARN segments to this deployment
+        # before routing or persisting (strictly narrows).
+        response.policy = normalize_policy_scope(response.policy)
         max_duration = get_max_duration(response.risk)
         actual_duration = min(duration, max_duration)
         auto_approved = response.risk.lower() == "low"
@@ -2011,6 +2014,7 @@ def _confirmed_to_evaluated(
     for unit in units:
         if not isinstance(unit.policy, dict):
             raise HTTPException(status_code=400, detail="Each confirmed unit needs a policy object.")
+        unit.policy = normalize_policy_scope(unit.policy)
         risk = _normalize_risk(unit.risk)
         response = PolicyResponse(
             policy=unit.policy,
@@ -2420,6 +2424,7 @@ async def record_access_request(
     violation = find_overly_broad_policy_violation(body.policy)
     if violation is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    body.policy = normalize_policy_scope(body.policy)
     risk = _normalize_risk(body.risk)
     actual_duration = min(body.duration, get_max_duration(risk))
     auto_approved = risk == "low"

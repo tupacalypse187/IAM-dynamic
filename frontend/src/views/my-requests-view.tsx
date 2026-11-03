@@ -1,8 +1,18 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, Copy, FileEdit, Plus, Radio, Search } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Loader2, Copy, FileEdit, Plus, Search, Undo2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { groupByBatch, isLiveSession, requestExcerpt, reviewerDisplay, riskBadgeClass, riskLabel, statusStyles } from '@/lib/requests'
+import {
+  groupByBatch,
+  isLiveSession,
+  requestBucket,
+  requestExcerpt,
+  reviewerDisplay,
+  riskBadgeClass,
+  riskLabel,
+  statusStyles,
+  type RequestBucket,
+} from '@/lib/requests'
 import { formatRequestRef, matchesRequestQuery } from '@/lib/request-refs'
 import type { AccessRequest } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -11,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { EnvBadge } from '@/components/env-badge'
 import { Tip } from '@/components/tip'
+import { useToast } from '@/hooks/use-toast'
 
 interface MyRequestsViewProps {
   onNewRequest: () => void
@@ -25,13 +36,20 @@ function RequestRow({
   onClone,
   part,
   total,
+  withdrawable,
+  withdrawing,
+  onWithdraw,
 }: {
   request: AccessRequest
   onOpen: (request: AccessRequest) => void
   onClone: (edit: boolean) => void
   part?: number
   total?: number
+  withdrawable?: boolean
+  withdrawing?: boolean
+  onWithdraw?: (request: AccessRequest) => void
 }) {
+  const [confirming, setConfirming] = useState(false)
   const status = statusStyles[request.status]
   const showPart = total != null && total > 1 && part != null
   return (
@@ -54,6 +72,9 @@ function RequestRow({
           <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
             {riskLabel[request.risk] ?? riskLabel.medium}
           </Badge>
+          {isLiveSession(request) && (
+            <Badge className="bg-primary/15 text-primary">Live now</Badge>
+          )}
           {request.revision > 1 && <Badge variant="outline">rev {request.revision}</Badge>}
         </span>
         {request.label && (
@@ -69,6 +90,33 @@ function RequestRow({
         </span>
       </button>
       <span className="flex shrink-0 gap-2">
+        {withdrawable &&
+          (confirming ? (
+            <>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={withdrawing}
+                onClick={() => {
+                  onWithdraw?.(request)
+                  setConfirming(false)
+                }}
+              >
+                {withdrawing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                Confirm withdraw
+              </Button>
+              <Button variant="ghost" size="sm" disabled={withdrawing} onClick={() => setConfirming(false)}>
+                Keep
+              </Button>
+            </>
+          ) : (
+            <Tip label="Withdraw this request (discards open requests, cancels active grants)">
+              <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+                <Undo2 className="mr-1 h-3 w-3" />
+                Withdraw
+              </Button>
+            </Tip>
+          ))}
         <Tip label="Submit this exact request again as a new request">
           <Button variant="outline" size="sm" onClick={() => onClone(false)}>
             <Copy className="mr-1 h-3 w-3" />
@@ -88,27 +136,48 @@ function RequestRow({
 
 export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneRequest }: MyRequestsViewProps) {
   const [search, setSearch] = useState('')
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const query = useQuery({
     queryKey: ['requests', 'mine'],
     queryFn: () => api.listRequests({ mine: true }),
   })
 
-  const { live, open, recent, matched, total } = useMemo(() => {
+  // Withdraw from the summary: open rows are discarded, active grants are
+  // cancelled (activated rows can no longer be discarded server-side).
+  const withdrawMutation = useMutation({
+    mutationFn: (request: AccessRequest) =>
+      request.status === 'activated' ? api.cancelRequest(request.id) : api.discardRequest(request.id),
+    onSuccess: (_updated, request) => {
+      queryClient.invalidateQueries({ queryKey: ['requests'] })
+      toast({
+        title: `Withdrawn ${formatRequestRef(request.id)}`,
+        description:
+          request.status === 'activated' ? 'The active grant was cancelled.' : 'The request was withdrawn.',
+      })
+    },
+    onError: (err: Error) =>
+      toast({ title: 'Withdraw failed', description: err.message, variant: 'destructive' }),
+  })
+
+  const { open, active, expired, recent, matched, total } = useMemo(() => {
     const all = (query.data ?? []).filter((r) => matchesRequestQuery(r, search))
+    const byBucket = (bucket: RequestBucket) =>
+      groupByBatch(all.filter((r) => requestBucket(r) === bucket))
     return {
-      live: all.filter((r) => isLiveSession(r)),
-      open: groupByBatch(
-        all.filter(
-          (r) => r.status === 'pending_review' || r.status === 'changes_requested' || r.status === 'approved',
-        ),
-      ),
+      open: byBucket('open'),
+      active: byBucket('active'),
+      expired: byBucket('expired'),
       recent: groupByBatch(all.slice(0, 10)),
       matched: all.length,
       total: (query.data ?? []).length,
     }
   }, [query.data, search])
 
-  const renderGroup = (group: { batchId: number; rows: AccessRequest[] }) => (
+  const renderGroup = (
+    group: { batchId: number; rows: AccessRequest[] },
+    opts?: { withdraw?: boolean },
+  ) => (
     <li key={group.batchId} className="space-y-2">
       {group.rows.length > 1 && (
         <p className="text-xs font-medium text-muted-foreground">
@@ -124,6 +193,9 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
             onClone={(edit) => onCloneRequest(request, edit)}
             part={i + 1}
             total={group.rows.length}
+            withdrawable={opts?.withdraw}
+            withdrawing={withdrawMutation.isPending && withdrawMutation.variables?.id === request.id}
+            onWithdraw={(r) => withdrawMutation.mutate(r)}
           />
         ))}
       </ul>
@@ -136,7 +208,7 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
         <div className="min-w-0 flex-1">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">My Requests</h2>
           <p className="text-muted-foreground">
-            Track your access requests — live sessions, open reviews, and history.
+            Track your access requests — open reviews, active grants, and history.
           </p>
         </div>
         <Tip label="Describe a new access need">
@@ -183,41 +255,49 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
 
       {query.data && (
         <>
-          {live.length > 0 && (
-            <Card className="border-l-4 border-l-primary">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Radio className="h-5 w-5 text-primary" aria-hidden="true" />
-                  Live sessions
-                </CardTitle>
-                <CardDescription>Credentials are active right now.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {live.map((request) => (
-                    <RequestRow
-                      key={request.id}
-                      request={request}
-                      onOpen={onOpenRequest}
-                      onClone={(edit) => onCloneRequest(request, edit)}
-                    />
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
           <Card>
             <CardHeader>
-              <CardTitle>Open requests</CardTitle>
-              <CardDescription>Waiting on review, sent back, or approved and ready to activate.</CardDescription>
+              <CardTitle>Open</CardTitle>
+              <CardDescription>Waiting on a reviewer, or sent back for your changes.</CardDescription>
             </CardHeader>
             <CardContent>
               {open.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nothing open — submit a request to get started.</p>
+                <p className="text-sm text-muted-foreground">Nothing waiting — submit a request to get started.</p>
               ) : (
                 <ul className="space-y-2">
-                  {open.map(renderGroup)}
+                  {open.map((group) => renderGroup(group, { withdraw: true }))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-primary">
+            <CardHeader>
+              <CardTitle>Active</CardTitle>
+              <CardDescription>Approved and usable — activate a grant when you need it. Live sessions are marked.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {active.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active grants — approved requests land here.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {active.map((group) => renderGroup(group, { withdraw: true }))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Expired</CardTitle>
+              <CardDescription>Lapsed, denied, discarded, or cancelled — read-only history.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {expired.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nothing expired or closed yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {expired.map((group) => renderGroup(group))}
                 </ul>
               )}
             </CardContent>
@@ -233,7 +313,7 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
                 <p className="text-sm text-muted-foreground">No requests yet.</p>
               ) : (
                 <ul className="space-y-2">
-                  {recent.map(renderGroup)}
+                  {recent.map((group) => renderGroup(group))}
                 </ul>
               )}
             </CardContent>

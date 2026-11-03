@@ -50,6 +50,30 @@ export function isOpen(status: RequestStatus): boolean {
   return status === 'pending_review' || status === 'changes_requested' || status === 'approved'
 }
 
+/** Grant window still open (missing expiry = unknown, treated as usable). */
+export function grantWindowValid(
+  request: Pick<AccessRequest, 'grant_expires_at'>,
+  now: number = Date.now(),
+): boolean {
+  if (!request.grant_expires_at) return true
+  return Date.parse(request.grant_expires_at) > now
+}
+
+export type RequestBucket = 'open' | 'active' | 'expired'
+
+/**
+ * Where a row belongs in My Requests. Approved grants are active, not
+ * open: they need no reviewer, only owner activation. Anything lapsed
+ * (grant window past) or terminal (denied/discarded/cancelled) is expired.
+ */
+export function requestBucket(request: AccessRequest, now: number = Date.now()): RequestBucket {
+  if (request.status === 'pending_review' || request.status === 'changes_requested') return 'open'
+  if (request.status === 'approved' || request.status === 'activated') {
+    return grantWindowValid(request, now) ? 'active' : 'expired'
+  }
+  return 'expired'
+}
+
 /**
  * Who decided this request, from the requester's perspective. Auto-approved
  * rows with no human reviewer report the automated system, never nobody.

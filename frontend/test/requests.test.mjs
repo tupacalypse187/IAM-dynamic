@@ -8,9 +8,19 @@ import {
   isLiveSession,
   isOpen,
   isTerminal,
+  requestBucket,
   requestExcerpt,
   reviewerDisplay,
 } from '../src/lib/requests.ts'
+
+function row(overrides = {}) {
+  return {
+    id: 1,
+    status: 'pending_review',
+    grant_expires_at: null,
+    ...overrides,
+  }
+}
 
 describe('request status helpers', () => {
   it('marks terminal states', () => {
@@ -82,5 +92,37 @@ describe('request status helpers', () => {
     const groups = groupByBatch([{ id: 3, batch_id: null }])
     assert.equal(groups.length, 1)
     assert.equal(groups[0].batchId, 3)
+  })
+})
+
+describe('request buckets', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z')
+
+  it('opens reviews and send-backs, never approved grants', () => {
+    assert.equal(requestBucket(row({ status: 'pending_review' }), now), 'open')
+    assert.equal(requestBucket(row({ status: 'changes_requested' }), now), 'open')
+    assert.equal(requestBucket(row({ status: 'approved' }), now), 'active')
+  })
+
+  it('keeps usable grants active and lapses only past windows', () => {
+    const future = '2026-11-04T00:00:00Z'
+    const past = '2026-11-02T00:00:00Z'
+    assert.equal(requestBucket(row({ status: 'approved' }), now), 'active')
+    assert.equal(requestBucket(row({ status: 'approved', grant_expires_at: future }), now), 'active')
+    assert.equal(requestBucket(row({ status: 'approved', grant_expires_at: past }), now), 'expired')
+    assert.equal(
+      requestBucket(row({ status: 'activated', grant_expires_at: future }), now),
+      'active'
+    )
+    assert.equal(
+      requestBucket(row({ status: 'activated', grant_expires_at: past }), now),
+      'expired'
+    )
+  })
+
+  it('expires terminal states', () => {
+    for (const status of ['denied', 'discarded', 'cancelled']) {
+      assert.equal(requestBucket(row({ status }), now), 'expired')
+    }
   })
 })

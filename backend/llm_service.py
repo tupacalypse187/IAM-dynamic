@@ -421,6 +421,96 @@ RULES:
 """
 
 
+def deployment_account_id() -> str:
+    """This deployment's AWS account (empty when unconfigured)."""
+    return (os.getenv("AWS_ACCOUNT_ID") or "").strip()
+
+
+def deployment_region() -> str:
+    """This deployment's AWS region (STS/credentials default)."""
+    return (os.getenv("AWS_REGION") or "us-east-1").strip() or "us-east-1"
+
+
+def system_instruction() -> str:
+    """Policy system prompt pinned to this deployment's account and region.
+
+    The base rules already forbid wildcards, but models still emit
+    `arn:aws:<svc>:*:*:<rest>` with starred region/account segments.
+    Naming the concrete values here stops that at the source; the
+    deterministic `normalize_policy_scope` below pins any stragglers.
+    """
+    account_id = deployment_account_id()
+    region = deployment_region()
+    if not account_id:
+        return (
+            SYSTEM_INSTRUCTION
+            + "\nDEPLOYMENT SCOPE: use concrete region and account ID values "
+            "in every Resource ARN — never '*' for those segments.\n"
+        )
+    return (
+        SYSTEM_INSTRUCTION
+        + "\nDEPLOYMENT SCOPE (this AWS account and region):\n"
+        + f"- Account ID: {account_id}, Region: {region}.\n"
+        + "- Every Resource ARN you emit MUST use exactly this region and "
+        + "account ID (e.g. "
+        + f"arn:aws:dynamodb:{region}:{account_id}:table/Name) — never '*' "
+        + "for the region or account segments. A request naming no "
+        + "region/account means this one.\n"
+    )
+
+
+def normalize_policy_scope(
+    policy: dict,
+    account_id: Optional[str] = None,
+    region: Optional[str] = None,
+) -> dict:
+    """Pin '*' region/account ARN segments to this deployment's values.
+
+    Turns `arn:aws:dynamodb:*:*:table/T` into the concrete regional ARN.
+    Strictly narrows: bare `"*"` resources, non-ARN strings, and already
+    concrete segments pass through untouched. Unconfigured account leaves
+    '*' account segments alone (region still pins — it always defaults).
+    """
+    account = (account_id if account_id is not None else deployment_account_id()).strip()
+    scope_region = (region if region is not None else deployment_region()).strip()
+    if not isinstance(policy, dict):
+        return policy
+    raw = policy.get("Statement", [])
+    was_list = isinstance(raw, list)
+    statements = raw if was_list else [raw]
+    changed = False
+    scoped: list = []
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            scoped.append(stmt)
+            continue
+        resources = stmt.get("Resource")
+        if resources is None:
+            scoped.append(stmt)
+            continue
+        original_items = resources if isinstance(resources, list) else [resources]
+        pinned: list = []
+        for item in original_items:
+            if isinstance(item, str) and item.startswith("arn:"):
+                parts = item.split(":", 5)
+                if len(parts) == 6:
+                    _, _, _svc, item_region, item_account, _rest = parts
+                    new_region = scope_region if item_region == "*" and scope_region else item_region
+                    new_account = account if item_account == "*" and account else item_account
+                    if new_region != item_region or new_account != item_account:
+                        parts[3] = new_region
+                        parts[4] = new_account
+                        item = ":".join(parts)
+            pinned.append(item)
+        if pinned != original_items:
+            stmt = {**stmt, "Resource": pinned if isinstance(resources, list) else pinned[0]}
+            changed = True
+        scoped.append(stmt)
+    if not changed:
+        return policy
+    return {**policy, "Statement": scoped if was_list else (scoped[0] if scoped else raw)}
+
+
 class GeminiProvider(LLMProvider):
     """
     Google Gemini provider
@@ -469,7 +559,7 @@ class GeminiProvider(LLMProvider):
                     model=self.model_name,
                     contents=f"User Request: {request_text}",
                     config=genai.types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
+                        system_instruction=system_instruction(),
                         response_mime_type="application/json"
                     )
                 )
@@ -478,7 +568,7 @@ class GeminiProvider(LLMProvider):
                 # Old google.generativeai API (deprecated)
                 model = genai.GenerativeModel(
                     model_name=self.model_name,
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=system_instruction(),
                     generation_config={"response_mime_type": "application/json"}
                 )
                 chat = model.start_chat(history=[])
@@ -620,7 +710,7 @@ class OpenAICompatibleProvider(LLMProvider):
             request_kwargs = {
                 "model": self.model_name,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_INSTRUCTION},
+                    {"role": "system", "content": system_instruction()},
                     {"role": "user", "content": prompt}
                 ],
             }
@@ -752,7 +842,7 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
-                system=SYSTEM_INSTRUCTION,
+                system=system_instruction(),
                 messages=[{"role": "user", "content": user_prompt}],
                 temperature=0.2
             )
