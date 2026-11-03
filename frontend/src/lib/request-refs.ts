@@ -16,7 +16,8 @@ export function matchesRequestQuery(request: AccessRequest, query: string): bool
   if (
     request.request_text.toLowerCase().includes(q) ||
     request.requester.toLowerCase().includes(q) ||
-    (request.reviewer ?? '').toLowerCase().includes(q)
+    (request.reviewer ?? '').toLowerCase().includes(q) ||
+    (request.label ?? '').toLowerCase().includes(q)
   ) {
     return true
   }

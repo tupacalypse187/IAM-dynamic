@@ -129,6 +129,10 @@ class AuthConfig(BaseModel):
 class SlackConfig(BaseModel):
     """Slack integration configuration"""
     webhook_url: Optional[str] = Field(default=None, env="SLACK_WEBHOOK_URL")
+    # Bot token + channel for Web API posts (chat.postMessage). Required for
+    # threaded replies; without them the service falls back to webhook posts.
+    bot_token: Optional[str] = Field(default=None, env="SLACK_BOT_TOKEN")
+    channel_id: Optional[str] = Field(default=None, env="SLACK_CHANNEL_ID")
 
 
 class TelegramConfig(BaseModel):
@@ -204,7 +208,9 @@ def load_config() -> AppConfig:
         )
 
         slack_config = SlackConfig(
-            webhook_url=os.getenv("SLACK_WEBHOOK_URL")
+            webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
+            bot_token=os.getenv("SLACK_BOT_TOKEN"),
+            channel_id=os.getenv("SLACK_CHANNEL_ID"),
         )
 
         telegram_config = TelegramConfig(

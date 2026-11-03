@@ -30,7 +30,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 6
 
 _MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS access_requests (
@@ -65,6 +65,11 @@ _MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS idx_access_requests_batch
         ON access_requests (batch_id);""",
     """ALTER TABLE access_requests ADD COLUMN narrative_json TEXT NOT NULL DEFAULT '{}';""",
+    """ALTER TABLE access_requests ADD COLUMN slack_thread_ts TEXT;
+    ALTER TABLE access_requests ADD COLUMN telegram_root_message_id INTEGER;""",
+    """ALTER TABLE access_requests ADD COLUMN stale_notice_at TEXT;""",
+    """ALTER TABLE access_requests ADD COLUMN label TEXT NOT NULL DEFAULT '';
+    UPDATE access_requests SET label = '' WHERE label IS NULL;""",
 ]
 
 STATUS_PENDING = "pending_review"
@@ -153,6 +158,8 @@ class RequestStore:
         except (json.JSONDecodeError, TypeError):
             data["narrative"] = {}
         data["auto_approved"] = bool(data["auto_approved"])
+        if not isinstance(data.get("label"), str):
+            data["label"] = ""
         return data
 
     def create(
@@ -173,6 +180,7 @@ class RequestStore:
         batch_id: Optional[int] = None,
         grant_expires_at: Optional[str] = None,
         narrative: Optional[dict] = None,
+        label: str = "",
     ) -> dict:
         """Persist a freshly evaluated request. Returns the stored row."""
         if status not in ALL_STATUSES:
@@ -183,8 +191,8 @@ class RequestStore:
                 "INSERT INTO access_requests (requester, request_text, provider, model,"
                 " duration, policy_json, risk, explanation, approver_note,"
                 " auto_approved, status, revision, created_at, updated_at,"
-                " environment, batch_id, grant_expires_at, narrative_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                " environment, batch_id, grant_expires_at, narrative_json, label)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     requester,
                     request_text,
@@ -203,6 +211,7 @@ class RequestStore:
                     batch_id,
                     grant_expires_at,
                     json.dumps(narrative or {}),
+                    label or "",
                 ),
             )
             self._conn.commit()
@@ -217,6 +226,50 @@ class RequestStore:
             "SELECT * FROM access_requests WHERE id = ?", (request_id,)
         ).fetchone()
         return self._row_to_dict(row) if row else None
+
+    def get_thread_roots(self, request_id: int) -> Optional[dict]:
+        """Return stored thread roots for a request (None when unknown).
+
+        Shape: {"slack_thread_ts": str|None,
+        "telegram_root_message_id": int|None}.
+        """
+        row = self._conn.execute(
+            "SELECT slack_thread_ts, telegram_root_message_id"
+            " FROM access_requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "slack_thread_ts": row["slack_thread_ts"],
+            "telegram_root_message_id": row["telegram_root_message_id"],
+        }
+
+    def claim_slack_thread(self, request_id: int, thread_ts: str) -> bool:
+        """Atomically store the Slack thread root. First claim wins.
+
+        The conditional UPDATE keeps concurrent or retried root posts from
+        creating duplicate threads: exactly one caller observes True.
+        """
+        with self._write_lock:
+            cursor = self._conn.execute(
+                "UPDATE access_requests SET slack_thread_ts = ?, updated_at = ?"
+                " WHERE id = ? AND slack_thread_ts IS NULL",
+                (thread_ts, _utcnow(), request_id),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def claim_telegram_root(self, request_id: int, message_id: int) -> bool:
+        """Atomically store the Telegram root message id. First claim wins."""
+        with self._write_lock:
+            cursor = self._conn.execute(
+                "UPDATE access_requests SET telegram_root_message_id = ?,"
+                " updated_at = ? WHERE id = ? AND telegram_root_message_id IS NULL",
+                (message_id, _utcnow(), request_id),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
 
     def list(
         self, *, requester: Optional[str] = None, status: Optional[str] = None
@@ -299,6 +352,7 @@ class RequestStore:
         auto_approved: bool,
         status: str,
         narrative: Optional[dict] = None,
+        label: str = "",
     ) -> dict:
         """Re-evaluate a sent-back request as a new revision. Same id, same history."""
         if status not in (STATUS_PENDING, STATUS_APPROVED):
@@ -328,11 +382,11 @@ class RequestStore:
                     " duration = ?, policy_json = ?, risk = ?, explanation = ?,"
                     " approver_note = ?, auto_approved = ?, status = ?, reviewer = NULL,"
                     " feedback = NULL, revision = revision + 1, updated_at = ?,"
-                    " decided_at = NULL, narrative_json = ? WHERE id = ?",
+                    " decided_at = NULL, narrative_json = ?, label = ? WHERE id = ?",
                     (
                         request_text, provider, model, duration, json.dumps(policy),
                         risk, explanation, approver_note, 1 if auto_approved else 0,
-                        status, now, json.dumps(narrative or {}), request_id,
+                        status, now, json.dumps(narrative or {}), label or "", request_id,
                     ),
                 )
             except BaseException:
@@ -343,6 +397,14 @@ class RequestStore:
                 self._conn.commit()
         logger.info("Access request %s resubmitted (status=%s)", request_id, status)
         return self.get(request_id)  # type: ignore[return-value]
+
+    def list_batch(self, batch_id: int) -> list[dict]:
+        """All rows sharing a batch id, oldest first (sibling navigation)."""
+        rows = self._conn.execute(
+            "SELECT * FROM access_requests WHERE batch_id = ? ORDER BY id",
+            (batch_id,),
+        ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
 
     def set_batch_ids(self, request_ids: list[int], batch_id: int) -> None:
         """Link freshly created unit rows into one batch."""
@@ -367,6 +429,35 @@ class RequestStore:
             self._conn.commit()
             if cursor.rowcount == 0:
                 raise RequestStoreError("not_found", f"Request {request_id} not found.")
+
+    def list_stale_pending(self, older_than_iso: str) -> list[dict]:
+        """Pending requests created before `older_than_iso` with no notice.
+
+        Powers the stale-review sweep: each row is returned at most once
+        because callers claim it via mark_stale_noticed before posting.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM access_requests WHERE status = ?"
+            " AND created_at < ? AND stale_notice_at IS NULL"
+            " ORDER BY created_at",
+            (STATUS_PENDING, older_than_iso),
+        ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def mark_stale_noticed(self, request_id: int) -> bool:
+        """Guarded claim: stamp the stale notice. First claim wins.
+
+        Claim BEFORE posting so a second sweep (or worker) can never
+        double-notify: exactly one caller observes True.
+        """
+        with self._write_lock:
+            cursor = self._conn.execute(
+                "UPDATE access_requests SET stale_notice_at = ?, updated_at = ?"
+                " WHERE id = ? AND stale_notice_at IS NULL",
+                (_utcnow(), _utcnow(), request_id),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
 
     def mark_activated(self, request_id: int, *, credentials_expires_at: str) -> dict:
         """Record STS issuance.

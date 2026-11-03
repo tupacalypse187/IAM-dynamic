@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { desktop, isDesktop } from '@/lib/desktop'
-import type { AccessRequest, Credentials } from '@/types/api'
+import type { AccessRequest, ConfirmedUnit, Credentials, PreviewUnit } from '@/types/api'
 import type {
   AgentProgress,
   ClarifyQuestion,
@@ -23,12 +23,17 @@ export interface SubmitOutcome {
 
 export type SubmitResult =
   | { kind: 'clarify'; questions: ClarifyQuestion[] }
+  | { kind: 'split-consent'; preview: PreviewUnit[]; requestText: string; confirm: (choice: 'split' | 'full-review') => Promise<SubmitOutcome> }
   | ({ kind: 'submitted' } & SubmitOutcome)
 
 export interface PolicyAgent {
   readonly inDesktop: boolean
   /** Evaluate (clarify-aware) and persist as a review-routed request. */
   submit: (input: GenerateInput) => Promise<SubmitResult>
+  /** Dry-run split preview (web path; nothing persisted). */
+  preview: (input: GenerateInput) => Promise<PreviewUnit[]>
+  /** Persist previewed units after the user accepts the split or full review. */
+  confirmPreview: (input: GenerateInput, requestText: string, preview: PreviewUnit[], choice: 'split' | 'full-review') => Promise<SubmitOutcome>
   /** Issue credentials for an approved request when the owner is ready. */
   activate: (id: number) => Promise<Credentials>
   /**
@@ -60,12 +65,70 @@ export function usePolicyAgent(): PolicyAgent {
     }
   }, [])
 
+  const preview = useCallback(async (input: GenerateInput): Promise<PreviewUnit[]> => {
+    return api.previewRequest({
+      request_text: composeWebText(input),
+      provider: input.profileId ? undefined : input.provider,
+      model: input.profileId ? undefined : input.model,
+      duration: input.durationHours,
+      environment: input.environment,
+      profile_id: input.profileId,
+    })
+  }, [])
+
+  const confirmPreview = useCallback(
+    async (
+      input: GenerateInput,
+      requestText: string,
+      previewUnits: PreviewUnit[],
+      choice: 'split' | 'full-review',
+    ): Promise<SubmitOutcome> => {
+      const confirmed: ConfirmedUnit[] = previewUnits.map((u) => ({
+        policy: u.policy as Record<string, unknown>,
+        risk: u.risk,
+        explanation: u.explanation,
+        approver_note: u.approver_note,
+        label: u.label,
+        narrative: (u.narrative ?? {}) as Record<string, unknown>,
+      }))
+      const batch = await api.submitRequest({
+        request_text: requestText,
+        provider: input.profileId ? undefined : input.provider,
+        model: input.profileId ? undefined : input.model,
+        duration: input.durationHours,
+        environment: input.environment,
+        profile_id: input.profileId,
+        full_review: choice === 'full-review',
+        confirmed_units: confirmed,
+      })
+      return { request: batch[0], batch, findings: [], summary: null }
+    },
+    [],
+  )
+
   const submit = useCallback(async (input: GenerateInput): Promise<SubmitResult> => {
     if (!isDesktop()) {
-      const batch = await api.submitRequest({
-        request_text: composeWebText(input),
+      const requestText = composeWebText(input)
+      // Preview first so a split never persists as a surprise: one unit
+      // persists immediately, several return a consent step (no second
+      // LLM call on confirm — the previewed units are pinned).
+      const previewUnits = await api.previewRequest({
+        request_text: requestText,
         // A saved profile resolves provider/model server-side; sending the
         // unrelated Settings fallback alongside would only mislead.
+        provider: input.profileId ? undefined : input.provider,
+        model: input.profileId ? undefined : input.model,
+        duration: input.durationHours,
+        environment: input.environment,
+        profile_id: input.profileId,
+      })
+      if (previewUnits.length > 1) {
+        const confirm = (choice: 'split' | 'full-review') =>
+          confirmPreview(input, requestText, previewUnits, choice)
+        return { kind: 'split-consent', preview: previewUnits, requestText, confirm }
+      }
+      const batch = await api.submitRequest({
+        request_text: requestText,
         provider: input.profileId ? undefined : input.provider,
         model: input.profileId ? undefined : input.model,
         duration: input.durationHours,
@@ -80,6 +143,21 @@ export function usePolicyAgent(): PolicyAgent {
     const result = await desktop.generatePolicy(input)
     if (result.status === 'clarify') {
       return { kind: 'clarify', questions: result.questions }
+    }
+    const findings = [...result.findings]
+    if (result.result.single_grant_only) {
+      // The legacy single-grant endpoint truncated grants 2..N. Never
+      // silently drop them: warn so the user resubmits via the web
+      // preview/consent path instead.
+      const extra = (result.result.unit_labels ?? []).filter(Boolean).join(', ')
+      findings.push({
+        severity: 'medium',
+        location: 'split',
+        message: `This request looks like ${result.result.total_units ?? 2} separable grants, but the desktop path only kept the first.`,
+        suggestion: extra
+          ? `Split parts detected (${extra}). Submit from the web app to accept the split or request a full review.`
+          : 'Submit from the web app to accept the split or request a full review.',
+      })
     }
     const batch = await api.recordRequest({
       request_text: result.requestText,
@@ -103,8 +181,8 @@ export function usePolicyAgent(): PolicyAgent {
         })
         .catch(() => undefined)
     }
-    return { kind: 'submitted', request, batch, findings: result.findings, summary: result.summary }
-  }, [])
+    return { kind: 'submitted', request, batch, findings, summary: result.summary }
+  }, [confirmPreview])
 
   const activate = useCallback(async (id: number): Promise<Credentials> => {
     if (isDesktop()) {
@@ -125,7 +203,7 @@ export function usePolicyAgent(): PolicyAgent {
     desktop.logAudit(kind, summary, details).catch(() => undefined)
   }, [])
 
-  return { inDesktop: isDesktop(), submit, activate, track, subscribeProgress }
+  return { inDesktop: isDesktop(), submit, preview, confirmPreview, activate, track, subscribeProgress }
 }
 
 /** Browser path: fold guided fields + answers into one request string. */

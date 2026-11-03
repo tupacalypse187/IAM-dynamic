@@ -2,11 +2,13 @@ import type {
   AccessRequest,
   AuditEvent,
   CatalogEntry,
+  ConfirmedUnit,
   Credentials,
   DemoUser,
   ImpersonateResponse,
   LlmProfile,
   PolicyResponse,
+  PreviewUnit,
   ProvidersResponse,
   RequestStatus,
   ReviewDecision,
@@ -139,7 +141,15 @@ export const api = {
 
   // Access requests + review workflow. Submit/record return the created
   // batch (usually one row): units share a batch_id for grouped display.
-  submitRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; environment?: string; profile_id?: number }) =>
+  // Consent flow: preview first, then submit the accepted confirmed_units
+  // (no second LLM call) or full_review to combine into one review.
+  previewRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; environment?: string; profile_id?: number }) =>
+    request<PreviewUnit[]>('/api/requests/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  submitRequest: (data: { request_text: string; provider?: string; model?: string; duration: number; environment?: string; profile_id?: number; full_review?: boolean; confirmed_units?: ConfirmedUnit[] }) =>
     request<AccessRequest[]>('/api/requests', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -155,6 +165,9 @@ export const api = {
     risk: string
     explanation: string
     approver_note: string
+    label?: string
+    narrative?: Record<string, unknown>
+    units?: ConfirmedUnit[]
     profile_id?: number
   }) =>
     request<AccessRequest[]>('/api/requests/record', {
@@ -203,6 +216,8 @@ export const api = {
   },
 
   getRequest: (id: number) => request<AccessRequest>(`/api/requests/${id}`),
+
+  getBatch: (batchId: number) => request<AccessRequest[]>(`/api/requests/batch/${batchId}`),
 
   reviewRequest: (id: number, data: { decision: ReviewDecision; feedback?: string }) =>
     request<AccessRequest>(`/api/requests/${id}/review`, {

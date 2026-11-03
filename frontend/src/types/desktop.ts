@@ -47,6 +47,9 @@ export interface DesktopPolicyResult {
   approver_note: string
   auto_approved: boolean
   max_duration: number
+  single_grant_only?: boolean
+  total_units?: number
+  unit_labels?: string[]
 }
 
 export type DesktopGenerateResult =

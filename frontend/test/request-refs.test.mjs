@@ -26,6 +26,11 @@ describe('request-refs', () => {
     assert.equal(matchesRequestQuery(req(), 'nope'), false)
   })
 
+  it('matches the split part label', () => {
+    assert.equal(matchesRequestQuery(req({ label: 'Write analytics data' }), 'analytics'), true)
+    assert.equal(matchesRequestQuery(req({ label: '' }), 'analytics'), false)
+  })
+
   it('matches id spellings with or without the req prefix', () => {
     for (const q of ['7', '00007', 'req-7', 'req-00007', 'REQ-00007']) {
       assert.equal(matchesRequestQuery(req(), q), true)

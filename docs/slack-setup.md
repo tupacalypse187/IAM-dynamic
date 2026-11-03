@@ -28,13 +28,20 @@ oauth_config:
   scopes:
     bot:
       - incoming-webhook
+      - chat:write
+      - channels:join
+      - channels:history
+      - canvases:write
+      - reactions:write
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
 ```
 
-The app only ever POSTs messages — the single `incoming-webhook` scope is all it needs. No read scopes, no Socket Mode.
+Threaded one-thread-per-request posts need the Web API (`chat:write`) in
+addition to the webhook. Webhook-only installs keep working — they post
+top-level exactly as before, with no threading.
 
 ## 🖼️ App Icon
 
@@ -55,9 +62,31 @@ If the workspace requires admin approval for apps, approve the request first, th
 ```bash
 # in .env (gitignored, never committed)
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
+# Threaded posts (optional but recommended — one thread per access request):
+# install the app with the chat:write scope, then copy the Bot User OAuth
+# Token (xoxb-…) and the channel ID (right-click channel → Copy link, or
+# View channel details; looks like C012AB345CD).
+SLACK_BOT_TOKEN=xoxb-…
+SLACK_CHANNEL_ID=C012AB345CD
 ```
 
 Restart the backend. Every credential issuance, approval, and error path in `slack_service.py` posts automatically; with no webhook configured the service logs and skips.
+
+## 🧵 Threaded posts (one thread per request)
+
+When `SLACK_BOT_TOKEN` + `SLACK_CHANNEL_ID` are set, the backend posts via
+`chat.postMessage`: each request opens exactly one thread root (requester,
+`req-00001` ref, risk, status, timestamp) and every later event for that
+request — decision, resubmission, activation/issuance — lands as a threaded
+reply carrying actor + timestamp. The root id (`ts`) is persisted in the
+request row (`slack_thread_ts`), claimed atomically so retries never open a
+second thread. Requests created before threading was enabled get their root
+created lazily on the next event (no backfill needed).
+
+Without the bot token the backend keeps the exact webhook top-level
+behaviour. **After adding `chat:write` to the manifest the workspace owner
+must reinstall the app** (Slack prompts on the app's install page) —
+the implementer cannot do this step.
 
 ## 🧪 Testing
 
@@ -80,4 +109,5 @@ Confirm the message lands in-channel.
 | No posts, no errors | Webhook URL missing/blank in `.env`, or backend not restarted after adding it |
 | `404` / `invalid_token` | Webhook revoked or pasted with truncation — regenerate at Incoming Webhooks and replace the full URL |
 | Posts land in the wrong channel | Webhooks are pinned to the channel chosen at creation — add another webhook per channel and swap the URL |
-| Want per-user DMs instead | Not supported — the backend posts to channels via webhook only (no bot token / `chat.postMessage` path) |
+| Want per-user DMs instead | Not supported — the backend posts to the one audit channel only (the bot token enables threading there, not DMs) |
+| Threaded replies land top-level | Bot token/channel missing or app not reinstalled after adding `chat:write` — webhook fallback posts top-level by design |

@@ -4,15 +4,17 @@ IAM-Dynamic Backend - FastAPI Application
 AI-driven Just-In-Time AWS IAM access request portal.
 Generates least-privilege IAM policies using LLM and issues temporary credentials via AWS STS.
 """
+import asyncio
 import os
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Literal, Optional
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,6 +44,8 @@ from services.request_store import (
 )
 from services.audit_log import AuditLog
 from services.profile_store import ProfileStore, ProfileStoreError
+from services.decision_rationale import build_decision_rationale
+from services.policy_summary import summarize_policy
 from services.error_handler import UserFacingError
 from llm_service import get_llm_provider, PolicyResponse
 from config import load_config
@@ -51,7 +55,11 @@ config = load_config()
 
 # Initialize services
 sts_service = STSService(config.aws.role_arn)
-slack_service = SlackService(config.slack.webhook_url)
+slack_service = SlackService(
+    config.slack.webhook_url,
+    bot_token=config.slack.bot_token,
+    channel_id=config.slack.channel_id,
+)
 telegram_service = TelegramService(
     bot_token=config.telegram.bot_token,
     chat_id=config.telegram.chat_id,
@@ -267,6 +275,9 @@ class PolicyResponseModel(BaseModel):
     approver_note: str
     auto_approved: bool
     max_duration: int
+    single_grant_only: bool = True
+    total_units: int = 1
+    unit_labels: list[str] = []
 
 
 class IssueCredentialsRequest(BaseModel):
@@ -396,6 +407,16 @@ def _grant_expiry(from_time: datetime, environment: str) -> str:
     return (from_time + timedelta(hours=ENVIRONMENTS[environment]["activation_window_hours"])).isoformat()
 
 
+class ConfirmedUnit(BaseModel):
+    """One previewed unit the user accepted (persisted without re-running the LLM)."""
+    policy: dict
+    risk: str = "medium"
+    explanation: str = ""
+    approver_note: str = ""
+    label: str = ""
+    narrative: dict = {}
+
+
 class SubmitAccessRequest(BaseModel):
     """Submit a new access request for LLM evaluation + review routing"""
     request_text: str = Field(..., description="Natural language description of access needed", min_length=10)
@@ -405,6 +426,30 @@ class SubmitAccessRequest(BaseModel):
     environment: Environment = Field(default="dev", description="Deployment tier: dev, stage, or prod")
     change_case: Optional[str] = Field(default=None, description="Business justification for high-risk requests")
     profile_id: Optional[int] = Field(default=None, description="Your saved LLM profile to evaluate with (overrides provider/model)")
+    full_review: bool = Field(default=False, description="User declined the split: persist as one combined review instead")
+    confirmed_units: Optional[list[ConfirmedUnit]] = Field(default=None, description="Previewed units the user accepted (skips re-evaluation)")
+
+
+class PreviewUnitModel(BaseModel):
+    """One proposed grant from a dry-run evaluation (nothing persisted)."""
+    policy: dict
+    risk: str
+    explanation: str = ""
+    approver_note: str = ""
+    label: str = ""
+    narrative: dict = {}
+    duration: int
+    auto_approved: bool
+
+
+class PreviewAccessRequest(BaseModel):
+    """Dry-run evaluation: what a submit would split into."""
+    request_text: str = Field(..., min_length=10)
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    duration: int = Field(default=2, ge=1, le=744)
+    environment: Environment = Field(default="dev")
+    profile_id: Optional[int] = None
 
 
 class AccessRequestModel(BaseModel):
@@ -419,6 +464,7 @@ class AccessRequestModel(BaseModel):
     environment: str = "dev"
     batch_id: Optional[int] = None
     grant_expires_at: Optional[str] = None
+    label: str = ""
     policy: dict
     risk: str
     explanation: str
@@ -563,8 +609,14 @@ async def get_current_user(request: Request) -> str:
 async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     logger.info("Starting IAM-Dynamic Backend API")
-    yield
-    logger.info("Shutting down IAM-Dynamic Backend API")
+    stale_task = asyncio.create_task(_stale_review_loop())
+    try:
+        yield
+    finally:
+        stale_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await stale_task
+        logger.info("Shutting down IAM-Dynamic Backend API")
 
 
 # --- FastAPI Application ---
@@ -791,6 +843,337 @@ def format_request_ref(request_id: int) -> str:
     return f"req-{request_id:05d}"
 
 
+def _format_decided_at(stored: dict) -> Optional[str]:
+    """Decided-when stamp in UTC and US Eastern (None when unparseable)."""
+    raw = (stored.get("updated_at") or "").strip() if isinstance(stored, dict) else ""
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    eastern = parsed.astimezone(ZoneInfo("America/New_York"))
+    return parsed.strftime("%Y-%m-%d %H:%M UTC") + " · " + eastern.strftime("%H:%M %Z")
+
+
+def _decision_for_status(status: str) -> Optional[str]:
+    """Map a request status to its review decision (None when undecided)."""
+    return {
+        "approved": "approved",
+        "activated": "approved",
+        "denied": "denied",
+        "changes_requested": "changes_requested",
+    }.get((status or "").strip().lower())
+
+
+def _root_card_kwargs(stored: dict, status: str, why: Optional[str] = None) -> dict:
+    """Card fields for a thread root, built from the STORED row.
+
+    Grants come from the stored policy (services stay dumb); the Why is
+    the pinned rationale when the caller built one, else the
+    deterministic narrative for decided requests (auto-approved roots
+    are born with theirs — no LLM call on the root path).
+    """
+    siblings: list[dict] = []
+    try:
+        batch_id = stored.get("batch_id")
+        store = get_request_store()
+        if batch_id and store is not None:
+            siblings = store.list_batch(batch_id)
+    except Exception:
+        logger.exception("Batch sibling lookup failed for request %s", stored.get("id"))
+    kwargs: dict = {
+        "duration_hours": stored.get("duration"),
+        "grants_summary": None,
+        "decided_by": None,
+        "decided_at": None,
+        "why": why,
+        "feedback": stored.get("feedback"),
+        "batch_line": _batch_line(stored, siblings),
+        "unit_label": (stored.get("label") or "").strip() or None,
+    }
+    try:
+        kwargs["grants_summary"] = summarize_policy(stored.get("policy") or {})
+    except Exception:
+        logger.exception("Policy summary failed for request %s", stored.get("id"))
+    reviewer = (stored.get("reviewer") or "").strip() if isinstance(stored, dict) else ""
+    if reviewer:
+        kwargs["decided_by"] = reviewer
+        kwargs["decided_at"] = _format_decided_at(stored)
+    decision = _decision_for_status(status)
+    if decision is not None:
+        if not reviewer and (stored.get("auto_approved") or decision == "approved"):
+            kwargs["decided_by"] = "system (auto-approved)"
+            kwargs["decided_at"] = _format_decided_at(stored)
+        if kwargs["why"] is None:
+            try:
+                basis = dict(stored)
+                kwargs["why"] = build_decision_rationale(
+                    basis, decision, kwargs["decided_by"] or "system",
+                    stored.get("feedback"),
+                )
+            except Exception:
+                logger.exception(
+                    "Root rationale build failed for request %s", stored.get("id")
+                )
+    return kwargs
+
+
+def _ensure_thread_roots(
+    store: "RequestStore", stored: dict
+) -> tuple[Optional[str], Optional[int]]:
+    """Return (slack_thread_ts, telegram_root_id), creating roots lazily.
+
+    Each channel gets exactly one root per request: the root is posted only
+    when nothing is stored, and the conditional claim keeps concurrent or
+    retried events from storing a second root. When the root post itself
+    fails (or the channel is unconfigured) the event falls back to a
+    top-level post and no root is stored — current behaviour.
+    """
+    if _notifications_silenced():
+        return None, None
+    request_id = stored["id"]
+    try:
+        roots = store.get_thread_roots(request_id) or {}
+    except Exception:
+        logger.exception("Thread root lookup failed for request %s", request_id)
+        return None, None
+    slack_ts = roots.get("slack_thread_ts")
+    telegram_id = roots.get("telegram_root_message_id")
+
+    card = _root_card_kwargs(stored, stored["status"])
+    if slack_ts is None:
+        try:
+            ts = slack_service.post_thread_root(
+                request_ref=format_request_ref(request_id),
+                requester=stored["requester"],
+                risk_level=stored.get("risk") or "medium",
+                request_text=stored["request_text"],
+                status=stored["status"],
+                environment=stored.get("environment"),
+                **card,
+            )
+        except Exception:
+            logger.exception("Slack thread root post failed for request %s", request_id)
+            ts = None
+        if ts is not None:
+            try:
+                if store.claim_slack_thread(request_id, ts):
+                    slack_ts = ts
+                    try:
+                        slack_service.set_status_reaction(ts, stored["status"])
+                    except Exception:
+                        logger.exception(
+                            "Slack status reaction failed for request %s", request_id
+                        )
+                else:
+                    # Lost a race: another event already claimed the
+                    # canonical root. Our extra root post is a stray, but
+                    # every later event threads under the winner.
+                    winner = store.get_thread_roots(request_id) or {}
+                    slack_ts = winner.get("slack_thread_ts")
+                    logger.warning(
+                        "Slack thread root race for request %s; using %s",
+                        request_id, slack_ts,
+                    )
+            except Exception:
+                logger.exception(
+                    "Slack thread root claim failed for request %s", request_id
+                )
+
+    if telegram_id is None:
+        try:
+            message_id = telegram_service.post_thread_root(
+                request_ref=format_request_ref(request_id),
+                requester=stored["requester"],
+                risk_level=stored.get("risk") or "medium",
+                request_text=stored["request_text"],
+                status=stored["status"],
+                environment=stored.get("environment"),
+                **card,
+            )
+        except Exception:
+            logger.exception(
+                "Telegram thread root post failed for request %s", request_id
+            )
+            message_id = None
+        if message_id is not None:
+            try:
+                if store.claim_telegram_root(request_id, message_id):
+                    telegram_id = message_id
+                    try:
+                        telegram_service.set_status_reaction(
+                            message_id, stored["status"]
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Telegram status reaction failed for request %s", request_id
+                        )
+                else:
+                    winner = store.get_thread_roots(request_id) or {}
+                    telegram_id = winner.get("telegram_root_message_id")
+                    logger.warning(
+                        "Telegram thread root race for request %s; using %s",
+                        request_id, telegram_id,
+                    )
+            except Exception:
+                logger.exception(
+                    "Telegram thread root claim failed for request %s", request_id
+                )
+    return slack_ts, telegram_id
+
+
+def _notifications_silenced() -> bool:
+    """Kill switch for ad-hoc runs: IAM_SILENCE_NOTIFICATIONS=1 posts nothing.
+
+    Tests stay silent by fixture (conftest swaps in unconfigured services);
+    this switch covers manual scripts and smoke runs that are NOT testing
+    the notification system itself. Live notification tests must leave it
+    unset and say so explicitly.
+    """
+    return os.getenv("IAM_SILENCE_NOTIFICATIONS", "").strip() == "1"
+
+
+def _post_request_root(store: "RequestStore", stored: dict) -> None:
+    """Post the request-created thread root on each channel (best effort)."""
+    _ensure_thread_roots(store, stored)
+
+
+def _thread_targets_for(request_id: int) -> tuple[Optional[str], Optional[int]]:
+    """Thread targets for a later event, lazily creating a missing root."""
+    store = get_request_store()
+    if store is None:
+        return None, None
+    try:
+        stored = store.get(request_id)
+    except Exception:
+        logger.exception("Thread root lookup failed for request %s", request_id)
+        return None, None
+    if stored is None:
+        return None, None
+    return _ensure_thread_roots(store, stored)
+
+
+def _polish_decision_rationale(stored: Optional[dict], facts: str, decision: str) -> str:
+    """Best-effort LLM polish of the deterministic rationale.
+
+    Uses the fast-tier model for the request's own provider. ANY failure
+    (missing keys, provider errors, timeouts) falls back to the
+    deterministic text — the review endpoint must never fail or hang.
+    """
+    if not stored:
+        return facts
+    try:
+        provider_id = stored.get("provider") or "gemini"
+        model = fast_model_for(provider_id)
+        provider = get_llm_provider(provider_id, model)
+        polished = provider.generate_decision_rationale(facts, decision)
+        return polished.strip() if polished and polished.strip() else facts
+    except Exception as e:
+        logger.error(f"Decision rationale polish failed, using deterministic text: {e}")
+        return facts
+
+
+def _build_why_for_decision(
+    decision: str,
+    reviewer: str,
+    requester: str,
+    risk: str,
+    req: str,
+    feedback: Optional[str],
+    stored: Optional[dict],
+) -> str:
+    """Deterministic rationale, optionally LLM-polished. Never raises."""
+    try:
+        basis = dict(stored) if stored else {}
+        basis.setdefault("requester", requester)
+        basis.setdefault("request_text", req)
+        basis.setdefault("risk", risk)
+        basis.setdefault("reviewer", reviewer)
+        facts = build_decision_rationale(basis, decision, reviewer, feedback)
+    except Exception as e:
+        logger.error(f"Decision rationale build failed: {e}")
+        label = {"approved": "Approved", "denied": "Denied"}.get(decision, decision)
+        facts = f"{label} by {reviewer}."
+    try:
+        return _polish_decision_rationale(stored, facts, decision)
+    except Exception as e:
+        logger.error(f"Decision rationale polish failed: {e}")
+        return facts
+
+
+def _refresh_thread_root(
+    request_id: int,
+    status_override: Optional[str] = None,
+    why: Optional[str] = None,
+) -> None:
+    """Rewrite both channel roots in place to reflect the current status.
+
+    The root is rebuilt as the full living card (decision, why, grants)
+    from the stored row; pass ``why`` to pin a freshly built rationale
+    (the review path does), else the deterministic narrative is used.
+    Best effort: root failures are logged and never fail the request flow.
+    """
+    if _notifications_silenced():
+        return
+    store = get_request_store()
+    if store is None:
+        return
+    try:
+        stored = store.get(request_id)
+    except Exception:
+        logger.exception("Thread root refresh lookup failed for request %s", request_id)
+        return
+    if stored is None:
+        return
+    status = status_override or stored["status"]
+    try:
+        roots = store.get_thread_roots(request_id) or {}
+    except Exception:
+        logger.exception("Thread root refresh failed for request %s", request_id)
+        return
+    request_ref = format_request_ref(request_id)
+    card = _root_card_kwargs(stored, status, why=why)
+    try:
+        slack_service.update_thread_root(
+            request_ref=request_ref,
+            requester=stored["requester"],
+            risk_level=stored.get("risk") or "medium",
+            request_text=stored["request_text"],
+            status=status,
+            thread_ts=roots.get("slack_thread_ts"),
+            environment=stored.get("environment"),
+            **card,
+        )
+    except Exception:
+        logger.exception("Slack thread root update failed for request %s", request_id)
+    try:
+        telegram_service.update_thread_root(
+            request_ref=request_ref,
+            requester=stored["requester"],
+            risk_level=stored.get("risk") or "medium",
+            request_text=stored["request_text"],
+            status=status,
+            message_id=roots.get("telegram_root_message_id"),
+            environment=stored.get("environment"),
+            **card,
+        )
+    except Exception:
+        logger.exception("Telegram thread root update failed for request %s", request_id)
+    try:
+        slack_service.set_status_reaction(roots.get("slack_thread_ts"), status)
+    except Exception:
+        logger.exception("Slack status reaction failed for request %s", request_id)
+    try:
+        telegram_service.set_status_reaction(
+            roots.get("telegram_root_message_id"), status
+        )
+    except Exception:
+        logger.exception("Telegram status reaction failed for request %s", request_id)
+
+
 def send_decision_notification(
     request_id: int,
     decision: str,
@@ -799,13 +1182,32 @@ def send_decision_notification(
     risk: str,
     req: str,
     feedback: str = None,
+    why: Optional[str] = None,
+    stored: Optional[dict] = None,
+    environment: Optional[str] = None,
 ):
     """
     Send a review-decision notification to every configured channel (Slack, Telegram).
 
+    The decision lands as a terse threaded reply (reviewer + timestamp,
+    pointing at the card above) when a thread root exists (created lazily
+    otherwise); without Web API threading configured it posts top-level
+    as before. The full card — fields, request, grants, Why — lives in
+    the thread root, rebuilt by _refresh_thread_root. ``why`` is kept for
+    compatibility (threaded through to the channel calls); pass
+    ``stored`` to build it when omitted.
+
     Notification failures are logged but never fail the review itself.
     """
+    if _notifications_silenced():
+        return
     request_ref = format_request_ref(request_id)
+    slack_ts, telegram_reply = _thread_targets_for(request_id)
+    if why is None:
+        why = _build_why_for_decision(
+            decision, reviewer, requester, risk, req, feedback, stored
+        )
+    env = environment or (stored.get("environment") if stored else None)
     try:
         slack_service.send_decision_notification(
             request_ref=request_ref,
@@ -815,6 +1217,9 @@ def send_decision_notification(
             risk_level=risk,
             request_text=req,
             feedback=feedback,
+            thread_ts=slack_ts,
+            why=why,
+            environment=env,
         )
     except Exception as e:
         logger.error(f"Failed to send Slack decision notification: {e}")
@@ -828,24 +1233,62 @@ def send_decision_notification(
             risk_level=risk,
             request_text=req,
             feedback=feedback,
+            reply_to_message_id=telegram_reply,
+            why=why,
+            environment=env,
         )
     except Exception as e:
         logger.error(f"Failed to send Telegram decision notification: {e}")
 
 
-def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: int, approver: str = None):
+def send_audit_notification(
+    auto_approved: bool,
+    req: str,
+    risk: str,
+    duration: int,
+    approver: str = None,
+    request_id: Optional[int] = None,
+    requester: Optional[str] = None,
+    expires_at: Optional[str] = None,
+):
     """
     Send audit notification to every configured channel (Slack, Telegram).
 
+    Pass request_id for request-scoped events (activation): the issuance
+    then lands as a terse threaded reply ("Credentials issued to X —
+    expires Y — card above updated"). The legacy stateless issuance path
+    omits it and keeps the exact top-level behaviour.
+
     Notification failures are logged but never fail the credential request.
     """
+    if _notifications_silenced():
+        return
+    slack_ts, telegram_reply = (
+        _thread_targets_for(request_id) if request_id is not None else (None, None)
+    )
+    request_ref = format_request_ref(request_id) if request_id is not None else None
+    environment = None
+    if request_id is not None:
+        try:
+            known = get_request_store()
+            row = known.get(request_id) if known else None
+            environment = (row or {}).get("environment")
+            if requester is None:
+                requester = (row or {}).get("requester")
+        except Exception:
+            logger.exception("Credential notification env lookup failed for request %s", request_id)
     try:
         slack_service.send_credential_notification(
             request_text=req,
             risk_level=risk,
             duration_hours=duration,
             auto_approved=auto_approved,
-            approver=approver
+            approver=approver,
+            thread_ts=slack_ts,
+            request_ref=request_ref,
+            environment=environment,
+            requester=requester,
+            expires_at=expires_at,
         )
     except Exception as e:
         logger.error(f"Failed to send Slack notification: {e}")
@@ -856,10 +1299,163 @@ def send_audit_notification(auto_approved: bool, req: str, risk: str, duration: 
             risk_level=risk,
             duration_hours=duration,
             auto_approved=auto_approved,
-            approver=approver
+            approver=approver,
+            reply_to_message_id=telegram_reply,
+            request_ref=request_ref,
+            environment=environment,
+            requester=requester,
+            expires_at=expires_at,
         )
     except Exception as e:
         logger.error(f"Failed to send Telegram notification: {e}")
+
+
+def _notify_decision_background(
+    request_id: int,
+    to_status: str,
+    reviewer: str,
+    stored: dict,
+    updated: dict,
+    feedback: Optional[str],
+) -> None:
+    """Background: build the Why (LLM polish), refresh the root, notify.
+
+    Runs via BackgroundTasks so the review response returns as soon as
+    the decision is persisted — the admin never waits on an LLM call or
+    two channel posts. Failures are logged inside the helpers.
+    """
+    why = _build_why_for_decision(
+        to_status,
+        reviewer,
+        stored["requester"],
+        stored["risk"],
+        stored["request_text"],
+        feedback,
+        updated,
+    )
+    _refresh_thread_root(request_id, why=why)
+    send_decision_notification(
+        request_id=request_id,
+        decision=to_status,
+        reviewer=reviewer,
+        requester=stored["requester"],
+        risk=stored["risk"],
+        req=stored["request_text"],
+        feedback=feedback,
+        why=why,
+        stored=updated,
+        environment=updated.get("environment"),
+    )
+
+
+def _notify_activation_background(
+    request_id: int, stored: dict, reviewer: Optional[str], risk: str, expiration
+) -> None:
+    """Background: refresh the root and post the issuance reply."""
+    _refresh_thread_root(request_id)
+    send_audit_notification(
+        auto_approved=stored["auto_approved"],
+        req=stored["request_text"],
+        risk=risk,
+        duration=stored["duration"],
+        approver=reviewer,
+        request_id=request_id,
+        requester=stored["requester"],
+        expires_at=expiration,
+    )
+
+
+def _notify_resubmit_background(request_id: int, updated: dict, user: str) -> None:
+    """Background: threaded resubmission note + root refresh."""
+    slack_ts, telegram_reply = _thread_targets_for(request_id)
+    resubmit_note = (
+        f"🔄 Request {format_request_ref(request_id)} resubmitted as "
+        f"revision {updated['revision']} by {user} • "
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+    )
+    try:
+        slack_service.send_notification(resubmit_note, thread_ts=slack_ts)
+    except Exception as e:
+        logger.error(f"Failed to send Slack resubmission notification: {e}")
+    try:
+        telegram_service.send_message(resubmit_note, reply_to_message_id=telegram_reply)
+    except Exception as e:
+        logger.error(f"Failed to send Telegram resubmission notification: {e}")
+    _refresh_thread_root(request_id)
+
+
+STALE_REVIEW_AFTER = timedelta(hours=2)
+STALE_SWEEP_INTERVAL_SECONDS = 15 * 60
+STALE_SWEEP_FIRST_RUN_DELAY_SECONDS = 60
+STALE_WAITING_NOTICE = "⏳ Waiting for review — submitted over 2 hours ago"
+
+
+def check_stale_reviews() -> int:
+    """Nudge threads for requests waiting on review for over 2 hours.
+
+    For each stale pending request: claim it (first claim wins, before
+    posting, so sweeps never double-notify), flip the root emoji to ⏳,
+    and post exactly one threaded reply per channel. Returns the count
+    of newly noticed requests. Never raises.
+    """
+    if _notifications_silenced():
+        return 0
+    try:
+        store = get_request_store()
+        if store is None:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - STALE_REVIEW_AFTER).isoformat()
+        stale = store.list_stale_pending(cutoff)
+    except Exception:
+        logger.exception("Stale review sweep lookup failed")
+        return 0
+    noticed = 0
+    for row in stale:
+        request_id = row["id"]
+        try:
+            if not store.mark_stale_noticed(request_id):
+                continue
+        except Exception:
+            logger.exception("Stale claim failed for request %s", request_id)
+            continue
+        # Lazily create the thread root when the request predates
+        # threading (or its root post failed): the waiting notice must
+        # land IN the original thread, never as a stray top-level post.
+        slack_ts, telegram_id = _ensure_thread_roots(store, row)
+        _refresh_thread_root(request_id, status_override="waiting")
+        request_ref = format_request_ref(request_id)
+        notice = f"{STALE_WAITING_NOTICE} ({request_ref})"
+        try:
+            slack_service.send_notification(notice, thread_ts=slack_ts)
+        except Exception as e:
+            logger.error(f"Failed to send Slack stale notice: {e}")
+        try:
+            telegram_service.send_message(
+                notice, reply_to_message_id=telegram_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to send Telegram stale notice: {e}")
+        _audit(
+            "stale_reminder",
+            request_id=request_id,
+            actor="system",
+            actor_role="automated",
+            to_status=row.get("status"),
+            risk=row.get("risk"),
+        )
+        noticed += 1
+    return noticed
+
+
+async def _stale_review_loop() -> None:
+    """Background sweep for stale reviews: first run after 60s, then 15min."""
+    await asyncio.sleep(STALE_SWEEP_FIRST_RUN_DELAY_SECONDS)
+    while True:
+        try:
+            check_stale_reviews()
+        except Exception:
+            logger.exception("Stale review sweep failed")
+        await asyncio.sleep(STALE_SWEEP_INTERVAL_SECONDS)
 
 
 # --- API Endpoints ---
@@ -1134,8 +1730,12 @@ async def generate_policy(request: PolicyRequest, user: str = Depends(get_curren
         )
         provider = get_llm_provider(provider_id, model, api_key)
 
-        # Generate policy (legacy single-grant shape: first unit)
-        response: PolicyResponse = provider.generate_policy(request.request_text)[0]
+        # Generate policy (legacy single-grant shape: first unit).
+        # Desktop record-consent now uses preview/record batch instead;
+        # this endpoint reports how many units were truncated so callers
+        # can warn instead of silently dropping grants 2..N.
+        responses: list[PolicyResponse] = provider.generate_policy(request.request_text)
+        response: PolicyResponse = responses[0]
 
         # Calculate max duration based on risk
         max_duration = get_max_duration(response.risk)
@@ -1150,7 +1750,10 @@ async def generate_policy(request: PolicyRequest, user: str = Depends(get_curren
             explanation=response.explanation,
             approver_note=response.approver_note,
             auto_approved=auto_approved,
-            max_duration=actual_duration
+            max_duration=actual_duration,
+            single_grant_only=len(responses) > 1,
+            total_units=len(responses),
+            unit_labels=[r.label or "" for r in responses],
         )
 
     except UserFacingError as e:
@@ -1169,7 +1772,7 @@ async def generate_policy(request: PolicyRequest, user: str = Depends(get_curren
 
 
 @app.post("/api/issue-credentials", response_model=CredentialsResponse)
-async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depends(get_current_user)):
+async def issue_credentials(request: IssueCredentialsRequest, background_tasks: BackgroundTasks, _user: str = Depends(get_current_user)):
     """
     Issue temporary AWS credentials via STS AssumeRole
 
@@ -1198,12 +1801,13 @@ async def issue_credentials(request: IssueCredentialsRequest, _user: str = Depen
         risk = request.risk.lower()
         if risk not in ("low", "medium", "high", "critical"):
             risk = "medium"
-        send_audit_notification(
+        background_tasks.add_task(
+            send_audit_notification,
             auto_approved=request.auto_approved,
             req="Policy-based credential issuance",
             risk=risk,
             duration=request.duration,
-            approver=request.approver
+            approver=request.approver,
         )
 
         return CredentialsResponse(
@@ -1387,7 +1991,153 @@ def _evaluate_access_request(
         actual_duration = min(duration, max_duration)
         auto_approved = response.risk.lower() == "low"
         evaluated.append((response, actual_duration, auto_approved))
+    _preserve_prerequisite_reads(evaluated)
     return evaluated
+
+
+_RISK_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _normalize_risk(risk: str) -> str:
+    lowered = (risk or "").strip().lower()
+    return lowered if lowered in _RISK_RANK else "medium"
+
+
+def _confirmed_to_evaluated(
+    units: list[ConfirmedUnit], duration: int
+) -> list[tuple[PolicyResponse, int, bool]]:
+    """Persist previewed units the user accepted without re-running the LLM."""
+    evaluated = []
+    for unit in units:
+        if not isinstance(unit.policy, dict):
+            raise HTTPException(status_code=400, detail="Each confirmed unit needs a policy object.")
+        risk = _normalize_risk(unit.risk)
+        response = PolicyResponse(
+            policy=unit.policy,
+            risk=risk,
+            explanation=unit.explanation or "",
+            approver_note=unit.approver_note or "",
+            label=unit.label or "",
+            narrative=unit.narrative if isinstance(unit.narrative, dict) else {},
+        )
+        actual_duration = min(duration, get_max_duration(risk))
+        evaluated.append((response, actual_duration, risk == "low"))
+    if not evaluated:
+        raise HTTPException(status_code=400, detail="No confirmed units to persist.")
+    _preserve_prerequisite_reads(evaluated)
+    return evaluated
+
+
+def _combine_into_single_review(
+    evaluated: list[tuple[PolicyResponse, int, bool]],
+) -> list[tuple[PolicyResponse, int, bool]]:
+    """User declined the split: merge units into one combined pending review."""
+    if len(evaluated) <= 1:
+        response, duration, _ = evaluated[0]
+        return [(response, duration, False)] if response.risk.lower() == "low" else evaluated
+    statements: list[dict] = []
+    seen: set[str] = set()
+    import json as _json
+
+    for response, _, _ in evaluated:
+        raw = response.policy.get("Statement", []) if isinstance(response.policy, dict) else []
+        stmts = raw if isinstance(raw, list) else [raw]
+        for stmt in stmts:
+            if not isinstance(stmt, dict):
+                continue
+            key = _json.dumps(stmt, sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                statements.append(stmt)
+    top_risk = max((r for r, _, _ in evaluated), key=lambda r: _RISK_RANK.get(r.risk.lower(), 1))
+    combined = PolicyResponse(
+        policy={"Version": "2012-10-17", "Statement": statements},
+        risk=top_risk.risk,
+        explanation="; ".join(r.explanation for r, _, _ in evaluated if r.explanation),
+        approver_note="; ".join(r.approver_note for r, _, _ in evaluated if r.approver_note),
+        label="Combined full review",
+        narrative=top_risk.narrative,
+    )
+    duration = min(d for _, d, _ in evaluated) if evaluated else 2
+    max_duration = get_max_duration(combined.risk)
+    return [(combined, min(duration, max_duration), False)]
+
+
+def _read_only_statements(policy: dict) -> list[dict]:
+    """Statements where every action is read-only (safe to duplicate)."""
+    if not isinstance(policy, dict):
+        return []
+    raw = policy.get("Statement", [])
+    stmts = raw if isinstance(raw, list) else [raw]
+    out = []
+    for stmt in stmts:
+        if not isinstance(stmt, dict):
+            continue
+        if str(stmt.get("Effect", "Allow")).lower() == "deny":
+            continue
+        actions = _as_str_list(stmt.get("Action"))
+        if actions and all(_is_read_only_action(a) for a in actions):
+            out.append(stmt)
+    return out
+
+
+def _preserve_prerequisite_reads(
+    evaluated: list[tuple[PolicyResponse, int, bool]],
+) -> bool:
+    """Copy prerequisite read-only statements into pending units missing them.
+
+    A split can strand the pending unit without the reads it needs to do
+    its job (e.g. low-risk scan split from a medium-risk write). Read-only
+    statements are safe to duplicate into the riskier sibling so it stays
+    usable while waiting for review. Returns True when anything was copied.
+    """
+    if len(evaluated) <= 1:
+        return False
+    import json as _json
+
+    approved_reads: list[dict] = []
+    seen: set[str] = set()
+    for response, _, auto_approved in evaluated:
+        if not auto_approved:
+            continue
+        for stmt in _read_only_statements(response.policy):
+            key = _json.dumps(stmt, sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                approved_reads.append(stmt)
+    if not approved_reads:
+        return False
+    changed = False
+    for response, _, auto_approved in evaluated:
+        if auto_approved:
+            continue
+        policy = response.policy if isinstance(response.policy, dict) else {"Version": "2012-10-17", "Statement": []}
+        raw = policy.get("Statement", [])
+        stmts = raw if isinstance(raw, list) else [raw]
+        existing = {_json.dumps(s, sort_keys=True, default=str) for s in stmts if isinstance(s, dict)}
+        missing = [s for s in approved_reads if _json.dumps(s, sort_keys=True, default=str) not in existing]
+        if missing:
+            policy["Statement"] = [*stmts, *missing]
+            response.policy = policy
+            changed = True
+    return changed
+
+
+def _batch_line(stored: dict, siblings: list[dict]) -> Optional[str]:
+    """One-line split linkage for notification cards (None for singletons)."""
+    batch_id = stored.get("batch_id")
+    if not batch_id or len(siblings) <= 1:
+        return None
+    ordered = sorted(siblings, key=lambda r: r["id"])
+    position = next((i + 1 for i, r in enumerate(ordered) if r["id"] == stored["id"]), None)
+    if position is None:
+        return None
+    refs = ", ".join(format_request_ref(r["id"]) for r in ordered if r["id"] != stored["id"])
+    label = (stored.get("label") or "").strip()
+    line = f"Split from one request · Part {position} of {len(ordered)} · Batch #{batch_id} · Siblings: {refs}"
+    if label:
+        line += f" · This part: {label}"
+    return line
 
 
 def _get_stored_request(request_id: int) -> dict:
@@ -1405,51 +2155,27 @@ def _require_owner_or_admin(stored: dict, user: str) -> None:
         )
 
 
-@app.post("/api/requests", response_model=list[AccessRequestModel], status_code=201)
-async def submit_access_request(
-    body: SubmitAccessRequest, user: str = Depends(get_current_user)
-):
-    """Evaluate a request with the LLM, persist it, and route for review.
-
-    The evaluation may split separable grants into units (at most 5):
-    each unit becomes its own request row sharing a batch_id, so
-    low-risk units are approved immediately while the riskier remainder
-    waits in pending_review. Low-risk rows are marked approved (actor
-    "system") but still require POST /api/requests/{id}/activate before
-    any credentials exist.
-    """
-    env = _env_or_400(body.environment)
-    if body.duration > env["max_duration_hours"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{body.environment} grants allow at most {env['max_duration_hours']} hours.",
-        )
-    provider_id, model, api_key, profile_label = _resolve_evaluation_config(
-        user, body.provider, body.model, body.profile_id
-    )
-    try:
-        evaluated = _evaluate_access_request(
-            provider_id, model, body.request_text, body.duration, api_key
-        )
-    except UserFacingError as e:
-        logger.error(f"Access request evaluation failed (user-facing): {e.log_message}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
-    except Exception:
-        logger.error("Access request evaluation failed", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred. Please try again.",
-        )
-
+def _store_batch(
+    *,
+    store: "RequestStore",
+    user: str,
+    request_text: str,
+    provider_id: Optional[str],
+    model: Optional[str],
+    environment: str,
+    evaluated: list[tuple[PolicyResponse, int, bool]],
+    profile_label: str,
+    full_review_declined_split: bool = False,
+) -> list[dict]:
+    """Persist one evaluated batch and audit it. Returns fresh rows."""
     now = datetime.now(timezone.utc)
-    store = _require_request_store()
     batch: list[dict] = []
     try:
         for response, actual_duration, auto_approved in evaluated:
             request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
             stored = store.create(
                 requester=user,
-                request_text=body.request_text,
+                request_text=request_text,
                 provider=provider_id or "gemini",
                 model=model,
                 duration=actual_duration,
@@ -1459,11 +2185,12 @@ async def submit_access_request(
                 approver_note=response.approver_note,
                 auto_approved=auto_approved,
                 status=request_status,
-                environment=body.environment,
-                grant_expires_at=_grant_expiry(now, body.environment)
+                environment=environment,
+                grant_expires_at=_grant_expiry(now, environment)
                 if auto_approved
                 else None,
                 narrative=response.narrative,
+                label=response.label,
             )
             batch.append(stored)
         # The batch id is the first row's id (single-unit batches point
@@ -1472,7 +2199,7 @@ async def submit_access_request(
     except RequestStoreError as e:
         raise HTTPException(status_code=400, detail=str(e))
     rows = [store.get(row["id"]) for row in batch]
-
+    assert all(r is not None for r in rows)
     for stored, (response, actual_duration, auto_approved) in zip(rows, evaluated):
         assert stored is not None
         _audit(
@@ -1483,11 +2210,12 @@ async def submit_access_request(
             risk=response.risk,
             provider=stored["provider"],
             profile=profile_label,
-            environment=body.environment,
+            environment=environment,
             batch_id=stored["batch_id"],
             label=response.label,
             duration_hours=actual_duration,
             revision=stored["revision"],
+            full_review=full_review_declined_split,
         )
         _audit(
             "auto_approved" if auto_approved else "queued_for_review",
@@ -1497,6 +2225,130 @@ async def submit_access_request(
             to_status=stored["status"],
             risk=response.risk,
         )
+    return [r for r in rows if r is not None]
+
+
+@app.post("/api/requests/preview", response_model=list[PreviewUnitModel])
+async def preview_access_request(
+    body: PreviewAccessRequest,
+    user: str = Depends(get_current_user),
+):
+    """Dry-run evaluation: show the split without persisting anything.
+
+    The frontend calls this first so the user can accept the split or
+    choose a combined full review before any row, audit event, or
+    notification exists. Nothing here writes to the store.
+    """
+    _env_or_400(body.environment)
+    provider_id, model, api_key, _ = _resolve_evaluation_config(
+        user, body.provider, body.model, body.profile_id
+    )
+    try:
+        evaluated = _evaluate_access_request(
+            provider_id, model, body.request_text, body.duration, api_key
+        )
+    except UserFacingError as e:
+        logger.error(f"Access request preview failed (user-facing): {e.log_message}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
+    except Exception:
+        logger.error("Access request preview failed", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred. Please try again.",
+        )
+    return [
+        PreviewUnitModel(
+            policy=response.policy,
+            risk=response.risk,
+            explanation=response.explanation,
+            approver_note=response.approver_note,
+            label=response.label,
+            narrative=response.narrative,
+            duration=actual_duration,
+            auto_approved=auto_approved,
+        )
+        for response, actual_duration, auto_approved in evaluated
+    ]
+
+
+@app.post("/api/requests", response_model=list[AccessRequestModel], status_code=201)
+async def submit_access_request(
+    body: SubmitAccessRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
+):
+    """Evaluate a request with the LLM, persist it, and route for review.
+
+    The evaluation may split separable grants into units (at most 5):
+    each unit becomes its own request row sharing a batch_id, so
+    low-risk units are approved immediately while the riskier remainder
+    waits in pending_review. Low-risk rows are marked approved (actor
+    "system") but still require POST /api/requests/{id}/activate before
+    any credentials exist.
+
+    Consent flow: clients should call POST /api/requests/preview first,
+    show the split, then resubmit with the accepted ``confirmed_units``
+    (no second LLM call, no re-split surprise) or with ``full_review``
+    to persist one combined review instead.
+    """
+    env = _env_or_400(body.environment)
+    if body.duration > env["max_duration_hours"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.environment} grants allow at most {env['max_duration_hours']} hours.",
+        )
+    provider_id, model, api_key, profile_label = _resolve_evaluation_config(
+        user, body.provider, body.model, body.profile_id
+    )
+    store = _require_request_store()
+    if body.confirmed_units is not None:
+        evaluated = _confirmed_to_evaluated(list(body.confirmed_units), body.duration)
+        if body.full_review:
+            evaluated = _combine_into_single_review(evaluated)
+        rows = _store_batch(
+            store=store,
+            user=user,
+            request_text=body.request_text,
+            provider_id=provider_id,
+            model=model,
+            environment=body.environment,
+            evaluated=evaluated,
+            profile_label=profile_label,
+            full_review_declined_split=body.full_review,
+        )
+    else:
+        try:
+            evaluated = _evaluate_access_request(
+                provider_id, model, body.request_text, body.duration, api_key
+            )
+        except UserFacingError as e:
+            logger.error(f"Access request evaluation failed (user-facing): {e.log_message}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.user_message)
+        except Exception:
+            logger.error("Access request evaluation failed", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred. Please try again.",
+            )
+        if body.full_review:
+            evaluated = _combine_into_single_review(evaluated)
+        rows = _store_batch(
+            store=store,
+            user=user,
+            request_text=body.request_text,
+            provider_id=provider_id,
+            model=model,
+            environment=body.environment,
+            evaluated=evaluated,
+            profile_label=profile_label,
+            full_review_declined_split=body.full_review,
+        )
+
+    # One thread root per request row (a multi-unit batch opens one thread
+    # per unit request). Best effort: notification failures never fail submit.
+    for stored in rows:
+        assert stored is not None
+        background_tasks.add_task(_post_request_root, store, stored)
     return rows
 
 
@@ -1515,21 +2367,27 @@ class RecordAccessRequest(BaseModel):
     model: Optional[str] = Field(default=None)
     duration: int = Field(default=2, ge=1, le=744)
     environment: Environment = Field(default="dev")
-    policy: dict
+    policy: dict = Field(default_factory=dict)
     risk: str = Field(default="medium")
     explanation: str = Field(default="")
     approver_note: str = Field(default="")
+    label: str = Field(default="")
+    narrative: dict = Field(default_factory=dict)
+    units: Optional[list[ConfirmedUnit]] = Field(default=None, description="Accepted split units (batch persist, desktop consent path)")
     profile_id: Optional[int] = Field(default=None, description="Your saved profile (provider/model attribution only; no LLM call)")
 
 
 @app.post("/api/requests/record", response_model=list[AccessRequestModel], status_code=201)
 async def record_access_request(
-    body: RecordAccessRequest, user: str = Depends(get_current_user)
+    body: RecordAccessRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
-    """Store a freshly evaluated policy as a review-routed request."""
-    violation = find_overly_broad_policy_violation(body.policy)
-    if violation is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    """Store a freshly evaluated policy as a review-routed request.
+
+    Accepts either a single policy (legacy desktop path) or the accepted
+    ``units`` array from the split-consent dialog (batch persist).
+    """
     env = _env_or_400(body.environment)
     if body.duration > env["max_duration_hours"]:
         raise HTTPException(
@@ -1539,13 +2397,33 @@ async def record_access_request(
     provider_id, model, _, profile_label = _resolve_evaluation_config(
         user, body.provider, body.model, body.profile_id
     )
-    risk = (body.risk or "").strip().lower()
-    if risk not in ("low", "medium", "high", "critical"):
-        risk = "medium"
+    store = _require_request_store()
+    if body.units is not None:
+        evaluated = _confirmed_to_evaluated(list(body.units), body.duration)
+        for response, _, _ in evaluated:
+            violation = find_overly_broad_policy_violation(response.policy)
+            if violation is not None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+        rows = _store_batch(
+            store=store,
+            user=user,
+            request_text=body.request_text,
+            provider_id=provider_id,
+            model=model,
+            environment=body.environment,
+            evaluated=evaluated,
+            profile_label=profile_label,
+        )
+        for stored in rows:
+            background_tasks.add_task(_post_request_root, store, stored)
+        return rows
+    violation = find_overly_broad_policy_violation(body.policy)
+    if violation is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=violation)
+    risk = _normalize_risk(body.risk)
     actual_duration = min(body.duration, get_max_duration(risk))
     auto_approved = risk == "low"
     request_status = STATUS_APPROVED if auto_approved else STATUS_PENDING
-    store = _require_request_store()
     try:
         stored = store.create(
             requester=user,
@@ -1561,7 +2439,8 @@ async def record_access_request(
             status=request_status,
             environment=body.environment,
             batch_id=None,
-            narrative={},
+            narrative=body.narrative if isinstance(body.narrative, dict) else {},
+            label=body.label or "",
             grant_expires_at=_grant_expiry(datetime.now(timezone.utc), body.environment)
             if auto_approved
             else None,
@@ -1581,6 +2460,7 @@ async def record_access_request(
         profile=profile_label,
         environment=body.environment,
         batch_id=stored["batch_id"],
+        label=stored.get("label", ""),
         duration_hours=actual_duration,
         revision=stored["revision"],
     )
@@ -1592,6 +2472,7 @@ async def record_access_request(
         to_status=request_status,
         risk=risk,
     )
+    background_tasks.add_task(_post_request_root, store, stored)
     return [stored]
 
 
@@ -1615,6 +2496,18 @@ async def list_access_requests(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/requests/batch/{batch_id}", response_model=list[AccessRequestModel])
+async def get_batch_requests(batch_id: int, user: str = Depends(get_current_user)):
+    """Sibling rows of one split batch, oldest first (split pager source)."""
+    store = _require_request_store()
+    rows = store.list_batch(batch_id)
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found.")
+    for row in rows:
+        _require_owner_or_admin(row, user)
+    return rows
+
+
 @app.get("/api/requests/{request_id}", response_model=AccessRequestModel)
 async def get_access_request(request_id: int, user: str = Depends(get_current_user)):
     """Request detail: original text plus the evaluated LLM response."""
@@ -1625,7 +2518,10 @@ async def get_access_request(request_id: int, user: str = Depends(get_current_us
 
 @app.post("/api/requests/{request_id}/review", response_model=AccessRequestModel)
 async def review_access_request(
-    request_id: int, body: ReviewAccessRequest, user: str = Depends(get_current_user)
+    request_id: int,
+    body: ReviewAccessRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
     """Approve, deny, or send back a pending request (administrators only)."""
     if not _is_admin(user):
@@ -1680,21 +2576,27 @@ async def review_access_request(
         risk=stored["risk"],
         feedback=body.feedback,
     )
-    send_decision_notification(
-        request_id=request_id,
-        decision=to_status,
-        reviewer=user,
-        requester=stored["requester"],
-        risk=stored["risk"],
-        req=stored["request_text"],
-        feedback=body.feedback,
+    # Decision is persisted: respond now. The Why build (LLM polish),
+    # root refresh, and channel posts run in the background so the
+    # reviewer is never blocked on them.
+    background_tasks.add_task(
+        _notify_decision_background,
+        request_id,
+        to_status,
+        user,
+        stored,
+        updated,
+        body.feedback,
     )
     return updated
 
 
 @app.post("/api/requests/{request_id}/resubmit", response_model=AccessRequestModel)
 async def resubmit_access_request(
-    request_id: int, body: ResubmitAccessRequest, user: str = Depends(get_current_user)
+    request_id: int,
+    body: ResubmitAccessRequest,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
     """Re-evaluate a sent-back request as a new revision (owner only)."""
     stored = _get_stored_request(request_id)
@@ -1715,7 +2617,9 @@ async def resubmit_access_request(
     )
     try:
         # Resubmits are targeted follow-ups: re-evaluate as one grant
-        # (first unit) against the same row.
+        # (first unit) against the same row. Multi-unit replies stay
+        # split across the batch siblings — resubmit each pending unit,
+        # don't collapse them here.
         response, actual_duration, auto_approved = _evaluate_access_request(
             provider_id, model, request_text, duration, api_key
         )[0]
@@ -1744,6 +2648,7 @@ async def resubmit_access_request(
             auto_approved=auto_approved,
             status=request_status,
             narrative=response.narrative,
+            label=response.label,
         )
     except RequestStoreError as e:
         code = 404 if e.code == "not_found" else 400
@@ -1765,12 +2670,18 @@ async def resubmit_access_request(
         profile=profile_label,
         revision=updated["revision"],
     )
+    # A resubmission is a new revision of the same request: it lands as a
+    # threaded reply (creating the root lazily for pre-threading requests),
+    # never as a new thread. Runs in the background (see review endpoint).
+    background_tasks.add_task(_notify_resubmit_background, request_id, updated, user)
     return updated
 
 
 @app.post("/api/requests/{request_id}/discard", response_model=AccessRequestModel)
 async def discard_access_request(
-    request_id: int, user: str = Depends(get_current_user)
+    request_id: int,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
     """Withdraw an open request (owner, or any admin)."""
     stored = _get_stored_request(request_id)
@@ -1791,12 +2702,15 @@ async def discard_access_request(
         from_status=stored["status"],
         to_status="discarded",
     )
+    background_tasks.add_task(_refresh_thread_root, request_id)
     return updated
 
 
 @app.post("/api/requests/{request_id}/cancel", response_model=AccessRequestModel)
 async def cancel_access_request(
-    request_id: int, user: str = Depends(get_current_user)
+    request_id: int,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
     """Cancel an approved grant early (owner, or any admin).
 
@@ -1828,12 +2742,15 @@ async def cancel_access_request(
         to_status=STATUS_CANCELLED,
         risk=stored["risk"],
     )
+    background_tasks.add_task(_refresh_thread_root, request_id)
     return updated
 
 
 @app.post("/api/requests/{request_id}/activate", response_model=CredentialsResponse)
 async def activate_access_request(
-    request_id: int, user: str = Depends(get_current_user)
+    request_id: int,
+    background_tasks: BackgroundTasks,
+    user: str = Depends(get_current_user),
 ):
     """Issue STS credentials for an approved request, when the requester is ready.
 
@@ -1912,12 +2829,8 @@ async def activate_access_request(
     risk = stored["risk"].lower()
     if risk not in ("low", "medium", "high", "critical"):
         risk = "medium"
-    send_audit_notification(
-        auto_approved=stored["auto_approved"],
-        req=stored["request_text"],
-        risk=risk,
-        duration=stored["duration"],
-        approver=reviewer,
+    background_tasks.add_task(
+        _notify_activation_background, request_id, stored, reviewer, risk, expiration
     )
     return CredentialsResponse(
         access_key_id=creds["AccessKeyId"],

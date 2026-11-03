@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Loader2, AlertCircle, Info, MessageCircleQuestion, Sparkles } from 'lucide-react'
+import { AlertCircle, Info, Loader2, MessageCircleQuestion, Scissors, Sparkles } from 'lucide-react'
 import { Markdown } from '@/components/markdown'
 import { usePolicyAgent, type SubmitOutcome } from '@/hooks/use-policy-agent'
 import type { AgentProgress, ClarifyQuestion } from '@/types/desktop'
+import type { PreviewUnit } from '@/types/api'
+import { riskBadgeClass, riskLabel } from '@/lib/requests'
+import { Badge } from '@/components/ui/badge'
 import { ENVIRONMENTS, formatGrantLength, type EnvironmentId } from '@/lib/environments'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
@@ -49,6 +52,8 @@ export default function RequestView({
   const [questions, setQuestions] = useState<ClarifyQuestion[] | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [stage, setStage] = useState<string | null>(null)
+  const [splitPreview, setSplitPreview] = useState<PreviewUnit[] | null>(null)
+  const [splitConfirm, setSplitConfirm] = useState<((choice: 'split' | 'full-review') => Promise<SubmitOutcome>) | null>(null)
   const agent = usePolicyAgent()
 
   useEffect(() => agent.subscribeProgress((p: AgentProgress) => setStage(p.message)), [agent])
@@ -71,12 +76,23 @@ export default function RequestView({
     onSuccess: (outcome) => {
       setError(null)
       if (outcome.kind === 'clarify') {
+        setSplitPreview(null)
+        setSplitConfirm(null)
         setQuestions(outcome.questions)
         setStage(null)
+      } else if (outcome.kind === 'split-consent') {
+        // The request is NOT persisted yet: the user accepts the split or
+        // chooses a combined full review before anything is stored.
+        setQuestions(null)
+        setStage(null)
+        setSplitPreview(outcome.preview)
+        setSplitConfirm(() => outcome.confirm)
       } else {
         setQuestions(null)
         setAnswers({})
         setStage(null)
+        setSplitPreview(null)
+        setSplitConfirm(null)
         onSubmitted(outcome)
       }
     },
@@ -98,7 +114,23 @@ export default function RequestView({
     generateMutation.mutate(answers)
   }
 
-  const pending = generateMutation.isPending
+  const confirmMutation = useMutation({
+    mutationFn: (choice: 'split' | 'full-review') => {
+      if (!splitConfirm) throw new Error('No pending split to confirm.')
+      return splitConfirm(choice)
+    },
+    onSuccess: (outcome) => {
+      setError(null)
+      setSplitPreview(null)
+      setSplitConfirm(null)
+      setQuestions(null)
+      setAnswers({})
+      onSubmitted(outcome)
+    },
+    onError: (err: Error) => setError(err.message),
+  })
+
+  const pending = generateMutation.isPending || confirmMutation.isPending
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -317,6 +349,75 @@ export default function RequestView({
           )}
         </CardContent>
       </Card>
+
+      {/* Split consent — nothing is persisted until the user chooses */}
+      {splitPreview && splitPreview.length > 1 && (
+        <Card className="border-primary/30" data-tour="split-consent">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Scissors className="h-5 w-5" aria-hidden="true" />
+              Your request splits into {splitPreview.length} parts
+            </CardTitle>
+            <CardDescription>
+              Low-risk parts are approved immediately so you can work while the rest waits
+              for review. Accept the split, or keep everything together in one full review.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {splitPreview.map((unit, i) => (
+              <div key={i} className="rounded-md border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">
+                    Part {i + 1} of {splitPreview.length}
+                    {unit.label ? ` — ${unit.label}` : ''}
+                  </span>
+                  <Badge className={riskBadgeClass[unit.risk] ?? riskBadgeClass.medium}>
+                    {riskLabel[unit.risk] ?? unit.risk}
+                  </Badge>
+                  <Badge variant="outline">
+                    {unit.auto_approved ? 'Auto-approves' : 'Needs review'}
+                  </Badge>
+                  <span className="ml-auto text-xs text-muted-foreground">{unit.duration}h</span>
+                </div>
+                {unit.explanation && (
+                  <p className="mt-1.5 text-sm text-muted-foreground">{unit.explanation}</p>
+                )}
+              </div>
+            ))}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                className="flex-1"
+                disabled={confirmMutation.isPending}
+                onClick={() => confirmMutation.mutate('split')}
+              >
+                {confirmMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Accept split — activate low-risk now
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={confirmMutation.isPending}
+                onClick={() => confirmMutation.mutate('full-review')}
+              >
+                Full review as one instead
+              </Button>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={confirmMutation.isPending}
+              onClick={() => {
+                setSplitPreview(null)
+                setSplitConfirm(null)
+              }}
+            >
+              Back to editing (nothing was submitted)
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info Card */}
       <Card>

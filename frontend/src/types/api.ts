@@ -33,6 +33,31 @@ export interface PolicyResponse {
   approver_note: string
   auto_approved: boolean
   max_duration: number
+  single_grant_only?: boolean
+  total_units?: number
+  unit_labels?: string[]
+}
+
+/** One proposed grant from POST /api/requests/preview (nothing persisted). */
+export interface PreviewUnit {
+  policy: Record<string, unknown>
+  risk: 'low' | 'medium' | 'high' | 'critical'
+  explanation: string
+  approver_note: string
+  label: string
+  narrative: GrantNarrative
+  duration: number
+  auto_approved: boolean
+}
+
+/** One accepted unit sent back for persistence (no second LLM call). */
+export interface ConfirmedUnit {
+  policy: Record<string, unknown>
+  risk: string
+  explanation: string
+  approver_note: string
+  label: string
+  narrative: Record<string, unknown>
 }
 
 export interface IssueCredentialsRequest {
@@ -93,6 +118,7 @@ export interface AccessRequest {
   narrative: GrantNarrative
   environment: Environment
   batch_id: number | null
+  label: string
   grant_expires_at: string | null
   policy: Record<string, unknown>
   risk: 'low' | 'medium' | 'high' | 'critical'

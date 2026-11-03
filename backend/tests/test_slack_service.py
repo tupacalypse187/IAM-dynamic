@@ -10,6 +10,8 @@ class TestEnabledGating:
 
 
 class TestCredentialPayload:
+    """Credential issuance is a terse event-log reply; the card root holds details."""
+
     def _payload(self, **overrides):
         kwargs = dict(
             request_text="read the production-logs bucket",
@@ -17,53 +19,38 @@ class TestCredentialPayload:
             duration_hours=2,
             auto_approved=False,
             approver="chad",
+            requester="alice",
+            expires_at="2026-11-01 16:10 UTC",
         )
         kwargs.update(overrides)
         return SlackService().format_credential_payload(**kwargs)
 
-    def test_uses_block_kit_with_text_fallback(self):
+    def test_terse_single_section_with_text_fallback(self):
         payload = self._payload()
         assert "blocks" in payload and "text" in payload
-        types = [b["type"] for b in payload["blocks"]]
-        assert types[0] == "header"
-        assert "section" in types
-        assert types[-1] == "context"  # timestamp footer
+        assert len(payload["blocks"]) <= 2
+        assert payload["blocks"][0]["type"] == "section"
 
-    def test_fields_carry_risk_duration_approval(self):
-        payload = self._payload(risk_level="critical", duration_hours=1)
-        joined = " ".join(
-            f.get("text", "") for b in payload["blocks"] if b["type"] == "section"
-            for f in b.get("fields", [])
-        )
-        assert "CRITICAL" in joined
-        assert ":red_circle:" in joined
-        assert "1 hour(s)" in joined
-        assert "Manual — chad" in joined
+    def test_names_requester_expiry_and_card_pointer(self):
+        payload = self._payload()
+        body = payload["blocks"][0]["text"]["text"]
+        assert "alice" in body
+        assert "2026-11-01 16:10 UTC" in body
+        assert "card above updated" in body
+        assert "🔓" in body
 
-    def test_auto_approved_variant(self):
-        payload = self._payload(auto_approved=True)
-        joined = " ".join(
-            f.get("text", "") for b in payload["blocks"] if b["type"] == "section"
-            for f in b.get("fields", [])
-        )
-        assert "Auto-approved" in joined
-
-    def test_request_rendered_as_mrkdwn_blockquote(self):
-        payload = self._payload(request_text="line one\nline two")
-        sections = [b for b in payload["blocks"] if b["type"] == "section" and "text" in b]
-        body = " ".join(s["text"]["text"] for s in sections)
-        assert "> line one" in body and "> line two" in body
+    def test_no_repeated_card_fields(self):
+        payload = self._payload()
+        raw = str(payload["blocks"])
+        assert "Requested by" not in raw
+        assert "Risk Score" not in raw
+        assert "🔓 AWS Temporary Credentials Issued" not in raw
 
     def test_user_content_is_mrkdwn_escaped(self):
-        """Link/mention/broadcast injection must be neutralized (Slack guidance)."""
-        payload = self._payload(
-            request_text="<http://phish.example|Approve here> & <!channel>",
-            approver="<@U123>",
-        )
+        """Mention injection in the requester name must be neutralized."""
+        payload = self._payload(requester="<@U123>")
         raw = str(payload)
-        assert "<http://phish.example" not in raw
-        assert "&lt;http://phish.example|Approve here&gt;" in raw
-        assert "&amp; &lt;!channel&gt;" in raw
+        assert "<@U123>" not in raw
         assert "&lt;@U123&gt;" in raw
 
 
@@ -113,33 +100,35 @@ class TestDecisionPayload:
         kwargs.update(overrides)
         return SlackService().format_decision_payload(**kwargs)
 
-    def test_header_carries_ref_decision_emoji(self):
+    def test_terse_reply_carries_decision_emoji_and_reviewer(self):
         payload = self._payload()
-        header = payload["blocks"][0]["text"]["text"]
-        assert "req-00007" in header
-        assert "Approved" in header
-        assert "✅" in header
+        assert len(payload["blocks"]) <= 2
+        body = payload["blocks"][0]["text"]["text"]
+        assert "Approved" in body
+        assert "✅" in body
+        assert "chad" in body
+        assert "card above updated" in body
 
     def test_denied_and_sent_back_emoji(self):
         assert "❌" in self._payload(decision="denied")["blocks"][0]["text"]["text"]
         assert "↩️" in self._payload(decision="changes_requested")["blocks"][0]["text"]["text"]
 
-    def test_names_reviewer_requester_and_risk(self):
+    def test_no_repeated_card_fields(self):
         payload = self._payload()
-        joined = " ".join(
-            f.get("text", "") for b in payload["blocks"] if b["type"] == "section"
-            for f in b.get("fields", [])
-        )
-        assert "chad" in joined and "bob" in joined
-        assert "HIGH" in joined
+        raw = str(payload["blocks"])
+        assert "Requested by" not in raw
+        assert "Risk Score" not in raw
+        assert "read the production-logs bucket" not in raw
 
-    def test_feedback_section_only_when_present(self):
-        no_fb = [b for b in self._payload()["blocks"] if b["type"] == "section"]
-        assert not any("Reviewer feedback" in (b.get("text") or {}).get("text", "") for b in no_fb)
+    def test_feedback_appended_short_only_when_present(self):
+        no_fb = self._payload()["blocks"][0]["text"]["text"]
+        assert ">" not in no_fb
         with_fb = self._payload(decision="denied", feedback="too broad, narrow it")
-        sections = [b for b in with_fb["blocks"] if b["type"] == "section" and "text" in b]
-        body = " ".join(s["text"]["text"] for s in sections)
-        assert "too broad, narrow it" in body
+        assert "too broad, narrow it" in with_fb["blocks"][0]["text"]["text"]
+        long_fb = self._payload(feedback="x" * 900)
+        body = long_fb["blocks"][0]["text"]["text"]
+        assert "x" * 900 not in body
+        assert "…" in body
 
     def test_fallback_text_names_decision_and_reviewer(self):
         payload = self._payload(decision="denied", feedback="nope")
