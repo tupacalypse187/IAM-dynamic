@@ -40,6 +40,20 @@ PROVIDER_KEY_VARS = [
 # deterministic result even if a developer's .env enables it.
 AUTH_VARS = ["AUTH_PASSWORD_HASH", "JWT_SECRET"]
 
+# Notification credentials: the suite must NEVER post live. main builds its
+# Slack/Telegram singletons from the developer's real .env at import, so
+# stripping env alone is not enough — the _silenced_notifications fixture
+# below swaps the singletons for unconfigured services on every test.
+# Live notification posts happen only in explicit notification-system
+# tests run by hand (IAM_SILENCE_NOTIFICATIONS unset, #dev-testing).
+NOTIFICATION_VARS = [
+    "SLACK_WEBHOOK_URL",
+    "SLACK_BOT_TOKEN",
+    "SLACK_CHANNEL_ID",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+]
+
 
 @pytest.fixture(autouse=True)
 def _isolated_user_store(tmp_path, monkeypatch):
@@ -145,5 +159,22 @@ def _hermetic_provider_keys(monkeypatch):
     load_dotenv() during module import — strip it per test so missing-key
     behavior stays deterministic and endpoints stay auth-bypassed.
     """
-    for key in PROVIDER_KEY_VARS + AUTH_VARS:
+    for key in PROVIDER_KEY_VARS + AUTH_VARS + NOTIFICATION_VARS:
         monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _silenced_notifications(monkeypatch):
+    """Swap main's live notification singletons for unconfigured services.
+
+    main builds slack_service/telegram_service once at import from the
+    developer's real .env — without this, every TestClient request in the
+    suite posts a live thread root (the 51-orphan-post incident). Tests
+    that exercise notifications install their own fakes and override this.
+    """
+    import main
+    from services.slack_service import SlackService
+    from services.telegram_service import TelegramService
+
+    monkeypatch.setattr(main, "slack_service", SlackService())
+    monkeypatch.setattr(main, "telegram_service", TelegramService())

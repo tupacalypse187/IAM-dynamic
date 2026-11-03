@@ -56,7 +56,7 @@ function splashAssetPath(): string {
   return path.join(__dirname, '../../assets/splash.html')
 }
 
-function createSplash(version: string): BrowserWindow {
+function createSplash(version: string, onShown: () => void): BrowserWindow {
   const splash = new BrowserWindow({
     width: 520,
     height: 380,
@@ -74,6 +74,8 @@ function createSplash(version: string): BrowserWindow {
     show: false,
     // The splash is the only window for its 3 seconds: above everything,
     // focused on show, main window stays hidden until handover.
+    // screen-saver level keeps it above other apps' windows for the
+    // brief brand moment (dropped on close).
     alwaysOnTop: true,
     webPreferences: {
       contextIsolation: true,
@@ -81,10 +83,28 @@ function createSplash(version: string): BrowserWindow {
       sandbox: true,
     },
   })
-  splash.once('ready-to-show', () => {
+  splash.setAlwaysOnTop(true, 'screen-saver')
+  let shown = false
+  const showSplash = () => {
+    if (shown || splash.isDestroyed()) return
+    shown = true
     splash.show()
+    // show() alone does not bring the app forward on macOS when launched
+    // behind other apps: lift the window, then (macOS only) activate the
+    // app. Other platforms keep plain show+focus so we never steal focus
+    // aggressively there (focus() alone just flashes the taskbar).
+    splash.moveTop()
+    if (process.platform === 'darwin') app.focus({ steal: true })
     splash.focus()
-  })
+    onShown()
+  }
+  splash.once('ready-to-show', showSplash)
+  // Fallback: a static local page should always emit ready-to-show, but
+  // if it never fires the splash must still appear promptly instead of
+  // leaving a hidden app behind.
+  splash.webContents.once('did-finish-load', showSplash)
+  const fallback = setTimeout(showSplash, 1500)
+  fallback.unref?.()
   void splash.loadFile(splashAssetPath(), { hash: `v=${version}` })
   return splash
 }
@@ -266,24 +286,59 @@ async function startup(): Promise<void> {
     // Dev loop stays fast: no splash, main window straight up.
     showWindow()
   } else {
-    // Cold start: brand splash for at least SPLASH_MIN_MS, then hand over
-    // to the main window once it has painted. The did-finish-load fallback
-    // covers renderers that never emit ready-to-show. The main window is
-    // never shown before the splash closes, so the splash owns the screen.
-    const shownAt = Date.now()
-    const splash = createSplash(app.getVersion())
-    const window = ensureWindow()
+    // Cold start: brand splash for at least SPLASH_MIN_MS of *visible*
+    // time, then hand over to the main window once it has painted. The
+    // did-finish-load fallback covers renderers that never emit
+    // ready-to-show. The main window is never shown before the splash
+    // closes, so the splash owns the screen.
+    // The 3s clock starts when the splash actually appears (anchored in
+    // the onShown callback), not when createSplash is called: loadFile
+    // and ready-to-show are async, so anchoring at call time would make
+    // the visible time shorter than SPLASH_MIN_MS.
+    let splashShownAt: number | null = null
     let released = false
+    let releasePendingSplash = false
+    const finish = () => {
+      if (!splash.isDestroyed()) splash.close()
+      if (!window.isDestroyed()) {
+        if (!window.isVisible()) window.show()
+        window.focus()
+      }
+    }
+    const scheduleFinish = () => {
+      const shownAt = splashShownAt ?? Date.now()
+      const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - shownAt))
+      setTimeout(finish, wait)
+    }
+    const splash = createSplash(app.getVersion(), () => {
+      splashShownAt = Date.now()
+      // Main window was already ready while the splash was still
+      // loading: start the 3s visible clock now.
+      if (releasePendingSplash) {
+        releasePendingSplash = false
+        scheduleFinish()
+      }
+    })
+    const window = ensureWindow()
     const release = () => {
       if (released) return
       released = true
-      const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - shownAt))
-      setTimeout(() => {
-        if (!splash.isDestroyed()) splash.close()
-        if (!window.isDestroyed() && !window.isVisible()) {
-          window.show()
-        }
-      }, wait)
+      if (splashShownAt === null) {
+        // Splash not visible yet: wait for it to appear so the user
+        // still gets the full brand moment instead of a flash frame.
+        // Absolute failsafe: if the splash never appears, hand over
+        // anyway rather than leaving the app hidden behind nothing.
+        releasePendingSplash = true
+        const force = setTimeout(() => {
+          if (releasePendingSplash) {
+            releasePendingSplash = false
+            finish()
+          }
+        }, SPLASH_MIN_MS + 5000)
+        force.unref?.()
+        return
+      }
+      scheduleFinish()
     }
     window.once('ready-to-show', release)
     window.webContents.once('did-finish-load', release)

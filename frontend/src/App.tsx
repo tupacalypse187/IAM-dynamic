@@ -315,6 +315,16 @@ function AppShell() {
     setSummary(outcome.summary)
     setDetailOrigin('mine')
     setView('detail')
+    if (outcome.batch.length > 1) {
+      const autoCount = outcome.batch.filter((r) => r.auto_approved).length
+      toast({
+        title: `Request split into ${outcome.batch.length} parts`,
+        description:
+          autoCount > 0
+            ? `${autoCount} low-risk part${autoCount === 1 ? '' : 's'} approved — activate when ready. The rest waits for review.`
+            : 'All parts wait for review. Open the detail to move between parts.',
+      })
+    }
   }
 
   const resetSubmitForm = () => {
@@ -613,6 +623,7 @@ function AppShell() {
                   findings={findings}
                   summary={summary}
                   onBack={() => setView(detailOrigin === 'dashboard' && showAdminUI ? 'dashboard' : 'mine')}
+                  onOpenBatchRequest={(request) => openDetail(request, detailOrigin, true)}
                   onChanged={handleChanged}
                   onCredentialsIssued={handleCredentialsIssued}
                   onResubmit={(request) =>

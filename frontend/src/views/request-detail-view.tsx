@@ -59,6 +59,8 @@ interface RequestDetailViewProps {
   /** Owner reads denial feedback + AI guidance. */
   onShowGuidance: (request: AccessRequest) => void
   onApplySuggestion?: (suggestion: string) => void
+  /** Move between split-batch siblings without leaving the detail. */
+  onOpenBatchRequest?: (request: AccessRequest) => void
 }
 
 // Static class maps — Tailwind's JIT scanner must see full class names,
@@ -123,6 +125,7 @@ export default function RequestDetailView({
   onResubmit,
   onShowGuidance,
   onApplySuggestion,
+  onOpenBatchRequest,
 }: RequestDetailViewProps) {
   const [feedback, setFeedback] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -141,6 +144,17 @@ export default function RequestDetailView({
     queryFn: () => api.readAudit({ request_id: request.id, limit: 50 }),
     enabled: isAdmin,
   })
+
+  // Split-batch siblings (oldest first). Singletons fetch one row and render no banner.
+  const batchId = request.batch_id ?? request.id
+  const batchQuery = useQuery({
+    queryKey: ['batch', batchId],
+    queryFn: () => api.getBatch(batchId),
+    enabled: request.batch_id != null,
+  })
+  const siblings = batchQuery.data ?? []
+  const showBatch = siblings.length > 1
+  const position = showBatch ? siblings.findIndex((r) => r.id === request.id) + 1 : 0
 
   const reviewMutation = useMutation({
     mutationFn: (input: { decision: ReviewDecision; feedback?: string }) =>
@@ -249,8 +263,46 @@ export default function RequestDetailView({
           {request.grant_expires_at && (request.status === 'approved' || request.status === 'activated') && (
             <span>Grant window ends {formatTime(request.grant_expires_at)}</span>
           )}
+          {request.label && (
+            <span>
+              Part: <span className="font-medium text-foreground">{request.label}</span>
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Split batch banner — only for multi-unit batches */}
+      {showBatch && (
+        <Card className="border-primary/30">
+          <CardContent className="pt-4">
+            <p className="text-sm">
+              <span className="font-medium">
+                Split from one request · Part {position} of {siblings.length}
+              </span>
+              <span className="text-muted-foreground">
+                {' '}— low-risk parts activate now, the rest waits for review. They share the same
+                original text; each part below grants only its own slice.
+              </span>
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {siblings.map((sib, i) => (
+                <Button
+                  key={sib.id}
+                  variant={sib.id === request.id ? 'secondary' : 'outline'}
+                  size="sm"
+                  disabled={sib.id === request.id || !onOpenBatchRequest}
+                  onClick={() => onOpenBatchRequest?.(sib)}
+                  aria-label={`Open part ${i + 1} (${formatRequestRef(sib.id)})`}
+                >
+                  {i + 1}. {formatRequestRef(sib.id)}
+                  {sib.label ? ` — ${sib.label}` : ''}
+                  {sib.auto_approved ? ' · auto' : ''}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Original request */}
       <Card className="shadow-card">
@@ -699,7 +751,7 @@ function PlainLanguagePanel({ request }: { request: AccessRequest }) {
   if (!hasNarrative) {
     return (
       <div className="space-y-2">
-        <Markdown>{request.explanation || 'No explanation recorded.'}</Markdown>
+        <Markdown>{highlightTechnicalTerms(request.explanation) || 'No explanation recorded.'}</Markdown>
         <p className="text-xs text-muted-foreground">
           A plain-language summary isn&apos;t available for this older request.
         </p>
@@ -734,7 +786,7 @@ function PlainLanguagePanel({ request }: { request: AccessRequest }) {
             What to be careful about
           </h4>
           <div className="text-sm">
-            <Markdown>{narrative.risk_plain}</Markdown>
+            <Markdown>{highlightTechnicalTerms(narrative.risk_plain)}</Markdown>
           </div>
         </div>
       )}
@@ -791,7 +843,7 @@ function AdminBriefPanel({ request }: { request: AccessRequest }) {
         <div>
           <h4 className="mb-1 font-semibold">Reviewer brief</h4>
           <div className="text-sm">
-            <Markdown>{narrative.approver_plain}</Markdown>
+            <Markdown>{highlightTechnicalTerms(narrative.approver_plain)}</Markdown>
           </div>
         </div>
       ) : (

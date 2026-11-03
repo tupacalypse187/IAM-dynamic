@@ -39,6 +39,7 @@ AUDIT_EVENTS = frozenset({
     "discarded",
     "grant_cancelled",
     "impersonation_started",
+    "stale_reminder",
 })
 
 

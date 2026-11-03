@@ -158,10 +158,10 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                     <li key={group.batchId} className="space-y-2">
                       {group.rows.length > 1 && (
                         <p className="text-xs font-medium text-muted-foreground">
-                          Batch #{group.batchId} · {group.rows.length} grants from {group.rows[0].requester}
+                          Split from one request · Batch #{group.batchId} · {group.rows.length} parts from {group.rows[0].requester}
                         </p>
                       )}
-                      {group.rows.map((request) => {
+                      {group.rows.map((request, i) => {
                         const status = statusStyles[request.status]
                         return (
                           <button
@@ -173,6 +173,11 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                           >
                             <span className="flex flex-wrap items-center gap-2">
                               <span className="font-medium font-mono text-sm">{formatRequestRef(request.id)}</span>
+                              {group.rows.length > 1 && (
+                                <Badge variant="outline">
+                                  Part {i + 1} of {group.rows.length}
+                                </Badge>
+                              )}
                               <EnvBadge environment={request.environment} />
                               <Badge className={status.badge}>{status.label}</Badge>
                               <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
@@ -185,6 +190,11 @@ export default function ReviewDashboardView({ onOpenRequest }: ReviewDashboardVi
                                 {timeAgo(request.created_at)}
                               </span>
                             </span>
+                            {request.label && (
+                              <span className="mt-1 block truncate text-sm font-medium">
+                                {request.label}
+                              </span>
+                            )}
                             <span className="mt-1 block truncate text-sm text-muted-foreground">
                               {requestExcerpt(request.request_text)}
                             </span>

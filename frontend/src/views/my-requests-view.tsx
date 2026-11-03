@@ -23,12 +23,17 @@ function RequestRow({
   request,
   onOpen,
   onClone,
+  part,
+  total,
 }: {
   request: AccessRequest
   onOpen: (request: AccessRequest) => void
   onClone: (edit: boolean) => void
+  part?: number
+  total?: number
 }) {
   const status = statusStyles[request.status]
+  const showPart = total != null && total > 1 && part != null
   return (
     <li className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center">
       <button
@@ -39,6 +44,11 @@ function RequestRow({
       >
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-medium">{formatRequestRef(request.id)}</span>
+          {showPart && (
+            <Badge variant="outline">
+              Part {part} of {total}
+            </Badge>
+          )}
           <EnvBadge environment={request.environment} />
           <Badge className={status.badge}>{status.label}</Badge>
           <Badge className={riskBadgeClass[request.risk] ?? riskBadgeClass.medium}>
@@ -46,6 +56,11 @@ function RequestRow({
           </Badge>
           {request.revision > 1 && <Badge variant="outline">rev {request.revision}</Badge>}
         </span>
+        {request.label && (
+          <span className="mt-1 block truncate text-sm font-medium">
+            {request.label}
+          </span>
+        )}
         <span className="mt-1 block truncate text-sm text-muted-foreground">
           {requestExcerpt(request.request_text)}
         </span>
@@ -97,16 +112,18 @@ export default function MyRequestsView({ onNewRequest, onOpenRequest, onCloneReq
     <li key={group.batchId} className="space-y-2">
       {group.rows.length > 1 && (
         <p className="text-xs font-medium text-muted-foreground">
-          Batch #{group.batchId} · {group.rows.length} grants — low-risk units activate now, the rest wait for review.
+          Split from one request · Batch #{group.batchId} · {group.rows.length} parts — low-risk parts activate now, the rest wait for review.
         </p>
       )}
       <ul className="space-y-2">
-        {group.rows.map((request) => (
+        {group.rows.map((request, i) => (
           <RequestRow
             key={request.id}
             request={request}
             onOpen={onOpenRequest}
             onClone={(edit) => onCloneRequest(request, edit)}
+            part={i + 1}
+            total={group.rows.length}
           />
         ))}
       </ul>

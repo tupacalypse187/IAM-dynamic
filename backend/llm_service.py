@@ -333,6 +333,15 @@ def _single_response(data: Dict[str, Any]) -> "PolicyResponse":
     )
 
 
+DECISION_RATIONALE_PROMPT_TEMPLATE = """Rewrite these access-review facts into a 2-3 sentence narrative (about 450 characters) stating why the request was {decision}.
+
+Facts:
+{facts}
+
+Shape: (1) what the requester is doing — privilege level, top actions, resources; (2) the decision plus reviewer, grant window, and work item when one is named; (3) reviewer-feedback or evaluation context when present.
+Rules: use ONLY the supplied facts, never invent a work item, ticket, or reason that is not present, never emit the literal prefix "Evaluation summary:", and do not quote reviewer feedback as your own words. Respond with ONLY the rewritten sentences, no preamble."""
+
+
 class LLMProvider(ABC):
     """Abstract base class for LLM providers"""
 
@@ -350,6 +359,15 @@ class LLMProvider(ABC):
     def generate_rejection_guidance(self, original_request: str, policy: Dict[str, Any], risk: str) -> str:
         """Generate guidance for rejected requests to help user resubmit with better scoping"""
         pass
+
+    def generate_decision_rationale(self, facts: str, decision: str) -> Optional[str]:
+        """Polish grounded decision facts into 1-2 plain sentences.
+
+        Default: None (callers fall back to the deterministic text).
+        Subclasses implement only where a clean chat-call helper
+        exists; any failure must return None, never raise.
+        """
+        return None
 
 
 # System instruction for IAM policy generation
@@ -499,6 +517,29 @@ class GeminiProvider(LLMProvider):
             logger.error(f"Gemini rejection guidance error: {e}")
             return "Unable to generate AI guidance. Please review your request and be more specific about resources and actions needed."
 
+    def generate_decision_rationale(self, facts: str, decision: str) -> Optional[str]:
+        """Polish grounded facts via the Gemini generate_content endpoint."""
+        if not self.api_key or self.client is None and GOOGLE_GENAI_NEW:
+            return None
+        prompt = DECISION_RATIONALE_PROMPT_TEMPLATE.format(facts=facts, decision=decision)
+        try:
+            if GOOGLE_GENAI_NEW:
+                if self.client is None:
+                    return None
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                text = (response.text or "").strip()
+            else:
+                model = genai.GenerativeModel(model_name=self.model_name)
+                response = model.generate_content(prompt)
+                text = (response.text or "").strip()
+            return text or None
+        except Exception as e:
+            logger.error(f"Gemini decision rationale error: {e}")
+            return None
+
 
 def _parse_json_content(content: str) -> Dict[str, Any]:
     """Parse an LLM response as JSON, tolerating markdown code fences."""
@@ -620,6 +661,28 @@ class OpenAICompatibleProvider(LLMProvider):
             logger.error(f"{self.display_name} rejection guidance error: {e}")
             return FALLBACK_GUIDANCE
 
+    def generate_decision_rationale(self, facts: str, decision: str) -> Optional[str]:
+        """Polish grounded facts via the OpenAI-compatible chat endpoint."""
+        if not self.client:
+            return None
+        prompt = DECISION_RATIONALE_PROMPT_TEMPLATE.format(facts=facts, decision=decision)
+        try:
+            kwargs: Dict[str, Any] = {
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": GUIDANCE_SYSTEM_INSTRUCTION},
+                    {"role": "user", "content": prompt},
+                ],
+            }
+            if self.supports_temperature:
+                kwargs["temperature"] = 0.3
+            response = self.client.chat.completions.create(**kwargs)
+            text = (response.choices[0].message.content or "").strip()
+            return text or None
+        except Exception as e:
+            logger.error(f"{self.display_name} decision rationale error: {e}")
+            return None
+
 
 class OpenAIProvider(OpenAICompatibleProvider):
     """
@@ -723,6 +786,24 @@ Generate a least-privilege IAM policy for this request. Respond with ONLY a JSON
         except Exception as e:
             logger.error(f"Anthropic rejection guidance error: {e}")
             return FALLBACK_GUIDANCE
+
+    def generate_decision_rationale(self, facts: str, decision: str) -> Optional[str]:
+        """Polish grounded facts via the Anthropic messages endpoint."""
+        if not self.client:
+            return None
+        prompt = DECISION_RATIONALE_PROMPT_TEMPLATE.format(facts=facts, decision=decision)
+        try:
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=256,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            text = (response.content[0].text or "").strip()
+            return text or None
+        except Exception as e:
+            logger.error(f"Anthropic decision rationale error: {e}")
+            return None
 
 
 class ZhipuProvider(OpenAICompatibleProvider):
